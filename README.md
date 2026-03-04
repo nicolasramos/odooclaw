@@ -19,6 +19,19 @@
 
 > **Fork Notice**: This project is a fork of [PicoClaw](https://github.com/sipeed/picoclaw) created by [Sipeed](https://github.com/sipeed). We have deeply modified and adapted it to integrate natively with **Odoo ERP** using asynchronous webhooks and a dedicated communication channel.
 
+### 🌟 The PicoClaw Legacy: Why this base?
+
+PicoClaw was originally created by Sipeed to solve a very specific problem: bringing advanced AI Agent capabilities to ultra-low-cost hardware. We chose it as the foundation for OdooClaw because of its incredible technical feats:
+
+- **Written in Go**: Resulting in a single, fast, self-contained binary.
+- **Microscopic Footprint**: It uses **less than 10MB of RAM**, which is 99% less memory than its NodeJS/TypeScript counterparts (like OpenClaw or AutoGPT).
+- **Instant Boot**: Boots in under 1 second, even on single-core 0.6GHz hardware ($10 boards).
+- **True Portability**: Runs seamlessly on x86, ARM, and RISC-V architectures.
+
+By using this engine, **OdooClaw** inherits the ability to run directly inside any Odoo deployment (even on minimal cloud VPS instances) without cannibalizing the resources your ERP needs to serve users.
+
+---
+
 🦐 **OdooClaw** is an ultra-lightweight AI assistant written in Go. We added a **native Odoo channel** and a specialized `odoo-manager` skill, allowing the agent to directly interact with your Odoo instance (read, search, write, execute functions) through its XML-RPC API, replying directly within the Odoo Discuss module.
 
 ## ✨ Key Features
