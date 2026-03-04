@@ -1,0 +1,44 @@
+services:
+  # ─────────────────────────────────────────────
+  # OdooClaw Agent (one-shot query) - Full MCP Support
+  #   docker compose -f docker/docker-compose.full.yml run --rm odooclaw-agent -m "Hello"
+  # ─────────────────────────────────────────────
+  odooclaw-agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.full
+    container_name: odooclaw-agent-full
+    profiles:
+      - agent
+    volumes:
+      - ../config/config.json:/root/.odooclaw/config.json:ro
+      - odooclaw-workspace:/root/.odooclaw/workspace
+      - odooclaw-npm-cache:/root/.npm # npm cache for faster MCP server installs
+    entrypoint: [ "odooclaw", "agent" ]
+    stdin_open: true
+    tty: true
+
+  # ─────────────────────────────────────────────
+  # OdooClaw Gateway (Long-running Bot) - Full MCP Support
+  #   docker compose -f docker/docker-compose.full.yml --profile gateway up
+  # ─────────────────────────────────────────────
+  odooclaw-gateway:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.full
+    container_name: odooclaw-gateway-full
+    restart: unless-stopped
+    profiles:
+      - gateway
+    volumes:
+      # Configuration file
+      - ../config/config.json:/root/.odooclaw/config.json:ro
+      # Persistent workspace (sessions, memory, logs)
+      - odooclaw-workspace:/root/.odooclaw/workspace
+      # NPM cache for faster MCP server installs
+      - odooclaw-npm-cache:/root/.npm
+    command: [ "gateway" ]
+
+volumes:
+  odooclaw-workspace:
+  odooclaw-npm-cache: # Cache npm packages to speed up MCP server installations

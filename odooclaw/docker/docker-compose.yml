@@ -1,0 +1,34 @@
+services:
+  # ─────────────────────────────────────────────
+  # OdooClaw Agent (one-shot query)
+  #   docker compose -f docker/docker-compose.yml run --rm odooclaw-agent -m "Hello"
+  # ─────────────────────────────────────────────
+  odooclaw-agent:
+    image: docker.io/nicolasramos/odooclaw:latest
+    container_name: odooclaw-agent
+    profiles:
+      - agent
+    # Uncomment to access host network; leave commented unless needed.
+    #extra_hosts:
+    #  - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/root/.odooclaw
+    entrypoint: [ "odooclaw", "agent" ]
+    stdin_open: true
+    tty: true
+
+  # ─────────────────────────────────────────────
+  # OdooClaw Gateway (Long-running Bot)
+  #   docker compose -f docker/docker-compose.yml up odooclaw-gateway
+  # ─────────────────────────────────────────────
+  odooclaw-gateway:
+    image: docker.io/nicolasramos/odooclaw:latest
+    container_name: odooclaw-gateway
+    restart: on-failure
+    profiles:
+      - gateway
+    # Uncomment to access host network; leave commented unless needed.
+    #extra_hosts:
+    #  - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/root/.odooclaw
