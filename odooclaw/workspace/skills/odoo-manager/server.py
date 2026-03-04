@@ -312,7 +312,21 @@ def handle_request(request: dict) -> dict | None:
                     log("Auto-fixed: search() with 'fields' → search_read()")
                     meth = "search_read"
 
+                # Auto-fix: write() with 'values' in kwargs → move to args.
+                # Correct ORM signature: write([[ids], {values}])
+                if meth == "write" and kwargs and "values" in kwargs:
+                    values = kwargs.pop("values")
+                    if isinstance(args, list) and len(args) == 1:
+                        args = [args[0], values]
+                    log("Auto-fixed: write() 'values' from kwargs → args")
+
+                # Auto-fix: read() doesn't accept 'limit' — remove it silently.
+                if meth == "read" and kwargs and "limit" in kwargs:
+                    kwargs.pop("limit")
+                    log("Auto-fixed: removed unsupported 'limit' from read()")
+
                 res = odoo.call_kw(model, meth, args or [], kwargs or {})
+
 
         elif tool_name == "odoo-read-excel-attachment":
             res = odoo.read_excel_attachment(tool_args.get("attachment_id"))
