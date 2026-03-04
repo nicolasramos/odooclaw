@@ -41,7 +41,7 @@ An abstraction layer that standardizes requests across various backends (OpenAI,
 OdooClaw implements Anthropic's MCP standard. Instead of hardcoding Odoo logic into the Go binary, OdooClaw spawns a lightweight Python process (`workspace/skills/odoo-manager/server.py`).
 - The LLM requests to execute an action (e.g., `search_read`).
 - OdooClaw passes this via `stdio` to the Python process.
-- The Python process uses `xmlrpc.client` to communicate with Odoo, returning the JSON result back to the LLM.
+- The Python process connects to Odoo via JSON-RPC / XML-RPC, returning the JSON result back to the LLM.
 
 ## Memory Management
 

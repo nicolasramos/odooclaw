@@ -254,7 +254,7 @@ If you manage a huge Odoo instance with hundreds of users querying the AI, you c
 
 One of the most advanced features of OdooClaw is its use of the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). We include an MCP server (`odoo-manager/server.py`) that exposes vital tools to the AI:
 
-1. **`odoo-manager`**: A complete wrapper around the Odoo `xmlrpc.client` API. It allows the AI to perform complex database operations (`search_read`, `create`, `write`, `unlink`, executing model methods, etc.).
+1. **`odoo-manager`**: A complete wrapper around the Odoo JSON-RPC / XML-RPC backend API. It allows the AI to perform complex database operations (`search_read`, `create`, `write`, `unlink`, executing model methods, etc.).
 2. **`odoo-read-excel-attachment`**: When a user uploads or mentions an Excel/CSV attachment in an Odoo thread, the AI can automatically download the binary (`ir.attachment`), read it into memory using **Pandas**, and process its JSON rows to answer complex queries or import data.
 
 By relying on the MCP standard, this server runs isolated and dynamically injects its capabilities into the LLM on every interaction.

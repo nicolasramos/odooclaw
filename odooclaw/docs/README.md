@@ -17,14 +17,14 @@ OdooClaw is a specialized version of PicoClaw, tailored for integration with **O
 The core interaction of this agent with Odoo is governed by the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) standard. We have developed an MCP server (written in Python) located at `odooclaw/workspace/skills/odoo-manager/server.py`.
 
 #### Why MCP?
-MCP is the protocol promoted by Anthropic that standardizes how an LLM discovers and uses external tools. By using MCP, we delegate the responsibility of connecting to Odoo (via XML-RPC) to an isolated and secure process, which dynamically injects its tools into the AI model in an agnostic way.
+MCP is the protocol promoted by Anthropic that standardizes how an LLM discovers and uses external tools. By using MCP, we delegate the responsibility of connecting to Odoo (via JSON-RPC / XML-RPC) to an isolated and secure process, which dynamically injects its tools into the AI model in an agnostic way.
 
 #### Available Tools
 
 The server automatically exposes two powerful tools to your language model:
 
 1. **`odoo-manager`**:
-   - Acts as a universal bridge to the Odoo XML-RPC backend.
+   - Acts as a universal bridge to the Odoo JSON-RPC / XML-RPC backend.
    - **Schema:** Takes parameters such as `model`, `method`, `args`, and `kwargs`.
    - **Usage:** The LLM can use it to call `execute_kw` and perform `search_read`, `create`, `write`, or execute any method exposed on Odoo models.
 
