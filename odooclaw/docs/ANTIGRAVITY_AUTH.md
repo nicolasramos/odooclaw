@@ -186,10 +186,10 @@ async function fetchProjectId(accessToken: string): Promise<string> {
 ```typescript
 const decode = (s: string) => Buffer.from(s, "base64").toString();
 
-const CLIENT_ID = decode(
-  "MTA3MTAwNjA2MDU5MS10bWhzc2luMmgyMWxjcmUyMzV2dG9sb2poNGc0MDNlcC5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbQ=="
-);
-const CLIENT_SECRET = decode("R09DU1BYLUs1OEZXUjQ4NkxkTEoxbUxCOHNYQzR6NnFEQWY=");
+// Credentials are stored encoded in pkg/auth/oauth.go → GoogleAntigravityOAuthConfig()
+// They are the same public OAuth client credentials used by the pi-ai / OpenCode ecosystem.
+const CLIENT_ID = decode(/* see oauth.go */);
+const CLIENT_SECRET = decode(/* see oauth.go */);
 ```
 
 ### OAuth Flow Modes
