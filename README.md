@@ -161,17 +161,92 @@ To facilitate its use in different environments (Docker/Doodba or local binaries
 The container starts by default in gateway mode (`odooclaw gateway`). It listens on port `18790` waiting for webhooks from the Odoo chat.
 
 ### 2. CLI "One-Shot" Mode (Quick Testing)
-You can execute queries directly in the terminal by entering the container:
+Since you are running OdooClaw as a container within a `docker-compose` environment (like Doodba), you can execute queries directly in the terminal by attaching to the running container and using the agent mode:
 
 ```bash
-docker-compose exec odooclaw sh
-
 # Test the Odoo skill from the terminal
-odooclaw agent -m "Tell me what Odoo version is running and verify the connection"
-odooclaw agent -m "List the first 5 contacts (res.partner) in the database"
+docker compose exec odooclaw odooclaw agent -m "Tell me what Odoo version is running and verify the connection"
+
+# Enter interactive terminal mode
+docker compose exec odooclaw odooclaw agent
 ```
 
 <img src="odooclaw/assets/screenshots/odooclaw_termina.png" alt="OdooClaw Terminal" width="800">
+
+---
+
+## ⚙️ Configuration Deep Dive
+
+While the `.env.example` provides a quick way to configure OdooClaw for Docker, the core engine relies on a rich configuration system inherited and adapted from PicoClaw.
+
+### Workspace Layout
+
+OdooClaw stores its data in the configured workspace (default inside Docker: `/home/odooclaw/.odooclaw/workspace`):
+
+```text
+.odooclaw/workspace/
+├── sessions/          # Conversation sessions and history for Odoo users
+├── memory/            # Long-term vector memory 
+├── state/             # Persistent state (last channel, etc.)
+├── skills/            # Custom skills (like odoo-manager)
+├── AGENTS.md          # AI personality and strict Odoo directives
+├── HEARTBEAT.md       # Periodic task prompts (checked every 30 min)
+├── IDENTITY.md        # Agent identity (Odoo Assistant)
+├── SOUL.md            # Agent soul and values
+└── USER.md            # User preferences and expectations
+```
+
+### Heartbeat (Periodic Tasks)
+
+OdooClaw can perform periodic tasks automatically in the background without user intervention. Simply edit the `HEARTBEAT.md` file in your workspace:
+
+```markdown
+# Periodic Tasks
+
+- Query Odoo for unconfirmed Sales Orders older than 3 days and summarize them.
+- Check the Odoo logs or system parameters to ensure the webhook is correctly set.
+```
+
+The agent will read this file every 30 minutes (configurable via `ODOOCLAW_HEARTBEAT_INTERVAL` env var) and execute any tasks using the Odoo skill, silently acting as a background supervisor for your ERP.
+
+### 🔒 Security Sandbox
+
+Because OdooClaw can execute terminal commands and write files, it runs in a sandboxed environment by default to ensure it doesn't accidentally mess with your host system files. 
+
+- **Protected Tools**: Tools like `read_file`, `write_file`, and `list_dir` are restricted to the workspace folder.
+- **Exec Protection**: Even if you disable the sandbox, the `exec` tool proactively blocks dangerous patterns like `rm -rf`, formatting commands, system shutdown commands, or fork bombs.
+
+### Providers & Model Configuration
+
+OdooClaw uses a **model-centric** configuration approach (`model_list` in `config.json`). You simply specify the `vendor/model` format to add new providers—**zero code changes required!**
+
+This allows incredible flexibility for your ERP, such as using lightweight local models for easy queries to save costs, and falling back to massive models for complex data analysis.
+
+**All Supported Vendors Prefix:**
+`openai/`, `anthropic/`, `zhipu/`, `deepseek/`, `gemini/`, `groq/`, `moonshot/`, `qwen/`, `nvidia/`, `ollama/` (Local), `openrouter/`, `vllm/` (Local).
+
+#### Example: Local Ollama Model
+If you want to use a 100% free and local model hosted on your server alongside Odoo, you can easily point OdooClaw to it:
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "llama3.1",
+      "model": "ollama/llama3.1",
+      "api_base": "http://host.docker.internal:11434/v1"
+    }
+  ],
+  "agents": {
+    "defaults": {
+      "model": "llama3.1"
+    }
+  }
+}
+```
+
+#### Load Balancing
+If you manage a huge Odoo instance with hundreds of users querying the AI, you can configure multiple API keys/endpoints for the same model name, and OdooClaw will automatically **round-robin** between them to prevent rate-limiting!
 
 ---
 
@@ -211,18 +286,31 @@ Furthermore, OdooClaw retains the ability to integrate with **Telegram, Discord,
 
 ---
 
+## 🛠️ Architecture and Technical Documentation
+
+OdooClaw shares the ultra-lightweight architectural principles of its predecessor PicoClaw, but extends them significantly for the ERP ecosystem:
+
+- **Core Engine**: Written in Go (1.21+), compiling to a single standalone binary.
+- **Event Bus**: An internal `bus` package decouples the Odoo webhooks from the LLM execution, allowing true asynchronous background processing.
+- **Routing & Memory**: Channels route conversations seamlessly. Each user/thread gets isolated context to avoid data contamination between different Odoo records.
+- **Skills Framework (MCP)**: Native support for the *Model Context Protocol*, allowing you to plug any external Python/Node script securely.
+
+For an in-depth look at the architecture, please refer to the [Design Documentation](odooclaw/docs/design/ARCHITECTURE.md).
+
+---
+
 ## ⚖️ License and Credits
 
 This project is distributed under the **MIT** license.
 
+- **OdooClaw** and its Odoo native integration have been developed by **Nicolás Ramos** and the OdooClaw contributors.
 - It is a deeply adapted **fork** of [PicoClaw](https://github.com/sipeed/picoclaw) by Sipeed.
 - In turn, PicoClaw is heavily inspired by [nanobot](https://github.com/HKUDS/nanobot) by HKUDS.
-- The integration and the native Odoo module have been developed by the **OdooClaw** contributors.
 
 ### Forking and Attribution
 
 We strongly encourage the open-source community to fork, modify, and improve OdooClaw! If you fork this project or use its core components in your own work, we kindly request that you:
 
-1. Maintain the attribution to the original creators (OdooClaw, Sipeed, and HKUDS).
+1. Maintain the attribution to the original creators (Nicolás Ramos / OdooClaw, Sipeed, and HKUDS).
 2. Keep the `LICENSE` file intact.
 3. Include a visible "Fork Notice" in your project's `README.md` pointing back to this repository, similar to the one at the top of this document.
