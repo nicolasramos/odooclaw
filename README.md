@@ -38,9 +38,10 @@ By using this engine, **OdooClaw** inherits the ability to run directly inside a
 
 - 🪶 **Ultra-Lightweight**: Under 10MB of RAM footprint. It can run on the exact same server as Odoo without impacting performance!
 - 🤝 **Odoo Discuss Integration**: Talk to the AI directly from your Odoo chat.
+- 🎤 **Voice Messages**: Send and receive voice notes! Supports transcription (STT) and speech synthesis (TTS).
 - ⚡ **Asynchronous & Non-Blocking**: Odoo ↔ OdooClaw communication relies on Webhooks ("Fire & Forget"), releasing Odoo workers instantly.
 - 🧠 **Segregated Context**: AI memory is independent per channel/user. It doesn't mix private information.
-- 🤖 **Integrated MCP Server**: Uses the industry standard Model Context Protocol (MCP) via an embedded Python server, providing the LLM with the `odoo-manager` tool (full access to the XML-RPC API) and `odoo-read-excel-attachment` (automatic parsing of Excel/CSV attachments in Odoo using Pandas).
+- 🤖 **Integrated MCP Server**: Uses the industry standard Model Context Protocol (MCP) via an embedded Python server, providing the LLM with the `odoo-manager` tool (full access to the XML-RPC API), `odoo-read-excel-attachment` (automatic parsing of Excel/CSV attachments), `whisper-stt` (voice transcription), and `edge-tts` (text-to-speech).
 - 🛡️ **Secure by Design**: Pre-configured personality (`AGENTS.md`) designed to query, ask for confirmation, and *never* perform critical modifications without explicit permission.
 
 ---
@@ -57,6 +58,48 @@ The integration consists of two parts:
 2. **Odoo sends an Asynchronous Webhook**: Instead of blocking while waiting for the AI, Odoo sends an HTTP POST JSON payload in the background to the OdooClaw API (`http://odooclaw:18790/webhook/odoo`).
 3. **OdooClaw processes it**: The agent evaluates the intent and contacts the LLM provider (OpenAI, Anthropic, vLLM, etc.). The LLM invokes the `odoo-manager` skill from our **internal MCP server** (Python) which makes the XML-RPC calls (search, read, write) to Odoo to retrieve the requested info or execute actions.
 4. **OdooClaw replies to Odoo**: Once the response is ready, OdooClaw makes an HTTP POST back to the Odoo endpoint (`/odooclaw/reply`), which injects the message into Discuss, impersonating the bot.
+
+---
+
+## 🎤 Voice Messages (STT & TTS)
+
+OdooClaw supports **voice notes** in both directions:
+
+### Receiving Voice Messages (Speech-to-Text)
+
+When a user sends a voice note in Odoo Discuss:
+1. The webhook automatically detects the voice attachment
+2. OdooClaw uses the `whisper-stt` skill to transcribe the audio
+3. The LLM processes the transcribed text and responds
+
+**Transcription Methods:**
+- **Faster Whisper** (local): No API key needed, runs on CPU
+- **Whisper API** (OpenAI): More accurate, requires `OPENAI_API_KEY`
+
+### Sending Voice Responses (Text-to-Speech)
+
+When the user asks for voice output (e.g., "read this aloud", "voice response"):
+1. OdooClaw uses the `edge-tts` skill to generate audio
+2. Audio is uploaded to Odoo as an attachment
+3. Voice metadata is created for proper playback in Discuss
+4. Bot responds with a playable voice note
+
+**Available Voices:**
+- Spanish: `es-ES-ElenaNeural`, `es-MX-DaliaNeural`, `es-AR-TomasNeural`
+- English: `en-US-JennyNeural`, `en-US-GuyNeural`, `en-GB-SoniaNeural`
+- And many more (French, German, Italian, Portuguese, Chinese, Japanese)
+
+### Environment Variables for Voice
+
+```yaml
+# For STT (Speech-to-Text)
+- OPENAI_API_KEY=${OPENAI_API_KEY}  # Optional, for Whisper API fallback
+
+# For TTS (Text-to-Speech) - No additional config needed
+# Edge TTS is free and included by default
+```
+
+See [Voice Features Documentation](odooclaw/docs/VOICE_FEATURES.md) for detailed configuration.
 
 ---
 
@@ -252,12 +295,23 @@ If you manage a huge Odoo instance with hundreds of users querying the AI, you c
 
 ## 🛠️ MCP Server and Skills
 
-One of the most advanced features of OdooClaw is its use of the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). We include an MCP server (`odoo-manager/server.py`) that exposes vital tools to the AI:
+One of the most advanced features of OdooClaw is its use of the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). We include MCP servers that expose vital tools to the AI:
 
-1. **`odoo-manager`**: A complete wrapper around the Odoo JSON-RPC / XML-RPC backend API. It allows the AI to perform complex database operations (`search_read`, `create`, `write`, `unlink`, executing model methods, etc.).
-2. **`odoo-read-excel-attachment`**: When a user uploads or mentions an Excel/CSV attachment in an Odoo thread, the AI can automatically download the binary (`ir.attachment`), read it into memory using **Pandas**, and process its JSON rows to answer complex queries or import data.
+### Core Skills
 
-By relying on the MCP standard, this server runs isolated and dynamically injects its capabilities into the LLM on every interaction.
+| Skill | Description |
+|-------|-------------|
+| `odoo-manager` | Full Odoo JSON-RPC API access (search, read, write, create, unlink, workflow actions) |
+| `odoo-read-excel-attachment` | Parse Excel/CSV attachments using Pandas |
+
+### Voice Skills
+
+| Skill | Description |
+|-------|-------------|
+| `whisper-stt` | Transcribe voice messages (Faster Whisper local + Whisper API fallback) |
+| `edge-tts` | Generate voice responses using Microsoft Edge TTS |
+
+By relying on the MCP standard, these servers run isolated and dynamically inject their capabilities into the LLM on every interaction.
 
 ---
 
@@ -279,6 +333,8 @@ Deeper configuration (alternative providers like Anthropic, Ollama, etc., troubl
 
 - [Main Documentation](odooclaw/docs/README.md)
 - [General Configuration (JSON)](odooclaw/docs/CONFIGURATION.md)
+- [Voice Features (STT/TTS)](odooclaw/docs/VOICE_FEATURES.md)
+- [Changelog](odooclaw/docs/CHANGELOG.md)
 - [General Troubleshooting](odooclaw/docs/troubleshooting.md)
 - [Antigravity Auth and Usage](odooclaw/docs/ANTIGRAVITY_USAGE.md)
 
