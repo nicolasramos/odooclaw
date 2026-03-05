@@ -273,6 +273,37 @@
             "CONTEXT7_API_KEY": "ctx7sk-xx"
           }
         },
+        "odoo-manager": {
+          "enabled": true,
+          "command": "python3",
+          "args": [
+            "/usr/local/bin/odoo-mcp.py"
+          ],
+          "env": {
+            "PYTHONUNBUFFERED": "1"
+          }
+        },
+        "whisper-stt": {
+          "enabled": true,
+          "command": "python3",
+          "args": [
+            "/usr/local/bin/whisper-stt-mcp.py"
+          ],
+          "env": {
+            "PYTHONUNBUFFERED": "1",
+            "OPENAI_API_KEY": "${OPENAI_API_KEY}"
+          }
+        },
+        "edge-tts": {
+          "enabled": true,
+          "command": "python3",
+          "args": [
+            "/usr/local/bin/edge-tts-mcp.py"
+          ],
+          "env": {
+            "PYTHONUNBUFFERED": "1"
+          }
+        },
         "filesystem": {
           "enabled": false,
           "command": "npx",
@@ -352,7 +383,7 @@
     "monitor_usb": true
   },
   "gateway": {
-    "host": "127.0.0.1",
+    "host": "0.0.0.0",
     "port": 18790
   }
 }
