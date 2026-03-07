@@ -43,18 +43,34 @@ class MailThread(models.AbstractModel):
             # We must clean the text (remove html tags usually added by odoo)
             body_text = tools.html2plaintext(message.body)
 
-            # Process attachments - include voice messages info
+            # Process attachments - include voice messages and invoices info
             voice_attachments = []
+            invoice_attachments = []
             other_attachments = []
 
             if message.attachment_ids:
                 for att in message.attachment_ids:
+                    mimetype = (att.mimetype or "").lower()
+                    name = (att.name or "").lower()
+
                     # Check if it's a voice attachment
                     if att.voice_ids:
                         voice_attachments.append(
                             {"id": att.id, "name": att.name, "mimetype": att.mimetype}
                         )
                         body_text += f"\n🎤 [Nota de voz: {att.name} (ID: {att.id})]\n"
+                    # Check if it's a PDF or image (potential invoice)
+                    elif (
+                        mimetype == "application/pdf"
+                        or mimetype.startswith("image/")
+                        or name.endswith((".pdf", ".jpg", ".jpeg", ".png", ".webp"))
+                    ):
+                        invoice_attachments.append(
+                            {"id": att.id, "name": att.name, "mimetype": att.mimetype}
+                        )
+                        body_text += (
+                            f"\n🧾 [Factura/Documento: {att.name} (ID: {att.id})]\n"
+                        )
                     else:
                         other_attachments.append(
                             {"id": att.id, "name": att.name, "mimetype": att.mimetype}
@@ -71,6 +87,7 @@ class MailThread(models.AbstractModel):
                 "body": body_text,
                 "is_dm": is_dm,
                 "voice_attachments": voice_attachments,
+                "invoice_attachments": invoice_attachments,
                 "attachments": other_attachments,
             }
 
@@ -92,5 +109,14 @@ class MailThread(models.AbstractModel):
                 target=send_webhook, args=(webhook_url, payload)
             )
             threaded_call.start()
+
+            # Trigger "typing..." indicator if it's a discuss channel
+            if message.model == "discuss.channel":
+                channel = self.env["discuss.channel"].browse(message.res_id)
+                bot_member = channel.channel_member_ids.filtered(
+                    lambda m: m.partner_id.id == odooclaw_partner_id
+                )
+                if bot_member:
+                    bot_member.sudo()._notify_typing(is_typing=True)
 
         return message
