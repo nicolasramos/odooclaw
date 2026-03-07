@@ -69,6 +69,15 @@ class OdooClawController(http.Controller):
             record = request.env[model_name].sudo().browse(res_id)
             if record.exists():
                 record.with_user(bot_user).message_post(**post_values)
+
+                # Clear typing indicator after replying
+                if model_name == "discuss.channel":
+                    bot_member = record.channel_member_ids.filtered(
+                        lambda m: m.partner_id.id == bot_user.partner_id.id
+                    )
+                    if bot_member:
+                        bot_member.sudo()._notify_typing(is_typing=False)
+
                 return request.make_json_response({"status": "ok"})
 
             return request.make_json_response(
