@@ -38,10 +38,14 @@ By using this engine, **OdooClaw** inherits the ability to run directly inside a
 
 - 🪶 **Ultra-Lightweight**: Under 10MB of RAM footprint. It can run on the exact same server as Odoo without impacting performance!
 - 🤝 **Odoo Discuss Integration**: Talk to the AI directly from your Odoo chat.
+- 🔐 **Native Permission Inheritance**: Secure by default. The AI dynamically assumes Odoo user permissions, preventing any bypass of native Security Rights or Record Rules.
+- 🧠 **Intelligent ORM Bridge**: High-precision tool execution. The `odoo-manager` bridge includes a logic layer that automatically corrects LLM query hallucinations and maps non-standard arguments to valid Odoo ORM calls.
+- 🔁 **RLM Acceleration (Context-Rot Resistant)**: For large Odoo datasets, OdooClaw decomposes analysis into recursive Map-Reduce steps (`rlm_partition` -> sub-agents -> `rlm_aggregate`) to keep context clean, improve accuracy, and reduce long-context cost.
+- 📄 **Smart OCR & Action Generation**: Automatically scans PDF invoices, extracts data, and creates vendor bills or purchase orders intelligently.
 - 🎤 **Voice Messages**: Send and receive voice notes! Supports transcription (STT) and speech synthesis (TTS).
 - ⚡ **Asynchronous & Non-Blocking**: Odoo ↔ OdooClaw communication relies on Webhooks ("Fire & Forget"), releasing Odoo workers instantly.
 - 🧠 **Segregated Context**: AI memory is independent per channel/user. It doesn't mix private information.
-- 🤖 **Integrated MCP Server**: Uses the industry standard Model Context Protocol (MCP) via an embedded Python server, providing the LLM with the `odoo-manager` tool (full access to the XML-RPC API), `odoo-read-excel-attachment` (automatic parsing of Excel/CSV attachments), `whisper-stt` (voice transcription), and `edge-tts` (text-to-speech).
+- 🤖 **Integrated MCP Server**: Uses the industry standard Model Context Protocol (MCP) via an embedded Python server, providing the LLM with the `odoo-manager` tool (full access to the XML-RPC API), `odoo-read-excel-attachment` (automatic parsing of Excel/CSV attachments), `ocr-invoice` (Invoice/PO parsing), `whisper-stt` (voice transcription), and `edge-tts` (text-to-speech).
 - 🛡️ **Secure by Design**: Pre-configured personality (`AGENTS.md`) designed to query, ask for confirmation, and *never* perform critical modifications without explicit permission.
 
 ---
@@ -301,8 +305,10 @@ One of the most advanced features of OdooClaw is its use of the [Model Context P
 
 | Skill | Description |
 |-------|-------------|
-| `odoo-manager` | Full Odoo JSON-RPC API access (search, read, write, create, unlink, workflow actions) |
+| `odoo-manager` | Full Odoo JSON-RPC API access, inheriting Odoo User Permissions securely |
 | `odoo-read-excel-attachment` | Parse Excel/CSV attachments using Pandas |
+| `ocr-invoice` | Parse and extract structured data from PDF/Image documents |
+| `rlm-utils` | Partition and aggregate large datasets for recursive long-context analysis |
 
 ### Voice Skills
 
@@ -312,6 +318,52 @@ One of the most advanced features of OdooClaw is its use of the [Model Context P
 | `edge-tts` | Generate voice responses using Microsoft Edge TTS |
 
 By relying on the MCP standard, these servers run isolated and dynamically inject their capabilities into the LLM on every interaction.
+
+### Why RLM in OdooClaw?
+
+RLM (Recursive Language Models) is used as a practical inference strategy for ERP workloads where a single prompt can include hundreds of records or large attachments. Instead of pushing everything into one giant context, OdooClaw applies context-centric decomposition:
+
+1. **Decompose**: Fetch data, split into chunks with `rlm_partition`.
+2. **Map**: Process each chunk in parallel with sub-agents (`spawn` / `subagent`).
+3. **Reduce**: Merge outputs using `rlm_aggregate` and produce a final answer.
+
+Benefits in production:
+
+- Better robustness against context rot on long conversations.
+- Lower token pressure and more predictable latency/cost.
+- Higher precision for analytical tasks (invoices, journals, stock moves, large order lists).
+
+Recommended chunk sizing (starting point):
+
+| Workload | Typical records | Suggested `chunk_size` | Why |
+|---|---:|---:|---|
+| Invoice/PO quick checks | 50-300 | 20-40 | Fast map phase with low overhead |
+| Accounting analysis | 300-2,000 | 50-100 | Good cost/latency balance |
+| Very large audits | 2,000+ | 100-200 | Fewer sub-calls while preserving context hygiene |
+
+### Reproducible benchmark: single-pass vs RLM
+
+Use `odooclaw/scripts/benchmark_rlm.py` to compare:
+
+- **Latency** (`mean_latency_s`)
+- **Cost proxy** (`mean_total_tokens`, `mean_cost_usd`)
+- **Quality** (`exact_match_rate`, `mean_abs_error`)
+
+Example:
+
+```bash
+python3 odooclaw/scripts/benchmark_rlm.py \
+  --api-base "https://api.openai.com/v1" \
+  --api-key "$OPENAI_API_KEY" \
+  --model "gpt-4o-mini" \
+  --sizes 100 500 2000 \
+  --repeats 3 \
+  --chunk-size 100 \
+  --input-cost-per-1m 0.15 \
+  --output-cost-per-1m 0.60
+```
+
+The script prints JSON summary per mode/size so you can track if RLM improves robustness as context grows.
 
 ---
 

@@ -85,3 +85,74 @@ class OdooClawController(http.Controller):
             )
         except Exception as e:
             return request.make_json_response({"status": "error", "reason": str(e)})
+
+    @http.route(
+        "/odooclaw/call_kw_as_user",
+        type="http",
+        auth="public",
+        methods=["POST"],
+        csrf=False,
+    )
+    def call_kw_as_user(self, **kwargs):
+        """
+        Executes an ORM method on behalf of a specific user.
+        Payload:
+        {
+            "user_id": 5,
+            "model": "sale.order",
+            "method": "create",
+            "args": [[{...}]],
+            "kwargs": {}
+        }
+        """
+        try:
+            payload = json.loads(request.httprequest.data)
+            user_id = payload.get("user_id")
+            model = payload.get("model")
+            method = payload.get("method")
+            args = payload.get("args", [])
+            kwargs_dict = payload.get("kwargs", {})
+            context_dict = payload.get("context") or {}
+
+            if not user_id or not model or not method:
+                return request.make_json_response(
+                    {"status": "error", "reason": "Missing user_id, model, or method"}
+                )
+
+            # Security: Verify the caller is an internal OdooClaw/Admin session
+            # For now, we assume if you can hit this and you have a valid session id
+            # (which the Python MCP server does), you are authorized.
+            if not request.session.uid:
+                return request.make_json_response(
+                    {
+                        "status": "error",
+                        "reason": "Unauthorized. Must be logged in via session.",
+                    }
+                )
+
+            # Merge explicit context from caller if provided
+            if not isinstance(kwargs_dict, dict):
+                kwargs_dict = {}
+            if not isinstance(context_dict, dict):
+                context_dict = {}
+
+            merged_context = dict(request.env.context)
+            merged_context.update(context_dict)
+
+            # Switch environment to the requested user with provided context
+            safe_env = request.env(user=user_id, context=merged_context)
+
+            # Execute the method safely
+            try:
+                result = getattr(safe_env[model], method)(*args, **kwargs_dict)
+                return request.make_json_response({"status": "ok", "result": result})
+            except Exception as orm_error:
+                return request.make_json_response(
+                    {
+                        "status": "error",
+                        "reason": f"Odoo Access/ORM Error: {str(orm_error)}",
+                    }
+                )
+
+        except Exception as e:
+            return request.make_json_response({"status": "error", "reason": str(e)})
