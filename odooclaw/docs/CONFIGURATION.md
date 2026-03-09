@@ -50,7 +50,7 @@ If you are running a local server that mimics the OpenAI API:
 {
   "model_name": "local-mlx",
   "model": "openai/mlx-community/Meta-Llama-3-8B-Instruct-4bit",
-  "api_base": "http://192.168.1.6:8000/v1"
+  "api_base": "http://localhost:8000/v1"
 }
 ```
 
