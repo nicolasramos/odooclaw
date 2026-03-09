@@ -17,6 +17,13 @@ type ContextualTool interface {
 	SetContext(channel, chatID string)
 }
 
+// MessageContextualTool is an optional interface for tools that need
+// full inbound message context to enrich tool execution arguments.
+type MessageContextualTool interface {
+	Tool
+	SetMessageContext(channel, chatID, senderID string, metadata map[string]string)
+}
+
 // AsyncCallback is a function type that async tools use to notify completion.
 // When an async tool finishes its work, it calls this callback with the result.
 //

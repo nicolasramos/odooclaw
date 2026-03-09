@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"strconv"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -25,6 +26,10 @@ type MCPTool struct {
 	manager    MCPManager
 	serverName string
 	tool       *mcp.Tool
+	channel    string
+	chatID     string
+	senderID   string
+	metadata   map[string]string
 }
 
 // NewMCPTool creates a new MCP tool wrapper
@@ -201,7 +206,17 @@ func (t *MCPTool) Parameters() map[string]any {
 
 // Execute executes the MCP tool
 func (t *MCPTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
-	result, err := t.manager.CallTool(ctx, t.serverName, t.tool.Name, args)
+	callArgs := args
+	if len(args) > 0 {
+		callArgs = make(map[string]any, len(args))
+		for k, v := range args {
+			callArgs[k] = v
+		}
+	}
+
+	t.injectOdooContext(callArgs)
+
+	result, err := t.manager.CallTool(ctx, t.serverName, t.tool.Name, callArgs)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("MCP tool execution failed: %v", err)).WithError(err)
 	}
@@ -225,6 +240,130 @@ func (t *MCPTool) Execute(ctx context.Context, args map[string]any) *ToolResult 
 		ForLLM:  output,
 		IsError: false,
 	}
+}
+
+// SetMessageContext stores inbound message context for optional argument injection.
+func (t *MCPTool) SetMessageContext(channel, chatID, senderID string, metadata map[string]string) {
+	t.channel = channel
+	t.chatID = chatID
+	t.senderID = senderID
+	if metadata == nil {
+		t.metadata = nil
+		return
+	}
+	t.metadata = make(map[string]string, len(metadata))
+	for k, v := range metadata {
+		t.metadata[k] = v
+	}
+}
+
+func (t *MCPTool) injectOdooContext(args map[string]any) {
+	if args == nil || t.channel != "odoo" {
+		return
+	}
+
+	if t.serverName != "odoo-manager" && t.serverName != "ocr-invoice" {
+		return
+	}
+
+	senderID, ok := parseInt(t.senderID)
+	if ok {
+		if _, exists := args["sender_id"]; !exists {
+			args["sender_id"] = senderID
+		}
+	}
+
+	companyID, hasCompany := parseInt(t.metadata["company_id"])
+	allowedCompanyIDs := parseCompanyIDs(t.metadata["allowed_company_ids"])
+
+	if t.serverName == "odoo-manager" {
+		if t.tool.Name == "odoo-manager" {
+			kwargs, _ := args["kwargs"].(map[string]any)
+			if kwargs == nil {
+				kwargs = map[string]any{}
+				args["kwargs"] = kwargs
+			}
+
+			ctxMap, _ := kwargs["context"].(map[string]any)
+			if ctxMap == nil {
+				ctxMap = map[string]any{}
+				kwargs["context"] = ctxMap
+			}
+
+			if hasCompany {
+				if _, exists := ctxMap["company_id"]; !exists {
+					ctxMap["company_id"] = companyID
+				}
+			}
+			if len(allowedCompanyIDs) > 0 {
+				if _, exists := ctxMap["allowed_company_ids"]; !exists {
+					ctxMap["allowed_company_ids"] = allowedCompanyIDs
+				}
+			}
+			return
+		}
+
+		if hasCompany {
+			if _, exists := args["company_id"]; !exists {
+				args["company_id"] = companyID
+			}
+		}
+		if len(allowedCompanyIDs) > 0 {
+			if _, exists := args["allowed_company_ids"]; !exists {
+				args["allowed_company_ids"] = allowedCompanyIDs
+			}
+		}
+		return
+	}
+
+	if hasCompany {
+		if _, exists := args["company_id"]; !exists {
+			args["company_id"] = companyID
+		}
+	}
+	if len(allowedCompanyIDs) > 0 {
+		if _, exists := args["allowed_company_ids"]; !exists {
+			args["allowed_company_ids"] = allowedCompanyIDs
+		}
+	}
+}
+
+func parseInt(raw string) (int, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, false
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, false
+	}
+	return v, true
+}
+
+func parseCompanyIDs(raw string) []int {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+
+	var fromJSON []int
+	if strings.HasPrefix(raw, "[") {
+		if err := json.Unmarshal([]byte(raw), &fromJSON); err == nil && len(fromJSON) > 0 {
+			return fromJSON
+		}
+	}
+
+	parts := strings.Split(raw, ",")
+	out := make([]int, 0, len(parts))
+	for _, part := range parts {
+		if v, ok := parseInt(part); ok {
+			out = append(out, v)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // extractContentText extracts text from MCP content array

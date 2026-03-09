@@ -26,13 +26,16 @@ type OdooChannel struct {
 }
 
 type OdooWebhookPayload struct {
-	MessageID  int    `json:"message_id"`
-	Model      string `json:"model"`
-	ResID      int    `json:"res_id"`
-	AuthorID   int    `json:"author_id"`
-	AuthorName string `json:"author_name"`
-	Body       string `json:"body"`
-	IsDM       bool   `json:"is_dm"`
+	MessageID         int    `json:"message_id"`
+	Model             string `json:"model"`
+	ResID             int    `json:"res_id"`
+	AuthorID          int    `json:"author_id"`
+	AuthorUserID      int    `json:"author_user_id"`
+	AuthorName        string `json:"author_name"`
+	Body              string `json:"body"`
+	IsDM              bool   `json:"is_dm"`
+	CompanyID         int    `json:"company_id"`
+	AllowedCompanyIDs []int  `json:"allowed_company_ids"`
 }
 
 type OdooReplyPayload struct {
@@ -150,7 +153,11 @@ func (c *OdooChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	chatID := fmt.Sprintf("%s_%d", payload.Model, payload.ResID)
-	senderID := fmt.Sprintf("%d", payload.AuthorID)
+	senderNumericID := payload.AuthorUserID
+	if senderNumericID <= 0 {
+		senderNumericID = payload.AuthorID
+	}
+	senderID := fmt.Sprintf("%d", senderNumericID)
 
 	sender := bus.SenderInfo{
 		Platform:    "odoo",
@@ -176,6 +183,14 @@ func (c *OdooChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	metadata := map[string]string{
 		"model":  payload.Model,
 		"res_id": strconv.Itoa(payload.ResID),
+	}
+	if payload.CompanyID > 0 {
+		metadata["company_id"] = strconv.Itoa(payload.CompanyID)
+	}
+	if len(payload.AllowedCompanyIDs) > 0 {
+		if b, err := json.Marshal(payload.AllowedCompanyIDs); err == nil {
+			metadata["allowed_company_ids"] = string(b)
+		}
 	}
 
 	c.HandleMessage(r.Context(), peer, strconv.Itoa(payload.MessageID), senderID, chatID, content, mediaPaths, metadata, sender)

@@ -41,7 +41,7 @@ func (r *ToolRegistry) Get(name string) (Tool, bool) {
 }
 
 func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string]any) *ToolResult {
-	return r.ExecuteWithContext(ctx, name, args, "", "", nil)
+	return r.ExecuteWithContext(ctx, name, args, "", "", "", nil, nil)
 }
 
 // ExecuteWithContext executes a tool with channel/chatID context and optional async callback.
@@ -52,6 +52,8 @@ func (r *ToolRegistry) ExecuteWithContext(
 	name string,
 	args map[string]any,
 	channel, chatID string,
+	senderID string,
+	metadata map[string]string,
 	asyncCallback AsyncCallback,
 ) *ToolResult {
 	logger.InfoCF("tool", "Tool execution started",
@@ -69,8 +71,11 @@ func (r *ToolRegistry) ExecuteWithContext(
 		return ErrorResult(fmt.Sprintf("tool %q not found", name)).WithError(fmt.Errorf("tool not found"))
 	}
 
-	// If tool implements ContextualTool, set context
-	if contextualTool, ok := tool.(ContextualTool); ok && channel != "" && chatID != "" {
+	// If tool implements MessageContextualTool, provide full message context
+	if msgCtxTool, ok := tool.(MessageContextualTool); ok && channel != "" && chatID != "" {
+		msgCtxTool.SetMessageContext(channel, chatID, senderID, metadata)
+	} else if contextualTool, ok := tool.(ContextualTool); ok && channel != "" && chatID != "" {
+		// Backward-compatible context injection for tools that only need channel/chatID
 		contextualTool.SetContext(channel, chatID)
 	}
 
