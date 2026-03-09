@@ -304,6 +304,22 @@
             "PYTHONUNBUFFERED": "1"
           }
         },
+        "ocr-invoice": {
+          "enabled": true,
+          "command": "python3",
+          "args": [
+            "/usr/local/bin/ocr-invoice-mcp.py"
+          ],
+          "env": {
+            "PYTHONUNBUFFERED": "1",
+            "VISION_API_BASE": "https://api.openai.com/v1",
+            "VISION_MODEL": "gpt-4o-mini",
+            "OPENAI_API_KEY": "sk-your-vision-key",
+            "OCR_TIMEOUT_SECONDS": "240",
+            "OCR_MAX_PAGES": "4",
+            "OCR_IMAGE_DPI": "170"
+          }
+        },
         "filesystem": {
           "enabled": false,
           "command": "npx",
@@ -354,6 +370,17 @@
           "env": {
             "SLACK_BOT_TOKEN": "YOUR_SLACK_BOT_TOKEN",
             "SLACK_TEAM_ID": "YOUR_SLACK_TEAM_ID"
+          }
+        },
+        "rlm-utils": {
+          "enabled": true,
+          "command": "python3",
+          "args": [
+            "/usr/local/bin/rlm-utils-mcp.py"
+          ],
+          "env": {
+            "PYTHONUNBUFFERED": "1",
+            "WORKSPACE_PATH": "/home/odooclaw/.odooclaw/workspace"
           }
         }
       }

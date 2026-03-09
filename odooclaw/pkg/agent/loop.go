@@ -47,9 +47,11 @@ type AgentLoop struct {
 
 // processOptions configures how a message is processed
 type processOptions struct {
-	SessionKey      string   // Session identifier for history/context
-	Channel         string   // Target channel for tool execution
-	ChatID          string   // Target chat ID for tool execution
+	SessionKey      string // Session identifier for history/context
+	Channel         string // Target channel for tool execution
+	ChatID          string // Target chat ID for tool execution
+	SenderID        string // Original inbound sender ID
+	Metadata        map[string]string
 	UserMessage     string   // User message content (may include prefix)
 	Media           []string // media:// refs from inbound message
 	DefaultResponse string   // Response when LLM returns empty
@@ -497,6 +499,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		SessionKey:      sessionKey,
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
+		SenderID:        msg.SenderID,
+		Metadata:        msg.Metadata,
 		UserMessage:     msg.Content,
 		Media:           msg.Media,
 		DefaultResponse: defaultResponse,
@@ -563,6 +567,7 @@ func (al *AgentLoop) processSystemMessage(
 		SessionKey:      sessionKey,
 		Channel:         originChannel,
 		ChatID:          originChatID,
+		SenderID:        msg.SenderID,
 		UserMessage:     fmt.Sprintf("[System: %s] %s", msg.SenderID, msg.Content),
 		DefaultResponse: "Background task completed.",
 		EnableSummary:   false,
@@ -997,6 +1002,8 @@ func (al *AgentLoop) runLLMIteration(
 				tc.Arguments,
 				opts.Channel,
 				opts.ChatID,
+				opts.SenderID,
+				opts.Metadata,
 				asyncCallback,
 			)
 
