@@ -531,12 +531,13 @@ class OdooOCRSkill:
     def _attach_original_file(self, move_id, attachment):
         datas_b64 = base64.b64encode(attachment["data"]).decode("utf-8")
         name = attachment["name"] or f"invoice_{move_id}.pdf"
-        return self._odoo_call(
+        create_res = self._odoo_call(
             "ir.attachment",
             "create",
             [
                 {
                     "name": name,
+                    "datas_fname": name,
                     "type": "binary",
                     "datas": datas_b64,
                     "res_model": "account.move",
@@ -547,6 +548,27 @@ class OdooOCRSkill:
             ],
             {},
         )
+        if create_res.get("isError"):
+            return create_res
+
+        attach_id = create_res.get("result")
+        if attach_id:
+            post_res = self._odoo_call(
+                "account.move",
+                "message_post",
+                [[move_id]],
+                {
+                    "body": "Original invoice document attached by OCR.",
+                    "attachment_ids": [[4, attach_id]],
+                    "message_type": "comment",
+                },
+            )
+            if post_res.get("isError"):
+                log(
+                    f"Warning: attachment created but chatter post failed: {post_res.get('content')}"
+                )
+
+        return create_res
 
     def _create_vendor_bill(self, invoice_data, attachment):
         partner_res = self._find_or_create_partner(
@@ -595,9 +617,13 @@ class OdooOCRSkill:
         move_id = create_res.get("result")
         attach_res = self._attach_original_file(move_id, attachment)
         if attach_res.get("isError"):
-            log(
-                f"Warning: bill created but attachment failed: {attach_res.get('content')}"
-            )
+            return {
+                "isError": True,
+                "content": (
+                    f"Vendor bill {move_id} was created, but attaching the original document failed: "
+                    f"{attach_res.get('content')}"
+                ),
+            }
 
         return {
             "move_id": move_id,
