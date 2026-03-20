@@ -71,7 +71,7 @@ ls /dev/spidev*
 ```bash
 # Configure pins using pinmap utility
 # (MaixCAM uses a pinmap tool instead of devmem)
-# Refer to: https://wiki.sipeed.com/hardware/en/maixcam/gpio.html
+# Refer to: https://wiki.nicolasramos.com/hardware/en/maixcam/gpio.html
 
 # Load i2c-dev
 modprobe i2c-dev
@@ -109,7 +109,7 @@ ls /dev/i2c-*
 Uses the same SG2002 SoC as LicheeRV Nano. GPIO and I2C access follows the same pinmux procedure. Refer to the LicheeRV Nano section above.
 
 Check NanoKVM-specific pin headers for available I2C/SPI lines:
-- https://wiki.sipeed.com/hardware/en/kvm/NanoKVM/introduction.html
+- https://wiki.nicolasramos.com/hardware/en/kvm/NanoKVM/introduction.html
 
 ---
 
@@ -126,6 +126,6 @@ I2C adapter numbers can change between boots depending on driver load order. Alw
 
 ### Permissions
 `/dev/i2c-*` and `/dev/spidev*` typically require root access. Options:
-- Run picoclaw as root
+- Run odooclaw as root
 - Add user to `i2c` and `spi` groups
 - Create udev rules: `SUBSYSTEM=="i2c-dev", MODE="0666"`

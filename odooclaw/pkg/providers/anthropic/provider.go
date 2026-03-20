@@ -38,7 +38,7 @@ func NewProvider(token string) *Provider {
 func NewProviderWithBaseURL(token, apiBase string) *Provider {
 	baseURL := normalizeBaseURL(apiBase)
 	client := anthropic.NewClient(
-		option.WithAuthToken(token),
+		option.WithAPIKey(token),
 		option.WithBaseURL(baseURL),
 	)
 	return &Provider{
@@ -107,8 +107,11 @@ func buildParams(
 	model string,
 	options map[string]any,
 ) (anthropic.MessageNewParams, error) {
+	messages = trimMessagesForAnthropic(messages, 24)
+
 	var system []anthropic.TextBlockParam
 	var anthropicMessages []anthropic.MessageParam
+	validToolCallIDs := map[string]struct{}{}
 
 	for _, msg := range messages {
 		switch msg.Role {
@@ -129,6 +132,12 @@ func buildParams(
 			}
 		case "user":
 			if msg.ToolCallID != "" {
+				// Skip dangling tool results from stale history when their parent
+				// tool_use block is missing/invalid in this request payload.
+				if _, ok := validToolCallIDs[msg.ToolCallID]; !ok {
+					log.Printf("anthropic: skipping dangling user tool result (tool_call_id=%q)", msg.ToolCallID)
+					continue
+				}
 				anthropicMessages = append(anthropicMessages,
 					anthropic.NewUserMessage(anthropic.NewToolResultBlock(msg.ToolCallID, msg.Content, false)),
 				)
@@ -144,7 +153,21 @@ func buildParams(
 					blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
 				}
 				for _, tc := range msg.ToolCalls {
-					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, tc.Arguments, tc.Name))
+					name := strings.TrimSpace(tc.Name)
+					if name == "" && tc.Function != nil {
+						name = strings.TrimSpace(tc.Function.Name)
+					}
+					if name == "" {
+						log.Printf("anthropic: skipping tool call with empty name (id=%q)", tc.ID)
+						continue
+					}
+					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, tc.Arguments, name))
+					if tc.ID != "" {
+						validToolCallIDs[tc.ID] = struct{}{}
+					}
+				}
+				if len(blocks) == 0 {
+					continue
 				}
 				anthropicMessages = append(anthropicMessages, anthropic.NewAssistantMessage(blocks...))
 			} else {
@@ -153,6 +176,10 @@ func buildParams(
 				)
 			}
 		case "tool":
+			if _, ok := validToolCallIDs[msg.ToolCallID]; !ok {
+				log.Printf("anthropic: skipping dangling tool message (tool_call_id=%q)", msg.ToolCallID)
+				continue
+			}
 			anthropicMessages = append(anthropicMessages,
 				anthropic.NewUserMessage(anthropic.NewToolResultBlock(msg.ToolCallID, msg.Content, false)),
 			)
@@ -183,6 +210,31 @@ func buildParams(
 	}
 
 	return params, nil
+}
+
+func trimMessagesForAnthropic(messages []Message, maxNonSystem int) []Message {
+	if maxNonSystem <= 0 {
+		return messages
+	}
+
+	systemMessages := make([]Message, 0, len(messages))
+	nonSystemMessages := make([]Message, 0, len(messages))
+	for _, msg := range messages {
+		if msg.Role == "system" {
+			systemMessages = append(systemMessages, msg)
+			continue
+		}
+		nonSystemMessages = append(nonSystemMessages, msg)
+	}
+
+	if len(nonSystemMessages) <= maxNonSystem {
+		return messages
+	}
+
+	trimmed := make([]Message, 0, len(systemMessages)+maxNonSystem)
+	trimmed = append(trimmed, systemMessages...)
+	trimmed = append(trimmed, nonSystemMessages[len(nonSystemMessages)-maxNonSystem:]...)
+	return trimmed
 }
 
 func translateTools(tools []ToolDefinition) []anthropic.ToolUnionParam {

@@ -77,6 +77,59 @@ func TestBuildParams_ToolCallMessage(t *testing.T) {
 	}
 }
 
+func TestBuildParams_SkipsAssistantToolCallWithoutName(t *testing.T) {
+	params, err := buildParams(
+		[]Message{
+			{
+				Role: "assistant",
+				ToolCalls: []ToolCall{
+					{ID: "tc_1", Name: "", Arguments: map[string]any{"path": "/tmp/a.txt"}},
+				},
+			},
+			{
+				Role:       "tool",
+				ToolCallID: "tc_1",
+				Content:    "content",
+			},
+			{
+				Role:    "user",
+				Content: "next",
+			},
+		},
+		nil,
+		"claude-sonnet-4.6",
+		map[string]any{},
+	)
+	if err != nil {
+		t.Fatalf("buildParams() error = %v", err)
+	}
+
+	if len(params.Messages) != 1 {
+		t.Fatalf("messages len = %d, want 1", len(params.Messages))
+	}
+}
+
+func TestTrimMessagesForAnthropic_KeepsSystemAndLastMessages(t *testing.T) {
+	messages := []Message{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "u1"},
+		{Role: "assistant", Content: "a1"},
+		{Role: "user", Content: "u2"},
+		{Role: "assistant", Content: "a2"},
+	}
+
+	trimmed := trimMessagesForAnthropic(messages, 2)
+	if len(trimmed) != 3 {
+		t.Fatalf("trimmed len = %d, want 3", len(trimmed))
+	}
+	if trimmed[0].Role != "system" {
+		t.Fatalf("first message role = %q, want system", trimmed[0].Role)
+	}
+	if trimmed[1].Content != "u2" || trimmed[2].Content != "a2" {
+		t.Fatalf("unexpected trailing messages: %+v", trimmed)
+	}
+}
+
 func TestBuildParams_WithTools(t *testing.T) {
 	tools := []ToolDefinition{
 		{
@@ -149,7 +202,7 @@ func TestProvider_ChatRoundTrip(t *testing.T) {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
-		if r.Header.Get("Authorization") != "Bearer test-token" {
+		if r.Header.Get("X-Api-Key") != "test-token" {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -264,7 +317,7 @@ func TestProvider_ChatUsesTokenSource(t *testing.T) {
 
 func createAnthropicTestClient(baseURL, token string) *anthropic.Client {
 	c := anthropic.NewClient(
-		anthropicoption.WithAuthToken(token),
+		anthropicoption.WithAPIKey(token),
 		anthropicoption.WithBaseURL(baseURL),
 	)
 	return &c
