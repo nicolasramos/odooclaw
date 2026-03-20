@@ -30,6 +30,7 @@ FROM python:3.11-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     curl \
+    git \
     ca-certificates \
     tzdata \
     && rm -rf /var/lib/apt/lists/*
@@ -56,9 +57,11 @@ RUN groupadd -r odooclaw && useradd -r -g odooclaw -u 1000 -m odooclaw
 # Copy binary from builder
 COPY --from=builder /src/build/odooclaw /usr/local/bin/odooclaw
 
-# Copy Odoo MCP server script
-COPY workspace/skills/odoo-manager/server.py /usr/local/bin/odoo-mcp.py
-RUN chmod +x /usr/local/bin/odoo-mcp.py
+# Copy Odoo MCP server package and dependencies
+COPY workspace/skills/odoo-mcp/requirements.txt /tmp/odoo-mcp-reqs.txt
+RUN pip install --no-cache-dir -r /tmp/odoo-mcp-reqs.txt || true
+COPY workspace/skills/odoo-mcp/src /opt/odoo-mcp
+ENV PYTHONPATH="/opt/odoo-mcp:${PYTHONPATH}"
 
 # Copy Edge TTS MCP server script
 COPY workspace/skills/edge-tts/server.py /usr/local/bin/edge-tts-mcp.py

@@ -185,6 +185,55 @@ OPENAI_API_KEY="sk-your-api-key"
 ODOO_PASSWORD="your-odoo-api-key"
 ```
 
+### Doodba 18 Dev/Test (Practical Local Flow)
+
+If your local Doodba project is in a path like `/Users/nramos/DEV/doodba-18`, this is the recommended open-source friendly flow:
+
+1. Keep OdooClaw source in your Doodba workspace so Compose can build it.
+2. Add `odooclaw` service to `devel.yaml` (or `prod.yaml`) with internal URL `ODOO_URL=http://odoo:8069`.
+3. Store secrets in `.docker/odoo.env` (never commit API keys).
+4. Set Odoo system parameter `odooclaw.webhook_url` to `http://odooclaw:18790/webhook/odoo`.
+5. Rebuild only changed services:
+
+```bash
+docker compose build odoo odooclaw
+docker compose up -d odoo odooclaw
+docker compose logs -f odooclaw
+```
+
+For complete Doodba setup guides:
+- English: `odooclaw/docs/GUIDE_DOODBA_SETUP_EN.md`
+- Spanish: `odooclaw/docs/GUIA_DOODBA_PUESTA_EN_MARCHA_ES.md`
+
+### Browser Copilot in Doodba (Phase 1 MVP)
+
+To enable the new browser-copilot module in the same dev/test stack:
+
+1. Start backend from project root:
+
+```bash
+docker compose -f "odooclaw/browser_copilot/docker-compose.browser-copilot.yml" up --build
+```
+
+2. Configure extension popup:
+   - Backend URL: `http://127.0.0.1:8765`
+   - Token: same value as `BROWSER_COPILOT_TOKEN`
+
+3. Keep secure defaults in phase 1:
+   - `BROWSER_COPILOT_READ_ONLY=true`
+   - allowlisted domains only
+   - explicit user confirmation before action execution
+
+4. Validate end-to-end:
+
+```bash
+./odooclaw/browser_copilot/scripts/smoke_test.sh
+```
+
+See full backend and extension documentation:
+- `odooclaw/browser_copilot/README.md`
+- `browser_extension/README.md`
+
 ### 3. Configuration Files
 
 To facilitate its use in different environments (Docker/Doodba or local binaries), OdooClaw offers two ways to configure it:
