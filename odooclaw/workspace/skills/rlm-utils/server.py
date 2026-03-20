@@ -166,7 +166,8 @@ def list_tools():
                 "properties": {
                     "data": {
                         "type": "array",
-                        "description": "The list of records/data to partition.",
+                        "items": {"type": "object"},
+                        "description": "The list of records/data to partition (list of dicts or strings).",
                     },
                     "chunk_size": {
                         "type": "integer",

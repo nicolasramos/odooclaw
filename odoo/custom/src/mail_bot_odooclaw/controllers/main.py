@@ -144,7 +144,15 @@ class OdooClawController(http.Controller):
 
             # Execute the method safely
             try:
-                result = getattr(safe_env[model], method)(*args, **kwargs_dict)
+                recs = safe_env[model]
+                if args and (isinstance(args[0], int) or (isinstance(args[0], list) and (not args[0] or isinstance(args[0][0], int)))):
+                    if method not in ('search', 'create', 'search_read', 'search_count', 'fields_get'):
+                        recs = recs.browse(args.pop(0))
+                        
+                result = getattr(recs, method)(*args, **kwargs_dict)
+                # Convert RecordSet to list of ids automatically
+                if hasattr(result, '_name') and hasattr(result, 'ids'):
+                    result = result.ids
                 return request.make_json_response({"status": "ok", "result": result})
             except Exception as orm_error:
                 return request.make_json_response(
