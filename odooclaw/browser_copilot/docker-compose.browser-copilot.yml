@@ -1,0 +1,18 @@
+services:
+  browser-copilot:
+    image: python:3.11-slim
+    container_name: odooclaw-browser-copilot
+    working_dir: /workspace
+    environment:
+      BROWSER_COPILOT_ALLOWED_DOMAINS: ${BROWSER_COPILOT_ALLOWED_DOMAINS:-*.odoo.com,localhost,127.0.0.1}
+      BROWSER_COPILOT_TOKEN: ${BROWSER_COPILOT_TOKEN:-dev-token}
+      BROWSER_COPILOT_READ_ONLY: ${BROWSER_COPILOT_READ_ONLY:-true}
+    ports:
+      - "8765:8765"
+    volumes:
+      - ../../:/workspace
+    command: >
+      sh -lc "
+      pip install --no-cache-dir -r /workspace/odooclaw/browser_copilot/requirements.txt &&
+      uvicorn browser_copilot.app:app --host 0.0.0.0 --port 8765 --app-dir /workspace/odooclaw
+      "

@@ -1,6 +1,9 @@
 from odoo import http, SUPERUSER_ID
 from odoo.http import request
 import json
+from markupsafe import Markup
+
+from ..utils.markdown_html import markdown_to_safe_html
 
 
 class OdooClawController(http.Controller):
@@ -50,9 +53,11 @@ class OdooClawController(http.Controller):
                     {"status": "error", "reason": "OdooClaw bot user not found"}
                 )
 
+            message_html = markdown_to_safe_html(message_body)
+
             # Prepare message_post values
             post_values = {
-                "body": message_body,
+                "body": Markup(message_html),
                 "author_id": bot_user.partner_id.id,
                 "message_type": "comment",
             }
@@ -145,14 +150,28 @@ class OdooClawController(http.Controller):
             # Execute the method safely
             try:
                 recs = safe_env[model]
-                if args and (isinstance(args[0], int) or (isinstance(args[0], list) and (not args[0] or isinstance(args[0][0], int)))):
-                    if method not in ('search', 'create', 'search_read', 'search_count', 'fields_get'):
+                if args and (
+                    isinstance(args[0], int)
+                    or (
+                        isinstance(args[0], list)
+                        and (not args[0] or isinstance(args[0][0], int))
+                    )
+                ):
+                    if method not in (
+                        "search",
+                        "create",
+                        "search_read",
+                        "search_count",
+                        "fields_get",
+                    ):
                         recs = recs.browse(args.pop(0))
-                        
+
                 result = getattr(recs, method)(*args, **kwargs_dict)
-                # Convert RecordSet to list of ids automatically
-                if hasattr(result, '_name') and hasattr(result, 'ids'):
-                    result = result.ids
+                if hasattr(result, "_name") and hasattr(result, "ids"):
+                    if method in ("create", "message_post") and len(result.ids) == 1:
+                        result = result.ids[0]
+                    else:
+                        result = result.ids
                 return request.make_json_response({"status": "ok", "result": result})
             except Exception as orm_error:
                 return request.make_json_response(

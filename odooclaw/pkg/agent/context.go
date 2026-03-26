@@ -185,12 +185,23 @@ func (cb *ContextBuilder) InvalidateCache() {
 // invalidation (bootstrap files + memory). Skill roots are handled separately
 // because they require both directory-level and recursive file-level checks.
 func (cb *ContextBuilder) sourcePaths() []string {
+	recentMemoryPaths := []string{}
+	for i := range 3 {
+		date := time.Now().AddDate(0, 0, -i).Format("20060102")
+		recentMemoryPaths = append(recentMemoryPaths, filepath.Join(cb.workspace, "memory", date[:6], date+".md"))
+	}
+
 	return []string{
 		filepath.Join(cb.workspace, "AGENTS.md"),
 		filepath.Join(cb.workspace, "SOUL.md"),
 		filepath.Join(cb.workspace, "USER.md"),
 		filepath.Join(cb.workspace, "IDENTITY.md"),
+		filepath.Join(cb.workspace, "memory"),
 		filepath.Join(cb.workspace, "memory", "MEMORY.md"),
+		cb.memory.SQLitePath(),
+		recentMemoryPaths[0],
+		recentMemoryPaths[1],
+		recentMemoryPaths[2],
 	}
 }
 
@@ -421,7 +432,10 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 //
 // See: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
 // See: https://platform.openai.com/docs/guides/prompt-caching
-func (cb *ContextBuilder) buildDynamicContext(channel, chatID string) string {
+func (cb *ContextBuilder) buildDynamicContext(
+	currentMessage, channel, chatID, senderID string,
+	metadata map[string]string,
+) string {
 	now := time.Now().Format("2006-01-02 15:04 (Monday)")
 	rt := fmt.Sprintf("%s %s, Go %s", runtime.GOOS, runtime.GOARCH, runtime.Version())
 
@@ -430,6 +444,21 @@ func (cb *ContextBuilder) buildDynamicContext(channel, chatID string) string {
 
 	if channel != "" && chatID != "" {
 		fmt.Fprintf(&sb, "\n\n## Current Session\nChannel: %s\nChat ID: %s", channel, chatID)
+		if senderID != "" {
+			fmt.Fprintf(&sb, "\nSender ID: %s", senderID)
+		}
+		appendSessionMetadata(&sb, channel, metadata)
+	}
+
+	relevantMemory := cb.memory.GetRelevantContext(PromptMemoryOptions{
+		Query:    currentMessage,
+		Channel:  channel,
+		ChatID:   chatID,
+		SenderID: senderID,
+		Metadata: metadata,
+	})
+	if relevantMemory != "" {
+		fmt.Fprintf(&sb, "\n\n%s", relevantMemory)
 	}
 
 	return sb.String()
@@ -440,7 +469,8 @@ func (cb *ContextBuilder) BuildMessages(
 	summary string,
 	currentMessage string,
 	media []string,
-	channel, chatID string,
+	channel, chatID, senderID string,
+	metadata map[string]string,
 ) []providers.Message {
 	messages := []providers.Message{}
 
@@ -456,7 +486,7 @@ func (cb *ContextBuilder) BuildMessages(
 	staticPrompt := cb.BuildSystemPromptWithCache()
 
 	// Build short dynamic context (time, runtime, session) — changes per request
-	dynamicCtx := cb.buildDynamicContext(channel, chatID)
+	dynamicCtx := cb.buildDynamicContext(currentMessage, channel, chatID, senderID, metadata)
 
 	// Compose a single system message: static (cached) + dynamic + optional summary.
 	// Keeping all system content in one message ensures every provider adapter can
@@ -538,6 +568,27 @@ func (cb *ContextBuilder) BuildMessages(
 	}
 
 	return messages
+}
+
+func appendSessionMetadata(sb *strings.Builder, channel string, metadata map[string]string) {
+	if len(metadata) == 0 {
+		return
+	}
+
+	if channel == "odoo" {
+		if model := strings.TrimSpace(metadata["model"]); model != "" {
+			fmt.Fprintf(sb, "\nOdoo Model: %s", model)
+		}
+		if resID := strings.TrimSpace(metadata["res_id"]); resID != "" {
+			fmt.Fprintf(sb, "\nOdoo Record ID: %s", resID)
+		}
+		if companyID := strings.TrimSpace(metadata["company_id"]); companyID != "" {
+			fmt.Fprintf(sb, "\nCompany ID: %s", companyID)
+		}
+		if allowedCompanyIDs := strings.TrimSpace(metadata["allowed_company_ids"]); allowedCompanyIDs != "" {
+			fmt.Fprintf(sb, "\nAllowed Company IDs: %s", allowedCompanyIDs)
+		}
+	}
 }
 
 func sanitizeHistoryForProvider(history []providers.Message) []providers.Message {

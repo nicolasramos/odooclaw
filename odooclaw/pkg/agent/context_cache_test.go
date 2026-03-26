@@ -82,7 +82,7 @@ func TestSingleSystemMessage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			msgs := cb.BuildMessages(tt.history, tt.summary, tt.message, nil, "test", "chat1")
+			msgs := cb.BuildMessages(tt.history, tt.summary, tt.message, nil, "test", "chat1", "sender1", nil)
 
 			systemCount := 0
 			for _, m := range msgs {
@@ -151,6 +151,13 @@ func TestMtimeAutoInvalidation(t *testing.T) {
 			contentV1:  "# Memory\nUser likes Go.",
 			contentV2:  "# Memory\nUser likes Rust.",
 			checkField: "User likes Rust",
+		},
+		{
+			name:       "daily note change",
+			file:       filepath.Join("memory", time.Now().Format("200601"), time.Now().Format("20060102")+".md"),
+			contentV1:  "# Today\nInitial note.",
+			contentV2:  "# Today\nUpdated note.",
+			checkField: "Updated note",
 		},
 	}
 
@@ -576,7 +583,7 @@ func TestConcurrentBuildSystemPromptWithCache(t *testing.T) {
 				}
 
 				// Also exercise BuildMessages concurrently
-				msgs := cb.BuildMessages(nil, "", "hello", nil, "test", "chat")
+				msgs := cb.BuildMessages(nil, "", "hello", nil, "test", "chat", "sender1", nil)
 				if len(msgs) < 2 {
 					errs <- "BuildMessages returned fewer than 2 messages"
 					return
@@ -664,6 +671,6 @@ func BenchmarkBuildMessagesWithCache(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = cb.BuildMessages(history, "summary", "new message", nil, "cli", "test")
+		_ = cb.BuildMessages(history, "summary", "new message", nil, "cli", "test", "cron", nil)
 	}
 }
