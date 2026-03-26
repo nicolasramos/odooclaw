@@ -1,6 +1,9 @@
 package agent
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nicolasramos/odooclaw/pkg/providers"
@@ -186,6 +189,50 @@ func TestSanitizeHistoryForProvider_PlainConversation(t *testing.T) {
 		t.Fatalf("expected 4 messages, got %d", len(result))
 	}
 	assertRoles(t, result, "user", "assistant", "user", "assistant")
+}
+
+func TestBuildMessagesIncludesOdooScopedMemoryRecall(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"memory/MEMORY.md": "# Memory\n\nGlobal context.",
+		"memory/scopes/odoo/company-7/entity-res.partner-42.md": "Partner 42 prefers Friday deployment updates.",
+	})
+	defer os.RemoveAll(tmpDir)
+
+	cb := NewContextBuilder(tmpDir)
+	msgs := cb.BuildMessages(
+		nil,
+		"",
+		"please prepare the deployment update",
+		nil,
+		"odoo",
+		"res.partner_42",
+		"18",
+		map[string]string{
+			"company_id": "7",
+			"model":      "res.partner",
+			"res_id":     "42",
+		},
+	)
+
+	if len(msgs) == 0 {
+		t.Fatal("expected messages")
+	}
+	system := msgs[0].Content
+	if !strings.Contains(system, "## Relevant Memory Recall") {
+		t.Fatal("expected relevant memory recall in system prompt")
+	}
+	if !strings.Contains(system, "Partner 42 prefers Friday deployment updates") {
+		t.Fatal("expected scoped memory content in system prompt")
+	}
+	if !strings.Contains(system, "Odoo Model: res.partner") {
+		t.Fatal("expected odoo model in dynamic context")
+	}
+	if !strings.Contains(system, "Company ID: 7") {
+		t.Fatal("expected company id in dynamic context")
+	}
+	if !strings.Contains(system, filepath.Base("entity-res.partner-42.md")) {
+		t.Fatal("expected scoped file name in memory recall")
+	}
 }
 
 func roles(msgs []providers.Message) []string {

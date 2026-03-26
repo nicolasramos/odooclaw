@@ -1,0 +1,7 @@
+{
+  "venvPath": "../..",
+  "venv": ".venv-browser-copilot",
+  "pythonVersion": "3.9",
+  "extraPaths": ["../../.venv-browser-copilot/lib/python3.9/site-packages"],
+  "include": ["."]
+}

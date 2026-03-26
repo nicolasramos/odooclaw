@@ -9,11 +9,67 @@ from odoo_mcp.core.client import OdooClient
 from odoo_mcp.observability.logging import get_logger
 from odoo_mcp.observability.metrics import measure_time
 
-from odoo_mcp.tools import records, actions, introspection, partners, purchases, accounting, chatter, projects, sales, generic
-from odoo_mcp.schemas.records import OdooSearchSchema, OdooReadSchema, OdooSearchReadSchema, OdooCreateSchema, OdooWriteSchema
+from odoo_mcp.tools import (
+    records,
+    actions,
+    introspection,
+    partners,
+    purchases,
+    accounting,
+    chatter,
+    projects,
+    sales,
+    generic,
+    business_ops,
+)
+from odoo_mcp.schemas.records import (
+    OdooSearchSchema,
+    OdooReadSchema,
+    OdooSearchReadSchema,
+    OdooCreateSchema,
+    OdooWriteSchema,
+)
 from odoo_mcp.schemas.actions import OdooInvokeActionSchema
-from odoo_mcp.schemas.business import FindPartnerSchema, CreatePurchaseOrderSchema, CreateVendorInvoiceSchema, GetPartnerSummarySchema, CreateActivitySchema, ListPendingActivitiesSchema, MarkActivityDoneSchema, PostChatterMessageSchema, FindTaskSchema, CreateTaskSchema, UpdateTaskSchema, FindSaleOrderSchema, GetSaleOrderSummarySchema, GetRecordSummarySchema, FindPendingInvoicesSchema, GetInvoiceSummarySchema, GetModelSchemaSchema, CreateCalendarEventSchema, CreateSaleOrderSchema, ConfirmSaleOrderSchema, CreateLeadSchema, GetProductStockSchema, LogTimesheetSchema, RegisterPaymentSchema
-from odoo_mcp.services.invoice_service import find_pending_invoices, get_invoice_summary, register_payment
+from odoo_mcp.schemas.business import (
+    FindPartnerSchema,
+    CreatePurchaseOrderSchema,
+    CreateVendorInvoiceSchema,
+    GetPartnerSummarySchema,
+    CreateActivitySchema,
+    ListPendingActivitiesSchema,
+    MarkActivityDoneSchema,
+    PostChatterMessageSchema,
+    FindTaskSchema,
+    CreateTaskSchema,
+    UpdateTaskSchema,
+    FindSaleOrderSchema,
+    GetSaleOrderSummarySchema,
+    GetRecordSummarySchema,
+    FindPendingInvoicesSchema,
+    GetInvoiceSummarySchema,
+    GetModelSchemaSchema,
+    CreateCalendarEventSchema,
+    CreateSaleOrderSchema,
+    ConfirmSaleOrderSchema,
+    CreateLeadSchema,
+    GetProductStockSchema,
+    LogTimesheetSchema,
+    RegisterPaymentSchema,
+    GetCapabilitiesSchema,
+    CreateHelpdeskTicketSchema,
+    CreateHelpdeskTicketFromPartnerSchema,
+    CreateActivitySummarySchema,
+    CloseActivityWithReasonSchema,
+    DraftTicketEmailSchema,
+    CreateContractLineSchema,
+    ReplaceContractLineSchema,
+    CloseContractLineSchema,
+)
+from odoo_mcp.services.invoice_service import (
+    find_pending_invoices,
+    get_invoice_summary,
+    register_payment,
+)
 from odoo_mcp.services.calendar_service import create_calendar_event
 from odoo_mcp.services.sales_service import create_sale_order, confirm_sale_order
 from odoo_mcp.services.crm_service import create_lead
@@ -23,20 +79,22 @@ from odoo_mcp.services.hr_service import log_timesheet
 _logger = get_logger("server")
 mcp = FastMCP("odoo-mcp")
 
+
 @lru_cache(maxsize=1)
 def get_odoo_client() -> OdooClient:
     url = os.environ.get("ODOO_URL")
     db = os.environ.get("ODOO_DB")
     user = os.environ.get("ODOO_USERNAME")
     pwd = os.environ.get("ODOO_PASSWORD")
-    
+
     if not all([url, db, user, pwd]):
         _logger.error("Missing mandatory Odoo environment variables.")
         sys.exit(1)
-        
+
     session = OdooSession(url, db, user, pwd)
     session.authenticate()
     return OdooClient(session)
+
 
 # Resources (Capa 6)
 @mcp.resource("odoo://context/odoo18-fields-reference")
@@ -95,145 +153,281 @@ def get_odoo18_fields_reference() -> str:
 - Use odoo_find_task tool for task searches
 """
 
+
 @mcp.resource("odoo://models")
 def get_odoo_models() -> str:
     client = get_odoo_client()
     return "List of models available via introspect tool..."
+
 
 @mcp.resource("odoo://model/{model_name}/schema")
 def get_model_schema(model_name: str) -> str:
     client = get_odoo_client()
     return introspection.odoo_model_schema(client, client.odoo_session.uid, model_name)
 
+
 @mcp.resource("odoo://record/{model}/{id}/summary")
 def get_resource_record_summary(model: str, id: str) -> str:
     client = get_odoo_client()
     import json
-    res = generic.odoo_get_record_summary(client, client.odoo_session.uid, model, int(id))
+
+    res = generic.odoo_get_record_summary(
+        client, client.odoo_session.uid, model, int(id)
+    )
     return json.dumps(res, indent=2)
+
 
 @mcp.resource("odoo://record/{model}/{id}/chatter_summary")
 def get_resource_chatter_summary(model: str, id: str) -> str:
     client = get_odoo_client()
     from odoo_mcp.services.generic_service import get_chatter_summary
     import json
+
     res = get_chatter_summary(client, client.odoo_session.uid, model, int(id))
     return json.dumps(res, indent=2)
+
 
 # Tools (Capa 2, 3, 4)
 @mcp.tool()
 def odoo_search(payload: OdooSearchSchema) -> list:
     with measure_time("odoo_search"):
         client = get_odoo_client()
-        return records.odoo_search(client, payload.sender_id or client.odoo_session.uid, payload.model, payload.domain, payload.limit)
+        return records.odoo_search(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.model,
+            payload.domain,
+            payload.limit,
+        )
+
 
 @mcp.tool()
 def odoo_read(payload: OdooReadSchema) -> list:
     with measure_time("odoo_read"):
         client = get_odoo_client()
-        return records.odoo_read(client, payload.sender_id or client.odoo_session.uid, payload.model, payload.ids, payload.fields)
+        return records.odoo_read(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.model,
+            payload.ids,
+            payload.fields,
+        )
+
 
 @mcp.tool()
 def odoo_create(payload: OdooCreateSchema) -> int:
     with measure_time("odoo_create"):
         client = get_odoo_client()
-        return records.odoo_create(client, payload.sender_id or client.odoo_session.uid, payload.model, payload.values)
+        return records.odoo_create(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.model,
+            payload.values,
+        )
+
 
 @mcp.tool()
 def odoo_write(payload: OdooWriteSchema) -> bool:
     with measure_time("odoo_write"):
         client = get_odoo_client()
-        return records.odoo_write(client, payload.sender_id or client.odoo_session.uid, payload.model, payload.ids, payload.values)
+        return records.odoo_write(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.model,
+            payload.ids,
+            payload.values,
+        )
+
 
 @mcp.tool()
 def odoo_invoke_action(payload: OdooInvokeActionSchema) -> Any:
     with measure_time("odoo_invoke_action"):
         client = get_odoo_client()
-        return actions.odoo_invoke_action(client, payload.sender_id or client.odoo_session.uid, payload.model, payload.method, payload.ids)
+        return actions.odoo_invoke_action(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.model,
+            payload.method,
+            payload.ids,
+        )
+
 
 @mcp.tool()
 def odoo_find_partner(payload: FindPartnerSchema) -> int:
     with measure_time("odoo_find_partner"):
         client = get_odoo_client()
-        return partners.odoo_find_partner(client, payload.sender_id or client.odoo_session.uid, payload.name, payload.vat, payload.email)
+        return partners.odoo_find_partner(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.name,
+            payload.vat,
+            payload.email,
+        )
+
 
 @mcp.tool()
 def odoo_get_partner_summary(payload: GetPartnerSummarySchema) -> dict:
     with measure_time("odoo_get_partner_summary"):
         client = get_odoo_client()
-        return partners.odoo_get_partner_summary(client, payload.sender_id or client.odoo_session.uid, payload.partner_id)
+        return partners.odoo_get_partner_summary(
+            client, payload.sender_id or client.odoo_session.uid, payload.partner_id
+        )
+
 
 @mcp.tool()
 def odoo_create_activity(payload: CreateActivitySchema) -> int:
     with measure_time("odoo_create_activity"):
         client = get_odoo_client()
-        return chatter.odoo_create_activity(client, payload.sender_id or client.odoo_session.uid, payload.model, payload.res_id, payload.summary, payload.note, payload.user_id)
+        return chatter.odoo_create_activity(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.model,
+            payload.res_id,
+            payload.summary,
+            payload.note,
+            payload.user_id,
+        )
+
 
 @mcp.tool()
 def odoo_list_pending_activities(payload: ListPendingActivitiesSchema) -> list:
     with measure_time("odoo_list_pending_activities"):
         client = get_odoo_client()
-        return chatter.odoo_list_pending_activities(client, payload.sender_id or client.odoo_session.uid, payload.model, payload.user_id)
+        return chatter.odoo_list_pending_activities(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.model,
+            payload.user_id,
+        )
+
 
 @mcp.tool()
 def odoo_mark_activity_done(payload: MarkActivityDoneSchema) -> bool:
     with measure_time("odoo_mark_activity_done"):
         client = get_odoo_client()
-        return chatter.odoo_mark_activity_done(client, payload.sender_id or client.odoo_session.uid, payload.activity_id, payload.feedback)
+        return chatter.odoo_mark_activity_done(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.activity_id,
+            payload.feedback,
+        )
+
 
 @mcp.tool()
 def odoo_post_chatter_message(payload: PostChatterMessageSchema) -> int:
     with measure_time("odoo_post_chatter_message"):
         client = get_odoo_client()
-        return chatter.odoo_post_chatter_message(client, payload.sender_id or client.odoo_session.uid, payload.model, payload.res_id, payload.body)
+        return chatter.odoo_post_chatter_message(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.model,
+            payload.res_id,
+            payload.body,
+        )
+
 
 @mcp.tool()
 def odoo_find_task(payload: FindTaskSchema) -> list:
     with measure_time("odoo_find_task"):
         client = get_odoo_client()
-        return projects.odoo_find_task(client, payload.sender_id or client.odoo_session.uid, payload.name, payload.project_id, payload.stage_id, payload.limit)
+        return projects.odoo_find_task(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.name,
+            payload.project_id,
+            payload.stage_id,
+            payload.limit,
+        )
+
 
 @mcp.tool()
 def odoo_create_task(payload: CreateTaskSchema) -> int:
     with measure_time("odoo_create_task"):
         client = get_odoo_client()
-        return projects.odoo_create_task(client, payload.sender_id or client.odoo_session.uid, payload.name, payload.project_id, payload.description, payload.assigned_to, payload.deadline)
+        return projects.odoo_create_task(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.name,
+            payload.project_id,
+            payload.description,
+            payload.assigned_to,
+            payload.deadline,
+        )
+
 
 @mcp.tool()
 def odoo_update_task(payload: UpdateTaskSchema) -> bool:
     with measure_time("odoo_update_task"):
         client = get_odoo_client()
-        return projects.odoo_update_task(client, payload.sender_id or client.odoo_session.uid, payload.task_id, payload.stage_id, payload.assigned_to, payload.deadline)
+        return projects.odoo_update_task(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.task_id,
+            payload.stage_id,
+            payload.assigned_to,
+            payload.deadline,
+        )
+
 
 @mcp.tool()
 def odoo_find_sale_order(payload: FindSaleOrderSchema) -> list:
     with measure_time("odoo_find_sale_order"):
         client = get_odoo_client()
-        return sales.odoo_find_sale_order(client, payload.sender_id or client.odoo_session.uid, payload.name, payload.partner_id, payload.state, payload.limit)
+        return sales.odoo_find_sale_order(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.name,
+            payload.partner_id,
+            payload.state,
+            payload.limit,
+        )
+
 
 @mcp.tool()
 def odoo_get_sale_order_summary(payload: GetSaleOrderSummarySchema) -> dict:
     with measure_time("odoo_get_sale_order_summary"):
         client = get_odoo_client()
-        return sales.odoo_get_sale_order_summary(client, payload.sender_id or client.odoo_session.uid, payload.order_id)
+        return sales.odoo_get_sale_order_summary(
+            client, payload.sender_id or client.odoo_session.uid, payload.order_id
+        )
+
 
 @mcp.tool()
 def odoo_get_record_summary(payload: GetRecordSummarySchema) -> dict:
     with measure_time("odoo_get_record_summary"):
         client = get_odoo_client()
-        return generic.odoo_get_record_summary(client, payload.sender_id or client.odoo_session.uid, payload.model, payload.res_id)
+        return generic.odoo_get_record_summary(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.model,
+            payload.res_id,
+        )
+
 
 @mcp.tool()
 def odoo_create_purchase_order(payload: CreatePurchaseOrderSchema) -> int:
     with measure_time("odoo_create_purchase_order"):
         client = get_odoo_client()
-        return purchases.odoo_create_purchase_order(client, payload.sender_id or client.odoo_session.uid, payload.partner_id, [line.dict() for line in payload.lines])
+        return purchases.odoo_create_purchase_order(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.partner_id,
+            [line.dict() for line in payload.lines],
+        )
+
 
 @mcp.tool()
 def odoo_create_vendor_invoice(payload: CreateVendorInvoiceSchema) -> int:
     with measure_time("odoo_create_vendor_invoice"):
         client = get_odoo_client()
-        return accounting.odoo_create_vendor_invoice(client, payload.sender_id or client.odoo_session.uid, payload.partner_id, [line.dict() for line in payload.lines], payload.ref)
+        return accounting.odoo_create_vendor_invoice(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.partner_id,
+            [line.dict() for line in payload.lines],
+            payload.ref,
+        )
+
 
 if __name__ == "__main__":
     mcp.run()
@@ -254,7 +448,7 @@ def odoo_find_pending_invoices(payload: FindPendingInvoicesSchema) -> list:
             payload.sender_id or client.odoo_session.uid,
             payload.partner_id,
             payload.move_type,
-            payload.limit
+            payload.limit,
         )
 
 
@@ -263,7 +457,9 @@ def odoo_get_invoice_summary(payload: GetInvoiceSummarySchema) -> dict:
     """Get complete details of a specific invoice (account.move), including lines."""
     with measure_time("odoo_get_invoice_summary"):
         client = get_odoo_client()
-        return get_invoice_summary(client, payload.sender_id or client.odoo_session.uid, payload.move_id)
+        return get_invoice_summary(
+            client, payload.sender_id or client.odoo_session.uid, payload.move_id
+        )
 
 
 @mcp.tool()
@@ -271,7 +467,140 @@ def odoo_get_model_schema(payload: GetModelSchemaSchema) -> str:
     """Retrieve the fields and schema for a given Odoo model (e.g. 'res.partner'). Very useful if a field search fails."""
     with measure_time("odoo_get_model_schema"):
         client = get_odoo_client()
-        return introspection.odoo_model_schema(client, payload.sender_id or client.odoo_session.uid, payload.model)
+        return introspection.odoo_model_schema(
+            client, payload.sender_id or client.odoo_session.uid, payload.model
+        )
+
+
+@mcp.tool()
+def odoo_get_capabilities(payload: GetCapabilitiesSchema) -> dict:
+    with measure_time("odoo_get_capabilities"):
+        client = get_odoo_client()
+        return business_ops.odoo_get_capabilities(
+            client, payload.sender_id or client.odoo_session.uid
+        )
+
+
+@mcp.tool()
+def odoo_create_helpdesk_ticket(payload: CreateHelpdeskTicketSchema) -> dict:
+    with measure_time("odoo_create_helpdesk_ticket"):
+        client = get_odoo_client()
+        return business_ops.odoo_create_helpdesk_ticket(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.name,
+            payload.description,
+            payload.partner_id,
+            payload.email,
+            payload.team_id,
+            payload.priority,
+        )
+
+
+@mcp.tool()
+def odoo_create_helpdesk_ticket_from_partner(
+    payload: CreateHelpdeskTicketFromPartnerSchema,
+) -> dict:
+    with measure_time("odoo_create_helpdesk_ticket_from_partner"):
+        client = get_odoo_client()
+        return business_ops.odoo_create_helpdesk_ticket_from_partner(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.partner_id,
+            payload.name,
+            payload.description,
+            payload.team_id,
+            payload.priority,
+        )
+
+
+@mcp.tool()
+def odoo_create_activity_summary(payload: CreateActivitySummarySchema) -> dict:
+    with measure_time("odoo_create_activity_summary"):
+        client = get_odoo_client()
+        return business_ops.odoo_create_activity_summary(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.model,
+            payload.res_id,
+            payload.summary,
+            payload.note,
+            payload.user_id,
+        )
+
+
+@mcp.tool()
+def odoo_close_activity_with_reason(payload: CloseActivityWithReasonSchema) -> dict:
+    with measure_time("odoo_close_activity_with_reason"):
+        client = get_odoo_client()
+        return business_ops.odoo_close_activity_with_reason(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.activity_id,
+            payload.reason,
+        )
+
+
+@mcp.tool()
+def odoo_draft_ticket_email(payload: DraftTicketEmailSchema) -> dict:
+    with measure_time("odoo_draft_ticket_email"):
+        client = get_odoo_client()
+        return business_ops.odoo_draft_ticket_email(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.ticket_id,
+            payload.subject,
+            payload.body,
+            payload.email_to,
+        )
+
+
+@mcp.tool()
+def odoo_create_contract_line(payload: CreateContractLineSchema) -> dict:
+    with measure_time("odoo_create_contract_line"):
+        client = get_odoo_client()
+        return business_ops.odoo_create_contract_line(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.contract_id,
+            payload.product_id,
+            payload.name,
+            payload.quantity,
+            payload.price_unit,
+            payload.date_start,
+            payload.date_end,
+        )
+
+
+@mcp.tool()
+def odoo_replace_contract_line(payload: ReplaceContractLineSchema) -> dict:
+    with measure_time("odoo_replace_contract_line"):
+        client = get_odoo_client()
+        return business_ops.odoo_replace_contract_line(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.line_id,
+            payload.product_id,
+            payload.name,
+            payload.quantity,
+            payload.price_unit,
+            payload.date_start,
+            payload.date_end,
+            payload.close_reason,
+        )
+
+
+@mcp.tool()
+def odoo_close_contract_line(payload: CloseContractLineSchema) -> dict:
+    with measure_time("odoo_close_contract_line"):
+        client = get_odoo_client()
+        return business_ops.odoo_close_contract_line(
+            client,
+            payload.sender_id or client.odoo_session.uid,
+            payload.line_id,
+            payload.reason,
+            payload.close_date,
+        )
 
 
 @mcp.tool()
@@ -287,8 +616,9 @@ def odoo_create_calendar_event(payload: CreateCalendarEventSchema) -> int:
             stop=payload.stop,
             partner_ids=payload.partner_ids,
             allday=payload.allday,
-            description=payload.description
+            description=payload.description,
         )
+
 
 @mcp.tool()
 def odoo_create_sale_order(payload: CreateSaleOrderSchema) -> int:
@@ -299,8 +629,9 @@ def odoo_create_sale_order(payload: CreateSaleOrderSchema) -> int:
             client=client,
             sender_id=payload.sender_id or client.odoo_session.uid,
             partner_id=payload.partner_id,
-            lines=payload.lines
+            lines=payload.lines,
         )
+
 
 @mcp.tool()
 def odoo_confirm_sale_order(payload: ConfirmSaleOrderSchema) -> bool:
@@ -310,8 +641,9 @@ def odoo_confirm_sale_order(payload: ConfirmSaleOrderSchema) -> bool:
         return confirm_sale_order(
             client=client,
             sender_id=payload.sender_id or client.odoo_session.uid,
-            order_id=payload.order_id
+            order_id=payload.order_id,
         )
+
 
 @mcp.tool()
 def odoo_create_lead(payload: CreateLeadSchema) -> int:
@@ -325,8 +657,9 @@ def odoo_create_lead(payload: CreateLeadSchema) -> int:
             partner_id=payload.partner_id,
             expected_revenue=payload.expected_revenue,
             probability=payload.probability,
-            description=payload.description
+            description=payload.description,
         )
+
 
 @mcp.tool()
 def odoo_get_product_stock(payload: GetProductStockSchema) -> list:
@@ -337,8 +670,9 @@ def odoo_get_product_stock(payload: GetProductStockSchema) -> list:
             client=client,
             sender_id=payload.sender_id or client.odoo_session.uid,
             product_id=payload.product_id,
-            location_id=payload.location_id
+            location_id=payload.location_id,
         )
+
 
 @mcp.tool()
 def odoo_log_timesheet(payload: LogTimesheetSchema) -> int:
@@ -353,8 +687,9 @@ def odoo_log_timesheet(payload: LogTimesheetSchema) -> int:
             unit_amount=payload.unit_amount,
             date=payload.date,
             task_id=payload.task_id,
-            employee_id=payload.employee_id
+            employee_id=payload.employee_id,
         )
+
 
 @mcp.tool()
 def odoo_register_payment(payload: RegisterPaymentSchema) -> bool:
@@ -367,7 +702,5 @@ def odoo_register_payment(payload: RegisterPaymentSchema) -> bool:
             invoice_id=payload.invoice_id,
             amount=payload.amount,
             payment_date=payload.payment_date,
-            journal_id=payload.journal_id
+            journal_id=payload.journal_id,
         )
-
-

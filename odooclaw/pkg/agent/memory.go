@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nicolasramos/odooclaw/pkg/fileutil"
+	corememory "github.com/nicolasramos/odooclaw/pkg/memory"
 )
 
 // MemoryStore manages persistent memory for the agent.
@@ -23,6 +24,15 @@ type MemoryStore struct {
 	workspace  string
 	memoryDir  string
 	memoryFile string
+	sqlite     *corememory.Store
+}
+
+type PromptMemoryOptions struct {
+	Query    string
+	Channel  string
+	ChatID   string
+	SenderID string
+	Metadata map[string]string
 }
 
 // NewMemoryStore creates a new MemoryStore with the given workspace path.
@@ -38,6 +48,7 @@ func NewMemoryStore(workspace string) *MemoryStore {
 		workspace:  workspace,
 		memoryDir:  memoryDir,
 		memoryFile: memoryFile,
+		sqlite:     corememory.NewStore(memoryDir),
 	}
 }
 
@@ -62,7 +73,10 @@ func (ms *MemoryStore) ReadLongTerm() string {
 func (ms *MemoryStore) WriteLongTerm(content string) error {
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
 	// Using 0o600 (owner read/write only) for secure default permissions.
-	return fileutil.WriteFileAtomic(ms.memoryFile, []byte(content), 0o600)
+	if err := fileutil.WriteFileAtomic(ms.memoryFile, []byte(content), 0o600); err != nil {
+		return err
+	}
+	return ms.syncFile(ms.memoryFile)
 }
 
 // ReadToday reads today's daily note.
@@ -102,7 +116,10 @@ func (ms *MemoryStore) AppendToday(content string) error {
 	}
 
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
-	return fileutil.WriteFileAtomic(todayFile, []byte(newContent), 0o600)
+	if err := fileutil.WriteFileAtomic(todayFile, []byte(newContent), 0o600); err != nil {
+		return err
+	}
+	return ms.syncFile(todayFile)
 }
 
 // GetRecentDailyNotes returns daily notes from the last N days.
@@ -132,6 +149,12 @@ func (ms *MemoryStore) GetRecentDailyNotes(days int) string {
 // GetMemoryContext returns formatted memory context for the agent prompt.
 // Includes long-term memory and recent daily notes.
 func (ms *MemoryStore) GetMemoryContext() string {
+	if ms.sqlite != nil {
+		if context, err := ms.sqlite.GetContext(3, ms.memoryFile); err == nil {
+			return context
+		}
+	}
+
 	longTerm := ms.ReadLongTerm()
 	recentNotes := ms.GetRecentDailyNotes(3)
 
@@ -155,4 +178,37 @@ func (ms *MemoryStore) GetMemoryContext() string {
 	}
 
 	return sb.String()
+}
+
+func (ms *MemoryStore) GetRelevantContext(opts PromptMemoryOptions) string {
+	if ms.sqlite == nil {
+		return ""
+	}
+
+	context, err := ms.sqlite.BuildRelevantContext(corememory.SearchOptions{
+		Query:    opts.Query,
+		Limit:    3,
+		Channel:  opts.Channel,
+		ChatID:   opts.ChatID,
+		SenderID: opts.SenderID,
+		Metadata: opts.Metadata,
+	})
+	if err != nil {
+		return ""
+	}
+	return context
+}
+
+func (ms *MemoryStore) syncFile(path string) error {
+	if ms.sqlite == nil {
+		return nil
+	}
+	return ms.sqlite.SyncFile(path)
+}
+
+func (ms *MemoryStore) SQLitePath() string {
+	if ms.sqlite == nil {
+		return ""
+	}
+	return ms.sqlite.DBPath()
 }
