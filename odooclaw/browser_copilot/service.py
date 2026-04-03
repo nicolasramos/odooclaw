@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+import secrets
 from typing import Any, Optional
 
 from .detector_odoo import detect_odoo_context
 from .prompts import build_planning_hint
 from .schemas import (
+    BrowserPairingCodeResponse,
+    BrowserPairingLinkResponse,
+    BrowserContextResponse,
+    BrowserVisibleTable,
     ActionType,
     PlanResponse,
     SnapshotAnalysis,
@@ -25,15 +31,197 @@ IMPORTANT_FIELD_HINTS = {
 }
 
 
+SNAPSHOT_TTL_SECONDS = 300
+PAIRING_TTL_MINUTES = 30
+
+
+@dataclass
+class PairingRecord:
+    code: str
+    channel: str
+    chat_id: str
+    sender_id: str
+    expires_at: datetime
+
+
+@dataclass
+class StoredSnapshot:
+    snapshot: SnapshotPayload
+    analysis: SnapshotAnalysis
+    shared_at: datetime
+
+
 @dataclass
 class SnapshotMemory:
-    latest_by_domain: dict[str, SnapshotPayload] = field(default_factory=dict)
+    latest_by_domain: dict[str, StoredSnapshot] = field(default_factory=dict)
+    latest_by_session: dict[str, StoredSnapshot] = field(default_factory=dict)
+    pairings: dict[str, PairingRecord] = field(default_factory=dict)
 
-    def store(self, snapshot: SnapshotPayload) -> None:
-        self.latest_by_domain[snapshot.page.domain] = snapshot
+    def store(self, snapshot: SnapshotPayload, analysis: SnapshotAnalysis) -> None:
+        stored = StoredSnapshot(
+            snapshot=snapshot,
+            analysis=analysis,
+            shared_at=datetime.now(timezone.utc),
+        )
+        self.latest_by_domain[snapshot.page.domain] = stored
+        session_key = build_session_lookup_key(snapshot, analysis)
+        if session_key:
+            self.latest_by_session[session_key] = stored
 
     def latest(self, domain: str) -> Optional[SnapshotPayload]:
-        return self.latest_by_domain.get(domain)
+        stored = self.latest_by_domain.get(domain)
+        if stored is None:
+            return None
+        if is_snapshot_stale(stored):
+            self.latest_by_domain.pop(domain, None)
+            return None
+        return stored.snapshot
+
+    def resolve(self, channel: str, chat_id: str) -> Optional[StoredSnapshot]:
+        key = normalize_session_lookup_key(channel, chat_id)
+        if not key:
+            return None
+        stored = self.latest_by_session.get(key)
+        if stored is None:
+            return None
+        if is_snapshot_stale(stored):
+            self.latest_by_session.pop(key, None)
+            return None
+        return stored
+
+    def create_pairing(
+        self, channel: str, chat_id: str, sender_id: str
+    ) -> PairingRecord:
+        self.cleanup_pairings()
+        code = generate_pairing_code()
+        while code in self.pairings:
+            code = generate_pairing_code()
+        record = PairingRecord(
+            code=code,
+            channel=channel,
+            chat_id=chat_id,
+            sender_id=sender_id,
+            expires_at=datetime.now(timezone.utc)
+            + timedelta(minutes=PAIRING_TTL_MINUTES),
+        )
+        self.pairings[code] = record
+        return record
+
+    def get_pairing(self, code: str) -> Optional[PairingRecord]:
+        self.cleanup_pairings()
+        normalized = normalize_pairing_code(code)
+        if not normalized:
+            return None
+        record = self.pairings.get(normalized)
+        if record is None:
+            return None
+        if record.expires_at <= datetime.now(timezone.utc):
+            self.pairings.pop(normalized, None)
+            return None
+        return record
+
+    def cleanup_pairings(self) -> None:
+        now = datetime.now(timezone.utc)
+        expired = [
+            code for code, record in self.pairings.items() if record.expires_at <= now
+        ]
+        for code in expired:
+            self.pairings.pop(code, None)
+
+
+def normalize_session_lookup_key(channel: str, chat_id: str) -> str:
+    normalized_channel = (channel or "").strip().lower()
+    normalized_chat = (chat_id or "").strip()
+    if not normalized_channel or not normalized_chat:
+        return ""
+    return f"{normalized_channel}::{normalized_chat}"
+
+
+def normalize_pairing_code(code: str) -> str:
+    value = "".join(ch for ch in (code or "").upper() if ch.isalnum())
+    if len(value) != 6:
+        return ""
+    return value
+
+
+def generate_pairing_code() -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(6))
+
+
+def build_session_lookup_key(
+    snapshot: SnapshotPayload, analysis: SnapshotAnalysis
+) -> str:
+    if snapshot.channel and snapshot.chat_id:
+        return normalize_session_lookup_key(snapshot.channel, snapshot.chat_id)
+
+    app = analysis.app
+    if app.detected == "odoo" and app.model and app.record_id:
+        return normalize_session_lookup_key("odoo", f"{app.model}_{app.record_id}")
+
+    return ""
+
+
+def is_snapshot_stale(stored: StoredSnapshot) -> bool:
+    age = datetime.now(timezone.utc) - stored.shared_at
+    return age.total_seconds() > SNAPSHOT_TTL_SECONDS
+
+
+def build_visible_text_summary(value: str, max_len: int = 500) -> str:
+    text = " ".join((value or "").split())
+    if len(text) <= max_len:
+        return text
+    return text[:max_len].rstrip() + "..."
+
+
+def build_visible_tables(snapshot: SnapshotPayload) -> list[BrowserVisibleTable]:
+    tables: list[BrowserVisibleTable] = []
+    for table in snapshot.tables[:3]:
+        rows = [
+            row[:10] for row in table.rows[:12] if any(cell.strip() for cell in row)
+        ]
+        footer = [cell for cell in table.footer[:10] if cell.strip()]
+        headers = [cell for cell in table.headers[:10] if cell.strip()]
+        if not headers and not rows:
+            continue
+        tables.append(
+            BrowserVisibleTable(
+                id=table.id,
+                title=table.title,
+                headers=headers,
+                rows=rows,
+                footer=footer,
+                row_count=table.row_count or len(rows),
+            )
+        )
+    return tables
+
+
+def build_browser_context_response(
+    stored: Optional[StoredSnapshot],
+) -> BrowserContextResponse:
+    if stored is None:
+        return BrowserContextResponse(found=False)
+
+    age_seconds = max(
+        0,
+        int((datetime.now(timezone.utc) - stored.shared_at).total_seconds()),
+    )
+    return BrowserContextResponse(
+        found=True,
+        shared_at=stored.shared_at,
+        age_seconds=age_seconds,
+        page_url=stored.snapshot.page.url,
+        page_title=stored.snapshot.page.title,
+        domain=stored.snapshot.page.domain,
+        app=stored.analysis.app,
+        headings=stored.snapshot.headings[:10],
+        breadcrumbs=stored.snapshot.breadcrumbs[:6],
+        visible_fields=stored.analysis.app.fields_visible[:20],
+        main_buttons=stored.analysis.app.main_buttons_visible[:12],
+        visible_text_summary=build_visible_text_summary(stored.snapshot.visible_text),
+        visible_tables=build_visible_tables(stored.snapshot),
+    )
 
 
 class BrowserCopilotService:
@@ -41,20 +229,22 @@ class BrowserCopilotService:
         self._memory = SnapshotMemory()
 
     def process_snapshot(self, snapshot: SnapshotPayload) -> SnapshotAnalysis:
+        self._apply_pairing(snapshot)
         detection = detect_odoo_context(snapshot)
-        self._memory.store(snapshot)
 
         issues = self._detect_obvious_issues(snapshot, detection.model)
         next_actions = self._next_actions(snapshot, detection.detected)
         summary = self._build_summary(snapshot, detection.detected)
 
-        return SnapshotAnalysis(
+        analysis = SnapshotAnalysis(
             status="ok",
             app=detection,
             summary=summary,
             issues=issues,
             suggested_next_actions=next_actions,
         )
+        self._memory.store(snapshot, analysis)
+        return analysis
 
     def build_plan(
         self, snapshot: SnapshotPayload, instruction: str, read_only: bool
@@ -64,51 +254,17 @@ class BrowserCopilotService:
         intent = self._classify_intent(lowered)
         reasoning_summary = self._reasoning_snapshot(snapshot, intent)
 
-        analysis = self.process_snapshot(snapshot)
-        detected_app = analysis.app
-
         actions: list[SuggestedAction] = []
-        if not read_only:
-            actions = self._suggest_actions(
-                snapshot, lowered, intent, detected_app.model
-            )
-
-        confidence = 0.88 if detected_app.detected == "odoo" else 0.72
-        high_confidence_intents = {
-            "summarize_record",
-            "audit_form",
-            "list_available_buttons",
-            "improve_quote",
-            "analyze_pricing",
-            "analyze_payment_terms",
-        }
-        if intent in high_confidence_intents:
-            confidence += 0.08
-        if actions:
-            confidence += 0.03
-        confidence = min(confidence, 0.98)
-
-        return PlanResponse(
-            intent=intent,
-            reasoning_summary=reasoning_summary,
-            actions_suggested=actions,
-            confidence=confidence,
-        )
+        if not read_only and intent in {"fill_missing_data", "perform_form_action"}:
+            actions = self._suggest_actions(snapshot, lowered)
 
         confidence = 0.88 if snapshot.app.detected == "odoo" else 0.72
-        high_confidence_intents = {
+        if not actions and intent in {
             "summarize_record",
             "audit_form",
             "list_available_buttons",
-            "improve_quote",
-            "analyze_pricing",
-            "analyze_payment_terms",
-        }
-        if intent in high_confidence_intents:
-            confidence += 0.08
-        if actions:
-            confidence += 0.03
-        confidence = min(confidence, 0.98)
+        }:
+            confidence += 0.05
         confidence = min(confidence, 0.97)
 
         return PlanResponse(
@@ -120,6 +276,47 @@ class BrowserCopilotService:
 
     def latest_snapshot(self, domain: str) -> Optional[SnapshotPayload]:
         return self._memory.latest(domain)
+
+    def resolve_context(self, channel: str, chat_id: str) -> BrowserContextResponse:
+        stored = self._memory.resolve(channel, chat_id)
+        return build_browser_context_response(stored)
+
+    def create_pairing(
+        self, channel: str, chat_id: str, sender_id: str
+    ) -> BrowserPairingCodeResponse:
+        record = self._memory.create_pairing(channel, chat_id, sender_id)
+        return BrowserPairingCodeResponse(
+            ok=True,
+            code=record.code,
+            expires_at=record.expires_at,
+            channel=record.channel,
+            chat_id=record.chat_id,
+        )
+
+    def link_pairing(self, code: str) -> BrowserPairingLinkResponse:
+        record = self._memory.get_pairing(code)
+        if record is None:
+            return BrowserPairingLinkResponse(
+                linked=False, code=normalize_pairing_code(code) or code
+            )
+        return BrowserPairingLinkResponse(
+            linked=True,
+            code=record.code,
+            channel=record.channel,
+            chat_id=record.chat_id,
+            expires_at=record.expires_at,
+        )
+
+    def _apply_pairing(self, snapshot: SnapshotPayload) -> None:
+        if snapshot.channel and snapshot.chat_id:
+            return
+        record = self._memory.get_pairing(snapshot.pairing_code or "")
+        if record is None:
+            return
+        snapshot.channel = record.channel
+        snapshot.chat_id = record.chat_id
+        if not snapshot.sender_id:
+            snapshot.sender_id = record.sender_id
 
     def _build_summary(self, snapshot: SnapshotPayload, detected: str) -> str:
         element_count = len(snapshot.elements)
@@ -170,114 +367,19 @@ class BrowserCopilotService:
         return suggestions[:5]
 
     def _classify_intent(self, instruction: str) -> str:
-        lowered = instruction.lower()
-
-        # Consultas de resumen/información
-        if any(
-            token in lowered
-            for token in {
-                "resume",
-                "resumen",
-                "summary",
-                "info",
-                "informacion",
-                "muestrame",
-                "ensename",
-            }
-        ):
+        if any(token in instruction for token in {"resume", "resumen", "summary"}):
             return "summarize_record"
-
-        # Consultas de auditoría/errores
         if any(
-            token in lowered
-            for token in {
-                "falta",
-                "missing",
-                "error",
-                "errores",
-                "audit",
-                "auditar",
-                "revisar",
-                "check",
-            }
+            token in instruction for token in {"falta", "missing", "error", "errores"}
         ):
             return "audit_form"
-
-        # Consultas sobre botones disponibles
-        if any(
-            token in lowered
-            for token in {
-                "boton",
-                "botones",
-                "buttons",
-                "acciones",
-                "actions",
-                "puedo hacer",
-                "que puedo",
-            }
-        ):
+        if any(token in instruction for token in {"boton", "botones", "buttons"}):
             return "list_available_buttons"
-
-        # Consultas de completar/rellenar
         if any(
-            token in lowered
-            for token in {
-                "rellena",
-                "fill",
-                "completa",
-                "complete",
-                "completar",
-                "llenar",
-                "faltan datos",
-            }
+            token in instruction
+            for token in {"rellena", "fill", "completa", "complete"}
         ):
             return "fill_missing_data"
-
-        # Consultas de mejora/optimización para presupuestos
-        if any(
-            token in lowered
-            for token in {
-                "mejorar",
-                "mejora",
-                "optimizar",
-                "optimizacion",
-                "mejoremos",
-                "como mejorar",
-                "como mejoramos",
-            }
-        ):
-            return "improve_quote"
-
-        # Consultas sobre descuentos/precios
-        if any(
-            token in lowered
-            for token in {
-                "descuento",
-                "discount",
-                "precio",
-                "price",
-                "rebaja",
-                "oferta",
-                "mejor precio",
-            }
-        ):
-            return "analyze_pricing"
-
-        # Consultas sobre términos de pago/plazos
-        if any(
-            token in lowered
-            for token in {
-                "plazo",
-                "pago",
-                "terminos",
-                "terms",
-                "condiciones",
-                "vencimiento",
-                "vence",
-            }
-        ):
-            return "analyze_payment_terms"
-
         return "perform_form_action"
 
     def _reasoning_snapshot(self, snapshot: SnapshotPayload, intent: str) -> str:
@@ -287,21 +389,18 @@ class BrowserCopilotService:
         )
 
     def _suggest_actions(
-        self,
-        snapshot: SnapshotPayload,
-        instruction: str,
-        intent: str,
-        model: Optional[str],
+        self, snapshot: SnapshotPayload, instruction: str
     ) -> list[SuggestedAction]:
         actions: list[SuggestedAction] = []
-        lowered = instruction.lower()
+        empty_inputs = [
+            element
+            for element in snapshot.elements
+            if element.type in {"input", "textarea"}
+            and element.enabled
+            and not (element.value or "").strip()
+        ]
 
-        # Acciones específicas para sale.order
-        if model == "sale.order":
-            actions.extend(self._suggest_sale_order_actions(snapshot, lowered, intent))
-
-        # Acciones genéricas
-        if "guardar" in lowered or "save" in lowered:
+        if "guardar" in instruction or "save" in instruction:
             save_button = self._find_button(snapshot.elements, {"save", "guardar"})
             if save_button:
                 actions.append(
@@ -310,189 +409,22 @@ class BrowserCopilotService:
                         target=ActionTarget(
                             element_id=save_button.id, selector=save_button.selector
                         ),
-                        reason="Guardar los cambios del pedido.",
+                        reason="Save button detected and user asked for a save-related step.",
                     )
                 )
 
-        # Rellenar campos vacíos solo si el intent es de completar datos
-        if intent == "fill_missing_data":
-            empty_inputs = [
-                element
-                for element in snapshot.elements
-                if element.type in {"input", "textarea"}
-                and element.enabled
-                and not (element.value or "").strip()
-            ]
-            if empty_inputs:
-                first = empty_inputs[0]
-                actions.append(
-                    SuggestedAction(
-                        action_type=ActionType.SET_VALUE,
-                        target=ActionTarget(
-                            element_id=first.id, selector=first.selector
-                        ),
-                        value="Por completar",
-                        reason="Campo obligatorio vacío detectado.",
-                    )
+        if empty_inputs:
+            first = empty_inputs[0]
+            actions.append(
+                SuggestedAction(
+                    action_type=ActionType.SET_VALUE,
+                    target=ActionTarget(element_id=first.id, selector=first.selector),
+                    value="Pendiente de completar",
+                    reason="First empty editable field found in current form.",
                 )
-
-        return actions[:5]
-
-    def _suggest_sale_order_actions(
-        self, snapshot: SnapshotPayload, instruction: str, intent: str
-    ) -> list[SuggestedAction]:
-        actions: list[SuggestedAction] = []
-
-        # Buscar botones específicos de sale.order
-        confirm_btn = self._find_button(
-            snapshot.elements, {"confirmar", "confirm", "pedido de venta"}
-        )
-        invoice_btn = self._find_button(
-            snapshot.elements, {"crear factura", "create invoice", "factura"}
-        )
-        email_btn = self._find_button(
-            snapshot.elements, {"enviar", "send", "correo", "email"}
-        )
-        preview_btn = self._find_button(snapshot.elements, {"vista previa", "preview"})
-        cancel_btn = self._find_button(snapshot.elements, {"cancelar", "cancel"})
-
-        if intent == "improve_quote":
-            if preview_btn:
-                actions.append(
-                    SuggestedAction(
-                        action_type=ActionType.CLICK,
-                        target=ActionTarget(
-                            element_id=preview_btn.id, selector=preview_btn.selector
-                        ),
-                        reason="Revisar el presupuesto antes de enviar al cliente.",
-                    )
-                )
-            if email_btn:
-                actions.append(
-                    SuggestedAction(
-                        action_type=ActionType.CLICK,
-                        target=ActionTarget(
-                            element_id=email_btn.id, selector=email_btn.selector
-                        ),
-                        reason="Enviar presupuesto al cliente para aprobación.",
-                    )
-                )
-            # Buscar campo de notas o términos para añadir valor
-            notes_field = self._find_field_by_label(
-                snapshot.elements, {"notas", "notes", "terminos", "terms"}
             )
-            if notes_field:
-                actions.append(
-                    SuggestedAction(
-                        action_type=ActionType.SET_VALUE,
-                        target=ActionTarget(
-                            element_id=notes_field.id, selector=notes_field.selector
-                        ),
-                        value="Oferta válida por 30 días. Descuento del 5% por pago anticipado.",
-                        reason="Añadir condiciones comerciales para mejorar la propuesta.",
-                    )
-                )
 
-        elif intent == "analyze_pricing":
-            # Buscar campo de descuento
-            discount_field = self._find_field_by_label(
-                snapshot.elements, {"descuento", "discount", "desc"}
-            )
-            if discount_field:
-                actions.append(
-                    SuggestedAction(
-                        action_type=ActionType.SET_VALUE,
-                        target=ActionTarget(
-                            element_id=discount_field.id,
-                            selector=discount_field.selector,
-                        ),
-                        value="5",
-                        reason="Aplicar descuento del 5% por volumen.",
-                    )
-                )
-            if preview_btn:
-                actions.append(
-                    SuggestedAction(
-                        action_type=ActionType.CLICK,
-                        target=ActionTarget(
-                            element_id=preview_btn.id, selector=preview_btn.selector
-                        ),
-                        reason="Revisar precios con el descuento aplicado.",
-                    )
-                )
-
-        elif intent == "analyze_payment_terms":
-            # Buscar campo de términos de pago
-            payment_field = self._find_field_by_label(
-                snapshot.elements, {"plazo", "termino", "payment", "condicion"}
-            )
-            if payment_field:
-                actions.append(
-                    SuggestedAction(
-                        action_type=ActionType.SELECT_OPTION,
-                        target=ActionTarget(
-                            element_id=payment_field.id, selector=payment_field.selector
-                        ),
-                        value="15 días",
-                        reason="Establecer plazo de pago a 15 días.",
-                    )
-                )
-            if email_btn:
-                actions.append(
-                    SuggestedAction(
-                        action_type=ActionType.CLICK,
-                        target=ActionTarget(
-                            element_id=email_btn.id, selector=email_btn.selector
-                        ),
-                        reason="Enviar presupuesto con nuevos términos de pago.",
-                    )
-                )
-
-        elif intent == "list_available_buttons":
-            # Listar todos los botones principales disponibles
-            if confirm_btn:
-                actions.append(
-                    SuggestedAction(
-                        action_type=ActionType.CLICK,
-                        target=ActionTarget(
-                            element_id=confirm_btn.id, selector=confirm_btn.selector
-                        ),
-                        reason="Confirmar el pedido de venta.",
-                    )
-                )
-            if invoice_btn:
-                actions.append(
-                    SuggestedAction(
-                        action_type=ActionType.CLICK,
-                        target=ActionTarget(
-                            element_id=invoice_btn.id, selector=invoice_btn.selector
-                        ),
-                        reason="Crear factura a partir del pedido confirmado.",
-                    )
-                )
-            if email_btn:
-                actions.append(
-                    SuggestedAction(
-                        action_type=ActionType.CLICK,
-                        target=ActionTarget(
-                            element_id=email_btn.id, selector=email_btn.selector
-                        ),
-                        reason="Enviar presupuesto/pedido por email al cliente.",
-                    )
-                )
-
-        return actions
-
-    def _find_field_by_label(
-        self, elements: list[SnapshotElement], terms: set[str]
-    ) -> Optional[SnapshotElement]:
-        for element in elements:
-            if element.type not in {"input", "textarea", "select"}:
-                continue
-            label_text = f"{element.label} {element.name}".lower()
-            if any(term in label_text for term in terms):
-                return element
-        return None
+        return actions[:3]
 
     def _find_button(
         self, elements: list[SnapshotElement], terms: set[str]

@@ -11,6 +11,12 @@ from .schemas import (
     ActionRequest,
     ActionResponse,
     BackendSettings,
+    BrowserPairingCodeResponse,
+    BrowserPairingCreateRequest,
+    BrowserPairingLinkRequest,
+    BrowserPairingLinkResponse,
+    BrowserContextResolveRequest,
+    BrowserContextResponse,
     HealthResponse,
     PlanRequest,
     PlanResponse,
@@ -73,6 +79,33 @@ def create_app() -> FastAPI:
         logger.info("Processing snapshot for %s", payload.page.domain)
         analysis = service.process_snapshot(payload)
         return analysis
+
+    @app.post("/browser-copilot/context/resolve", response_model=BrowserContextResponse)
+    def resolve_context(
+        payload: BrowserContextResolveRequest,
+        _authorized: None = Depends(_check_token),
+    ) -> BrowserContextResponse:
+        return service.resolve_context(payload.channel, payload.chat_id)
+
+    @app.post(
+        "/browser-copilot/pairing/create", response_model=BrowserPairingCodeResponse
+    )
+    def create_pairing(
+        payload: BrowserPairingCreateRequest,
+        _authorized: None = Depends(_check_token),
+    ) -> BrowserPairingCodeResponse:
+        return service.create_pairing(
+            payload.channel, payload.chat_id, payload.sender_id or ""
+        )
+
+    @app.post(
+        "/browser-copilot/pairing/link", response_model=BrowserPairingLinkResponse
+    )
+    def link_pairing(
+        payload: BrowserPairingLinkRequest,
+        _authorized: None = Depends(_check_token),
+    ) -> BrowserPairingLinkResponse:
+        return service.link_pairing(payload.code)
 
     @app.post("/browser-copilot/plan", response_model=PlanResponse)
     def plan(

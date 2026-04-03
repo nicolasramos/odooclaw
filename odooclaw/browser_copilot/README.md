@@ -36,6 +36,12 @@ odooclaw/browser_copilot/
   - Validates allowlisted action type and target
   - Returns strict JSON command for extension execution
   - Blocked when `read_only=true`
+- `POST /browser-copilot/pairing/create`
+  - Creates a short-lived pairing code for a specific conversation
+- `POST /browser-copilot/pairing/link`
+  - Resolves a user-provided pairing code from the extension
+- `POST /browser-copilot/context/resolve`
+  - Returns the latest browser context linked to a conversation
 - `GET /browser-copilot/health`
 
 ## Security Model
@@ -208,6 +214,25 @@ What it checks:
 2. `POST /browser-copilot/snapshot`
 3. `POST /browser-copilot/plan`
 4. `POST /browser-copilot/action` (expects `403` if `read_only=true`)
+
+## Current Conversation Pairing Flow
+
+The Browser Copilot MVP now supports a conversation-linked flow:
+
+1. OdooClaw chat generates a short pairing code.
+2. The user pastes that code into the extension popup.
+3. The extension links the active tab to that Odoo conversation.
+4. Browser Copilot stores snapshots by conversation, not only by domain.
+5. OdooClaw can resolve the latest shared browser context for that same chat.
+
+## SQLite Memory and Browser Context
+
+Browser Copilot is separate from the SQLite memory backend.
+
+- Browser Copilot stores recent page context in memory for fast per-conversation resolution.
+- OdooClaw memory uses `workspace/memory/main.sqlite` for long-term recall and prompt-safe retrieval.
+
+See `odooclaw/docs/SQLITE_MEMORY.md` for the memory backend details.
 
 ## Phase 2 Backlog (Prepared, not implemented)
 

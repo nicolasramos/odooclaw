@@ -4,7 +4,7 @@ This guide explains how to run the Browser Copilot MVP together with your Doodba
 
 ## Scope (Phase 1)
 
-- Chrome/Chromium extension only
+- Chrome/Chromium + Firefox extension support
 - Local HTTP backend (`127.0.0.1:8765`)
 - Snapshot + suggestion/plan flow
 - Safe actions only (`click`, `set_value`, `select_option`, `scroll_into_view`)
@@ -60,26 +60,46 @@ BROWSER_COPILOT_TOKEN=dev-token
 BROWSER_COPILOT_READ_ONLY=true
 ```
 
-## 4) Load Chromium Extension
+## 4) Load Browser Extension
+
+### Chrome / Chromium
 
 1. Open `chrome://extensions`
 2. Enable Developer mode
 3. Click Load unpacked
 4. Select `browser_extension/`
 
-In popup settings:
+### Firefox
 
-- Backend URL: `http://127.0.0.1:8765`
-- Token: same as `BROWSER_COPILOT_TOKEN`
+1. Open `about:debugging#/runtime/this-firefox`
+2. Click **Load Temporary Add-on...**
+3. Select `browser_extension/manifest.json`
+
+In the current simplified popup, the main user flow is based on a pairing code. Backend URL and token are only needed for debugging or advanced setup.
+
+Popup UI (current baseline):
+- linked / not linked status
+- pairing code input
+- per-tab context sharing toggle
 
 ## 5) Manual Functional Flow
 
-1. Open Odoo page in browser.
-2. Enable extension on that tab.
-3. Click `Enviar contexto`.
-4. Optionally provide instruction (`resume este cliente`, `que falta en esta factura`).
-5. Review plan and suggested actions.
-6. If execution is enabled in future, confirm action before run.
+1. Open the target Odoo conversation.
+2. Ask OdooClaw for a pairing code:
+
+```text
+/browser-pair
+```
+
+3. Open the extension popup.
+4. Paste the code and click **Vincular**.
+5. Activate **Compartir esta pestaña con OdooClaw**.
+6. Ask OdooClaw questions such as:
+   - `qué pedido tengo en pantalla`
+   - `qué cliente tengo en pantalla`
+   - `suma el total de lo que veo`
+
+The browser context is linked to that same conversation.
 
 ## 6) Smoke Test (API Validation)
 

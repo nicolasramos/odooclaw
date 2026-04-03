@@ -7,7 +7,7 @@
 
   <p>
     <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
-    <img src="https://img.shields.io/badge/Odoo-17%20%7C%2018-F68B20?style=flat&logo=odoo&logoColor=white" alt="Odoo">
+    <img src="https://img.shields.io/badge/Odoo-16%20%7C%2017%20%7C%2018-F68B20?style=flat&logo=odoo&logoColor=white" alt="Odoo">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
     <br>
     <a href="https://github.com/nicolasramos/odooclaw"><img src="https://img.shields.io/badge/GitHub-Repository-black?style=flat&logo=github&logoColor=white" alt="GitHub"></a>
@@ -109,7 +109,17 @@ See [Voice Features Documentation](odooclaw/docs/VOICE_FEATURES.md) for detailed
 
 ## 📦 Odoo Module (`mail_bot_odooclaw`)
 
-The native module is located at: `odoo/custom/src/mail_bot_odooclaw/`
+The native module is located at: `odoo/custom/src/{version}/mail_bot_odooclaw/`
+
+### Supported Odoo Versions
+
+| Version | Module Path | Channel Model |
+|---------|-------------|---------------|
+| **Odoo 18** | `odoo/custom/src/18.0/mail_bot_odooclaw/` | `discuss.channel` |
+| **Odoo 17** | `odoo/custom/src/17.0/mail_bot_odooclaw/` | `mail.channel` |
+| **Odoo 16** | `odoo/custom/src/16.0/mail_bot_odooclaw/` | `mail.channel` |
+
+> **Note**: Odoo 18 renamed `mail.channel` to `discuss.channel` and changed the member relationship structure. Each version's module handles these differences automatically.
 
 ### Installation in Odoo
 
@@ -216,8 +226,14 @@ docker compose -f "odooclaw/browser_copilot/docker-compose.browser-copilot.yml" 
 ```
 
 2. Configure extension popup:
-   - Backend URL: `http://127.0.0.1:8765`
-   - Token: same value as `BROWSER_COPILOT_TOKEN`
+    - Backend URL: `http://127.0.0.1:8765`
+    - Token: same value as `BROWSER_COPILOT_TOKEN`
+
+   Browser support currently documented for:
+   - Chrome/Chromium (load unpacked)
+   - Firefox (load temporary add-on)
+
+   See `browser_extension/README.md` for browser-specific install steps.
 
 3. Keep secure defaults in phase 1:
    - `BROWSER_COPILOT_READ_ONLY=true`
@@ -233,6 +249,8 @@ docker compose -f "odooclaw/browser_copilot/docker-compose.browser-copilot.yml" 
 See full backend and extension documentation:
 - `odooclaw/browser_copilot/README.md`
 - `browser_extension/README.md`
+- `odooclaw/docs/BROWSER_COPILOT_DOODBA_SETUP.md`
+- `odooclaw/docs/BROWSER_EXTENSION_DISTRIBUTION.md`
 
 ### 3. Configuration Files
 

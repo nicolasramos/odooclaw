@@ -13,6 +13,9 @@ OdooClaw is a specialized version of PicoClaw, tailored for integration with **O
 ### 2. Integration & Support
 - [General Troubleshooting](troubleshooting.md): Answers to common issues.
 - [Antigravity Usage and Authentication](ANTIGRAVITY_USAGE.md): Integration with the Antigravity cloud.
+- [Browser Copilot + Doodba Setup](BROWSER_COPILOT_DOODBA_SETUP.md): End-to-end setup for pairing flow, per-tab sharing, and Chrome/Firefox local testing.
+- [Browser Extension Distribution](BROWSER_EXTENSION_DISTRIBUTION.md): Internal packaging, dual-browser ZIP artifacts, and store-readiness notes.
+- [SQLite Memory Backend](SQLITE_MEMORY.md): Core memory architecture, runtime paths, and retrieval behavior.
 
 ### 3. The Odoo MCP Server (`odoo-manager`)
 

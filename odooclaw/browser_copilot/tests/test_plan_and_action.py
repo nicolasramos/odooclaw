@@ -6,7 +6,7 @@ import pytest
 
 from browser_copilot.action_executor import ActionValidationError, build_action_response
 from browser_copilot.schemas import ActionTarget, ActionType, SuggestedAction
-from browser_copilot.service import BrowserCopilotService
+from browser_copilot.service import BrowserCopilotService, normalize_session_lookup_key
 
 
 def _snapshot_data() -> dict:
@@ -94,3 +94,28 @@ def test_action_serialization_rejects_missing_value() -> None:
     )
     with pytest.raises(ActionValidationError):
         build_action_response(action)
+
+
+def test_process_snapshot_links_odoo_session_key() -> None:
+    from browser_copilot.schemas import SnapshotPayload
+
+    service = BrowserCopilotService()
+    payload = _snapshot_data()
+    payload["channel"] = "odoo"
+    payload["chat_id"] = "account.move_15"
+    snapshot = SnapshotPayload.model_validate(payload)
+
+    service.process_snapshot(snapshot)
+    resolved = service.resolve_context("odoo", "account.move_15")
+
+    assert resolved.found is True
+    assert resolved.app is not None
+    assert resolved.app.model == "account.move"
+
+
+def test_normalize_session_lookup_key_requires_values() -> None:
+    assert normalize_session_lookup_key("", "abc") == ""
+    assert normalize_session_lookup_key("odoo", "") == ""
+    assert (
+        normalize_session_lookup_key("odoo", "res.partner_4") == "odoo::res.partner_4"
+    )

@@ -1,13 +1,27 @@
 package agent
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/nicolasramos/odooclaw/pkg/browsercopilot"
 	"github.com/nicolasramos/odooclaw/pkg/providers"
 )
+
+type fakeBrowserResolver struct {
+	response browsercopilot.ContextResponse
+	err      error
+}
+
+func (f fakeBrowserResolver) ResolveContext(
+	_ context.Context,
+	_ browsercopilot.ResolveRequest,
+) (browsercopilot.ContextResponse, error) {
+	return f.response, f.err
+}
 
 func msg(role, content string) providers.Message {
 	return providers.Message{Role: role, Content: content}
@@ -232,6 +246,75 @@ func TestBuildMessagesIncludesOdooScopedMemoryRecall(t *testing.T) {
 	}
 	if !strings.Contains(system, filepath.Base("entity-res.partner-42.md")) {
 		t.Fatal("expected scoped file name in memory recall")
+	}
+}
+
+func TestBuildMessagesIncludesBrowserContext(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"memory/MEMORY.md": "# Memory\n\nGlobal context.",
+	})
+	defer os.RemoveAll(tmpDir)
+
+	recordID := 42
+	age := 18
+	cb := NewContextBuilder(tmpDir)
+	cb.browser = fakeBrowserResolver{response: browsercopilot.ContextResponse{
+		Found:      true,
+		AgeSeconds: &age,
+		PageTitle:  "Azure Interior - Odoo",
+		PageURL:    "https://demo.odoo.com/web#id=42&model=res.partner&view_type=form",
+		Domain:     "demo.odoo.com",
+		App: browsercopilot.AppDetection{
+			Detected: "odoo",
+			Model:    "res.partner",
+			RecordID: &recordID,
+			ViewType: "form",
+		},
+		Breadcrumbs:        []string{"Ventas", "Clientes"},
+		Headings:           []string{"Azure Interior"},
+		VisibleFields:      []string{"Name", "Email"},
+		MainButtons:        []string{"Save", "Edit"},
+		VisibleTextSummary: "Client record open in form view.",
+		VisibleTables: []browsercopilot.VisibleTable{
+			{
+				ID:       "table_01",
+				Title:    "Pedidos a facturar",
+				Headers:  []string{"Número", "Cliente", "Total"},
+				Rows:     [][]string{{"S00030", "Acme Corporation", "$290.616,50"}, {"S00029", "Acme Corporation", "$7.187,50"}, {"S00028", "Ready Mat", "$56.005,00"}},
+				Footer:   []string{"", "", "$353.809,00"},
+				RowCount: 3,
+			},
+		},
+	}}
+
+	msgs := cb.BuildMessages(nil, "", "que ves aqui", nil, "odoo", "res.partner_42", "18", nil)
+	if len(msgs) == 0 {
+		t.Fatal("expected messages")
+	}
+	system := msgs[0].Content
+	if !strings.Contains(system, "## Browser Context") {
+		t.Fatal("expected browser context in system prompt")
+	}
+	if !strings.Contains(system, "Do not say you cannot see the screen when Browser Context is present.") {
+		t.Fatal("expected browser context usage instruction in system prompt")
+	}
+	if !strings.Contains(system, "Title: Azure Interior - Odoo") {
+		t.Fatal("expected browser title in system prompt")
+	}
+	if !strings.Contains(system, "Model: res.partner") {
+		t.Fatal("expected browser model in system prompt")
+	}
+	if !strings.Contains(system, "Main Buttons: Save, Edit") {
+		t.Fatal("expected main buttons in system prompt")
+	}
+	if !strings.Contains(system, "Visible Table: Pedidos a facturar") {
+		t.Fatal("expected visible table title in system prompt")
+	}
+	if !strings.Contains(system, "Row 3: Número: S00028 | Cliente: Ready Mat | Total: $56.005,00") {
+		t.Fatal("expected visible table rows in system prompt")
+	}
+	if !strings.Contains(system, "Footer: $353.809,00") {
+		t.Fatal("expected visible table footer in system prompt")
 	}
 }
 

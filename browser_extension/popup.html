@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OdooClaw Browser Copilot</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header class="brand-header">
+      <div class="brand-wrap">
+        <img src="assets/odooclaw-wordmark.png" alt="OdooClaw" class="logo-wordmark" />
+      </div>
+      <span id="pairingStatusBadge" class="badge is-off">No vinculada</span>
+    </header>
+
+    <main>
+      <section class="pairing-section">
+        <h2>Vincular con conversación de Odoo</h2>
+        <p class="status-text" id="shareStatus">No vinculada</p>
+        <div class="input-group">
+          <input type="text" id="pairingCode" placeholder="Código de vinculación (6 caracteres)" maxlength="6" />
+          <button id="linkCode" class="btn btn-primary">Vincular</button>
+          <button id="clearPairing" class="btn btn-secondary">Desvincular</button>
+        </div>
+      </section>
+
+      <section class="capture-section">
+        <h2>Compartir contexto</h2>
+        <div class="toggle-group">
+          <label class="toggle-label">
+            <input type="checkbox" id="captureToggle" />
+            <span>Compartir esta pestaña con OdooClaw</span>
+          </label>
+        </div>
+      </section>
+    </main>
+
+    <div id="message" class="message"></div>
+  </div>
+
+  <script src="lib/browser-polyfill.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
