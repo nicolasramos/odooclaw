@@ -2,9 +2,19 @@
 
 > **Fork Notice**: This Odoo module is part of the [OdooClaw](https://github.com/nicolasramos/odooclaw) project, which is a fork of [PicoClaw](https://github.com/sipeed/picoclaw) by [Sipeed], integrated with Odoo ERP.
 
+## Version Compatibility
+
+| Version | Odoo | Channel Model | Member Field |
+|---------|------|---------------|--------------|
+| 18.0 | Odoo 18 | `discuss.channel` | `channel_member_ids` |
+| 17.0 | Odoo 17 | `mail.channel` | `channel_partner_ids` |
+| 16.0 | Odoo 16 | `mail.channel` | `channel_partner_ids` |
+
+> **Important**: Odoo 18 renamed `mail.channel` to `discuss.channel` and changed the member relationship from `channel_partner_ids` (many2many) to `channel_member_ids` (one2many). The module handles these differences automatically per version.
+
 ## Odoo Module
 
-This module is located at: `@odoo/custom/src/mail_bot_odooclaw`
+This module is located at: `@odoo/custom/src/{version}/mail_bot_odooclaw`
 
 This module integrates an external AI agent (OdooClaw) directly into Odoo's messaging system (Discuss).
 

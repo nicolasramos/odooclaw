@@ -69,8 +69,22 @@ class SnapshotTable(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     id: str
+    title: str = ""
     headers: list[str] = Field(default_factory=list)
     rows: list[list[str]] = Field(default_factory=list)
+    footer: list[str] = Field(default_factory=list)
+    row_count: int = 0
+
+
+class BrowserVisibleTable(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    title: str = ""
+    headers: list[str] = Field(default_factory=list)
+    rows: list[list[str]] = Field(default_factory=list)
+    footer: list[str] = Field(default_factory=list)
+    row_count: int = 0
 
 
 class SnapshotPayload(BaseModel):
@@ -85,6 +99,11 @@ class SnapshotPayload(BaseModel):
     headings: list[str] = Field(default_factory=list)
     breadcrumbs: list[str] = Field(default_factory=list)
     actions_available: list[ActionType] = Field(default_factory=list)
+    channel: Optional[str] = None
+    chat_id: Optional[str] = None
+    sender_id: Optional[str] = None
+    source: Optional[str] = None
+    pairing_code: Optional[str] = None
 
     @field_validator("visible_text")
     @classmethod
@@ -114,6 +133,66 @@ class SnapshotAnalysis(BaseModel):
     summary: str
     issues: list[str] = Field(default_factory=list)
     suggested_next_actions: list[str] = Field(default_factory=list)
+
+
+class BrowserContextResolveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    channel: str
+    chat_id: str
+    sender_id: Optional[str] = None
+
+
+class BrowserContextResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    found: bool = False
+    shared_at: Optional[datetime] = None
+    age_seconds: Optional[int] = None
+    page_url: Optional[str] = None
+    page_title: Optional[str] = None
+    domain: Optional[str] = None
+    app: Optional[AppDetection] = None
+    headings: list[str] = Field(default_factory=list)
+    breadcrumbs: list[str] = Field(default_factory=list)
+    visible_fields: list[str] = Field(default_factory=list)
+    main_buttons: list[str] = Field(default_factory=list)
+    visible_text_summary: str = ""
+    visible_tables: list[BrowserVisibleTable] = Field(default_factory=list)
+
+
+class BrowserPairingCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    channel: str
+    chat_id: str
+    sender_id: Optional[str] = None
+
+
+class BrowserPairingCodeResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ok: bool = True
+    code: str
+    expires_at: datetime
+    channel: str
+    chat_id: str
+
+
+class BrowserPairingLinkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+
+
+class BrowserPairingLinkResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    linked: bool
+    code: str
+    channel: Optional[str] = None
+    chat_id: Optional[str] = None
+    expires_at: Optional[datetime] = None
 
 
 class PlanRequest(BaseModel):

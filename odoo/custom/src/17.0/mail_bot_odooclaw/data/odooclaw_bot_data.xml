@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <record id="odooclaw_bot" model="res.users">
+            <field name="name">OdooClaw</field>
+            <field name="login">odooclaw_bot</field>
+            <field name="active" eval="True"/>
+            <field name="share" eval="False"/>
+            <field name="groups_id" eval="[(4, ref('base.group_user'))]"/>
+            <field name="image_1920" type="base64" file="mail_bot_odooclaw/static/description/icon.png"/>
+        </record>
+
+        <!-- Default webhook URL system parameter -->
+        <record id="odooclaw_webhook_url_param" model="ir.config_parameter">
+            <field name="key">odooclaw.webhook_url</field>
+            <field name="value">http://odooclaw:18790/webhook/odoo</field>
+        </record>
+    </data>
+</odoo>

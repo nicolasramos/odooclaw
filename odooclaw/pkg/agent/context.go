@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nicolasramos/odooclaw/pkg/browsercopilot"
 	"github.com/nicolasramos/odooclaw/pkg/logger"
 	"github.com/nicolasramos/odooclaw/pkg/providers"
 	"github.com/nicolasramos/odooclaw/pkg/skills"
@@ -21,6 +23,7 @@ type ContextBuilder struct {
 	workspace    string
 	skillsLoader *skills.SkillsLoader
 	memory       *MemoryStore
+	browser      browserContextResolver
 
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.
@@ -39,6 +42,10 @@ type ContextBuilder struct {
 	// build time. This catches nested file creations/deletions/mtime changes
 	// that may not update the top-level skill root directory mtime.
 	skillFilesAtCache map[string]time.Time
+}
+
+type browserContextResolver interface {
+	ResolveContext(context.Context, browsercopilot.ResolveRequest) (browsercopilot.ContextResponse, error)
 }
 
 func getGlobalConfigDir() string {
@@ -63,6 +70,7 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 		workspace:    workspace,
 		skillsLoader: skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir),
 		memory:       NewMemoryStore(workspace),
+		browser:      browsercopilot.NewClientFromEnv(),
 	}
 }
 
@@ -461,7 +469,136 @@ func (cb *ContextBuilder) buildDynamicContext(
 		fmt.Fprintf(&sb, "\n\n%s", relevantMemory)
 	}
 
+	browserContext := cb.getBrowserContext(channel, chatID, senderID)
+	if browserContext != "" {
+		fmt.Fprintf(&sb, "\n\n## Browser Context Usage\nThe user has explicitly shared their current browser tab with you for this conversation.\nTreat the Browser Context block below as what is currently visible on their screen.\nIf the user asks what you see on screen, answer from that Browser Context.\nWhen visible tables or list rows are present, use all listed rows and footer totals before asking the user for missing items.\nDo not say you cannot see the screen when Browser Context is present.\n\n%s", browserContext)
+	}
+
 	return sb.String()
+}
+
+func (cb *ContextBuilder) getBrowserContext(channel, chatID, senderID string) string {
+	if cb.browser == nil || strings.TrimSpace(channel) == "" || strings.TrimSpace(chatID) == "" {
+		return ""
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+
+	resolved, err := cb.browser.ResolveContext(ctx, browsercopilot.ResolveRequest{
+		Channel:  channel,
+		ChatID:   chatID,
+		SenderID: senderID,
+	})
+	if err != nil || !resolved.Found {
+		return ""
+	}
+
+	return formatBrowserContext(resolved)
+}
+
+func formatBrowserContext(resolved browsercopilot.ContextResponse) string {
+	var sb strings.Builder
+	sb.WriteString("## Browser Context\n")
+	sb.WriteString("This is the latest shared browser state for the current conversation.\n")
+	if resolved.AgeSeconds != nil {
+		fmt.Fprintf(&sb, "Shared %ds ago.\n", *resolved.AgeSeconds)
+	}
+	if resolved.PageTitle != "" {
+		fmt.Fprintf(&sb, "Title: %s\n", resolved.PageTitle)
+	}
+	if resolved.PageURL != "" {
+		fmt.Fprintf(&sb, "URL: %s\n", resolved.PageURL)
+	}
+	if resolved.Domain != "" {
+		fmt.Fprintf(&sb, "Domain: %s\n", resolved.Domain)
+	}
+	if resolved.App.Detected != "" {
+		fmt.Fprintf(&sb, "Detected App: %s\n", resolved.App.Detected)
+	}
+	if resolved.App.Model != "" {
+		fmt.Fprintf(&sb, "Model: %s\n", resolved.App.Model)
+	}
+	if resolved.App.RecordID != nil {
+		fmt.Fprintf(&sb, "Record ID: %d\n", *resolved.App.RecordID)
+	}
+	if resolved.App.ViewType != "" {
+		fmt.Fprintf(&sb, "View Type: %s\n", resolved.App.ViewType)
+	}
+	if len(resolved.Breadcrumbs) > 0 {
+		fmt.Fprintf(&sb, "Breadcrumbs: %s\n", strings.Join(resolved.Breadcrumbs, " > "))
+	}
+	if len(resolved.Headings) > 0 {
+		fmt.Fprintf(&sb, "Headings: %s\n", strings.Join(resolved.Headings, " | "))
+	}
+	if len(resolved.VisibleFields) > 0 {
+		fmt.Fprintf(&sb, "Visible Fields: %s\n", strings.Join(resolved.VisibleFields, ", "))
+	}
+	if len(resolved.MainButtons) > 0 {
+		fmt.Fprintf(&sb, "Main Buttons: %s\n", strings.Join(resolved.MainButtons, ", "))
+	}
+	if resolved.VisibleTextSummary != "" {
+		fmt.Fprintf(&sb, "Summary: %s\n", resolved.VisibleTextSummary)
+	}
+	if len(resolved.VisibleTables) > 0 {
+		for _, table := range resolved.VisibleTables {
+			fmt.Fprintf(&sb, "Visible Table: %s\n", tableLabel(table))
+			if table.RowCount > 0 {
+				fmt.Fprintf(&sb, "Visible Row Count: %d\n", table.RowCount)
+			}
+			if len(table.Headers) > 0 {
+				fmt.Fprintf(&sb, "Columns: %s\n", strings.Join(table.Headers, " | "))
+			}
+			for idx, row := range table.Rows {
+				formatted := formatTableRow(table.Headers, row)
+				if formatted == "" {
+					continue
+				}
+				fmt.Fprintf(&sb, "Row %d: %s\n", idx+1, formatted)
+			}
+			if len(table.Footer) > 0 {
+				fmt.Fprintf(&sb, "Footer: %s\n", strings.Join(filterNonEmpty(table.Footer), " | "))
+			}
+		}
+	}
+	return strings.TrimSpace(sb.String())
+}
+
+func filterNonEmpty(values []string) []string {
+	filtered := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			filtered = append(filtered, trimmed)
+		}
+	}
+	return filtered
+}
+
+func tableLabel(table browsercopilot.VisibleTable) string {
+	if strings.TrimSpace(table.Title) != "" {
+		return table.Title
+	}
+	return table.ID
+}
+
+func formatTableRow(headers, row []string) string {
+	parts := []string{}
+	for idx, cell := range row {
+		value := strings.TrimSpace(cell)
+		if value == "" {
+			continue
+		}
+		if idx < len(headers) {
+			header := strings.TrimSpace(headers[idx])
+			if header != "" {
+				parts = append(parts, fmt.Sprintf("%s: %s", header, value))
+				continue
+			}
+		}
+		parts = append(parts, value)
+	}
+	return strings.Join(parts, " | ")
 }
 
 func (cb *ContextBuilder) BuildMessages(

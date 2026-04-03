@@ -12,12 +12,14 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
+	"github.com/nicolasramos/odooclaw/pkg/browsercopilot"
 	"github.com/nicolasramos/odooclaw/pkg/bus"
 	"github.com/nicolasramos/odooclaw/pkg/channels"
 	"github.com/nicolasramos/odooclaw/pkg/config"
@@ -457,6 +459,14 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return response, nil
 	}
 
+	if response, handled := al.handleBrowserVisibleRecordQuestion(ctx, msg); handled {
+		return response, nil
+	}
+
+	if response, handled := al.handleBrowserVisibleTotalsQuestion(ctx, msg); handled {
+		return response, nil
+	}
+
 	// Route to determine agent and session key
 	route := al.registry.ResolveRoute(routing.RouteInput{
 		Channel:    msg.Channel,
@@ -507,6 +517,187 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		EnableSummary:   true,
 		SendResponse:    false,
 	})
+}
+
+func (al *AgentLoop) handleBrowserVisibleRecordQuestion(ctx context.Context, msg bus.InboundMessage) (string, bool) {
+	if !isBrowserVisibleRecordQuestion(msg.Content) {
+		return "", false
+	}
+
+	client := browsercopilot.NewClientFromEnv()
+	ctxTimeout, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	resolved, err := client.ResolveContext(ctxTimeout, browsercopilot.ResolveRequest{
+		Channel:  msg.Channel,
+		ChatID:   msg.ChatID,
+		SenderID: msg.SenderID,
+	})
+	if err != nil || !resolved.Found {
+		return "", false
+	}
+
+	response := buildBrowserVisibleRecordAnswer(msg.Content, resolved)
+	if response == "" {
+		return "", false
+	}
+	return response, true
+}
+
+func isBrowserVisibleRecordQuestion(content string) bool {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	if !strings.Contains(lower, "pantalla") {
+		return false
+	}
+	patterns := []string{
+		"qué pedido", "que pedido", "ves el pedido", "qué cliente", "que cliente",
+		"qué factura", "que factura", "qué registro", "que registro",
+		"qué tengo", "que tengo", "qué veo", "que veo", "ves lo que tengo",
+	}
+	for _, pattern := range patterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+func buildBrowserVisibleRecordAnswer(content string, resolved browsercopilot.ContextResponse) string {
+	name := strings.TrimSpace(resolved.App.ProbableRecordName)
+	if name == "" {
+		name = inferRecordNameFromPageTitle(resolved.PageTitle)
+	}
+	if name == "" {
+		return ""
+	}
+
+	label := inferVisibleEntityLabel(content)
+	if label == "" {
+		label = "registro"
+	}
+	amounts := extractVisibleAmounts(resolved)
+	if amounts.Total != "" {
+		return fmt.Sprintf("El %s que tienes en pantalla es **%s**. Total visible: **%s**.", label, name, amounts.Total)
+	}
+	return fmt.Sprintf("El %s que tienes en pantalla es **%s**.", label, name)
+}
+
+func (al *AgentLoop) handleBrowserVisibleTotalsQuestion(ctx context.Context, msg bus.InboundMessage) (string, bool) {
+	if !isBrowserVisibleTotalsQuestion(msg.Content) {
+		return "", false
+	}
+
+	client := browsercopilot.NewClientFromEnv()
+	ctxTimeout, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	resolved, err := client.ResolveContext(ctxTimeout, browsercopilot.ResolveRequest{
+		Channel:  msg.Channel,
+		ChatID:   msg.ChatID,
+		SenderID: msg.SenderID,
+	})
+	if err != nil || !resolved.Found {
+		return "", false
+	}
+
+	response := buildBrowserVisibleTotalsAnswer(msg.Content, resolved)
+	if response == "" {
+		return "", false
+	}
+	return response, true
+}
+
+func isBrowserVisibleTotalsQuestion(content string) bool {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	if !strings.Contains(lower, "pantalla") {
+		return false
+	}
+	patterns := []string{"total", "subtotal", "importe", "impuestos", "suma"}
+	for _, pattern := range patterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+type visibleAmounts struct {
+	Base  string
+	Tax   string
+	Total string
+}
+
+func buildBrowserVisibleTotalsAnswer(content string, resolved browsercopilot.ContextResponse) string {
+	amounts := extractVisibleAmounts(resolved)
+	if amounts.Base == "" && amounts.Tax == "" && amounts.Total == "" {
+		return ""
+	}
+
+	lower := strings.ToLower(content)
+	if strings.Contains(lower, "subtotal") || strings.Contains(lower, "base") {
+		if amounts.Base != "" {
+			return fmt.Sprintf("El importe base visible en pantalla es **%s**.", amounts.Base)
+		}
+	}
+	if strings.Contains(lower, "impuesto") {
+		if amounts.Tax != "" {
+			return fmt.Sprintf("El impuesto visible en pantalla es **%s**.", amounts.Tax)
+		}
+	}
+	if amounts.Total != "" {
+		return fmt.Sprintf("El total visible en pantalla es **%s**.", amounts.Total)
+	}
+	return ""
+}
+
+func extractVisibleAmounts(resolved browsercopilot.ContextResponse) visibleAmounts {
+	text := resolved.VisibleTextSummary
+	return visibleAmounts{
+		Base:  extractCurrencyByLabel(text, `(?i)importe\s+base`),
+		Tax:   extractCurrencyByLabel(text, `(?i)impuesto(?:\s+\d+\s*%)?`),
+		Total: extractCurrencyByLabel(text, `(?i)total`),
+	}
+}
+
+func extractCurrencyByLabel(text string, labelPattern string) string {
+	if strings.TrimSpace(text) == "" {
+		return ""
+	}
+	re := regexp.MustCompile(labelPattern + `\s*:?\s*\$?\s*([0-9][0-9\.,]*)`)
+	match := re.FindStringSubmatch(text)
+	if len(match) < 2 {
+		return ""
+	}
+	return "$" + strings.TrimSpace(match[1])
+}
+
+func inferVisibleEntityLabel(content string) string {
+	lower := strings.ToLower(content)
+	switch {
+	case strings.Contains(lower, "pedido"):
+		return "pedido"
+	case strings.Contains(lower, "factura"):
+		return "factura"
+	case strings.Contains(lower, "cliente") || strings.Contains(lower, "contacto"):
+		return "cliente"
+	case strings.Contains(lower, "registro"):
+		return "registro"
+	default:
+		return ""
+	}
+}
+
+func inferRecordNameFromPageTitle(title string) string {
+	trimmed := strings.TrimSpace(title)
+	if trimmed == "" {
+		return ""
+	}
+	trimmed = strings.TrimPrefix(trimmed, "(1) ")
+	parts := strings.Fields(trimmed)
+	if len(parts) == 0 {
+		return ""
+	}
+	return parts[0]
 }
 
 func (al *AgentLoop) processSystemMessage(
@@ -1392,6 +1583,20 @@ func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) 
 	args := parts[1:]
 
 	switch cmd {
+	case "/browser-pair":
+		client := browsercopilot.NewClientFromEnv()
+		ctxTimeout, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		result, err := client.CreatePairing(ctxTimeout, browsercopilot.PairingCreateRequest{
+			Channel:  msg.Channel,
+			ChatID:   msg.ChatID,
+			SenderID: msg.SenderID,
+		})
+		if err != nil {
+			return fmt.Sprintf("No pude generar el código de vinculación del navegador: %v", err), true
+		}
+		return fmt.Sprintf("Código de vinculación del navegador: %s\n\nAbre la extensión de OdooClaw, pega este código y pulsa Vincular. Después activa 'Compartir esta pestaña' y ya podré ver el contexto de esa pantalla en esta conversación.", result.Code), true
+
 	case "/show":
 		if len(args) < 1 {
 			return "Usage: /show [model|channel|agents]", true
