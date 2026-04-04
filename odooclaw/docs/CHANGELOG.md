@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Updated Components
 - `mail_bot_odooclaw` module: Webhook now includes `voice_attachments` array, and added a safe `call_kw_as_user` controller for secure impersonation.
 - `mail_bot_odooclaw` controller: Endpoint `/odooclaw/reply` accepts `attachment_ids` and `voice_metadata_ids`.
-- `odoo-manager` MCP server: Passes the `sender_id` to Odoo to enforce secure execution scopes.
+- `odoo-mcp` MCP server: Passes the `sender_id` to Odoo to enforce secure execution scopes.
 - Dockerfile: Added `edge-tts`, `aiohttp`, and `faster-whisper` dependencies
 - `config.json`: Added `whisper-stt` and `edge-tts` MCP server configurations
 
@@ -40,8 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release of OdooClaw
 - Native Odoo Discuss integration via webhooks
-- `odoo-manager` MCP skill for full Odoo ORM access
-- `odoo-read-excel-attachment` MCP skill for Excel/CSV parsing
+- `odoo-mcp` MCP skillset for Odoo ORM operations
+- attachment parsing support through MCP skills (Excel/CSV workflows)
 - Asynchronous message processing
 - Per-channel/user context isolation
 

@@ -20,14 +20,14 @@ Combines results from multiple files or sub-agent outputs into a single report.
 
 When faced with a query requiring deep analysis of many records (e.g., "Analyze the last 100 invoices for patterns"):
 
-1.  **Decompose**: Use `odoo-manager` to fetch records, then immediately use `rlm_partition` if the list is large.
+1.  **Decompose**: Use `odoo-mcp` tools to fetch records, then immediately use `rlm_partition` if the list is large.
 2.  **REPL Variable Store**: Treats `odooclaw/workspace/tmp/rlm/` as a variable store.
 3.  **Recursive Processing**: Launch sub-agents to process each file path returned by `rlm_partition`.
 4.  **Reduce**: Summarize the individual results using `rlm_aggregate` or a final reasoning step.
 
 ## RLM patterns used in OdooClaw
 
-- **Peek/Grep first**: Before full recursion, narrow scope with targeted domains/filters in `odoo-manager`.
+- **Peek/Grep first**: Before full recursion, narrow scope with targeted domains/filters in `odoo-mcp` queries.
 - **Partition + Map**: Split large result sets into chunks and process each chunk in isolated sub-agents.
 - **Reduce**: Consolidate chunk-level outputs into one final user answer.
 - **Context hygiene**: Keep long raw data in workspace files, not in the main chat context.

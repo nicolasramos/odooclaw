@@ -1,6 +1,6 @@
 ---
-name: odoo-manager
-description: Manage Odoo (contacts, any business objects, and metadata) via the official External XML-RPC API. Supports generic CRUD operations on any model using execute_kw, with ready-made flows for res.partner and model introspection. Features dynamic instance and database switching with context-aware URL, database, and credential resolution.
+name: odoo-mcp-legacy-reference
+description: Legacy reference document kept for migration context. Use the odoo-mcp skill and tools for active Odoo operations.
 homepage: https://www.odoo.com/documentation/
 metadata: {"openclaw":{"emoji":"🏢","requires":{"env":["ODOO_URL","ODOO_DB","ODOO_USERNAME","ODOO_PASSWORD"]},"primaryEnv":"ODOO_PASSWORD"}}
 ---

@@ -18,26 +18,27 @@ OdooClaw is a specialized version of PicoClaw, tailored for integration with **O
 - [Doodba Minimal Stack Example](DOODBA_MINIMAL_STACK_EXAMPLE.md): Copy/paste-ready files for `prod.yaml`, env variables, minimal OdooClaw config, and Redis-backed baseline.
 - [SQLite Memory Backend](SQLITE_MEMORY.md): Core memory architecture, runtime paths, and retrieval behavior.
 
-### 3. The Odoo MCP Server (`odoo-manager`)
+### 3. The Odoo MCP Server (`odoo-mcp`)
 
-The core interaction of this agent with Odoo is governed by the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) standard. We have developed an MCP server (written in Python) located at `odooclaw/workspace/skills/odoo-manager/server.py`.
+The core interaction of this agent with Odoo is governed by the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) standard. We provide a modular MCP server (Python) located at `odooclaw/workspace/skills/odoo-mcp`.
 
 #### Why MCP?
 MCP is the protocol promoted by Anthropic that standardizes how an LLM discovers and uses external tools. By using MCP, we delegate the responsibility of connecting to Odoo (via JSON-RPC / XML-RPC) to an isolated and secure process, which dynamically injects its tools into the AI model in an agnostic way.
 
-#### Available Tools
+#### Available Capabilities
 
-The server automatically exposes two powerful tools to your language model:
+`odoo-mcp` replaces legacy monolithic access with granular tools and stricter safeguards:
 
-1. **`odoo-manager`**:
-   - Acts as a universal bridge to the Odoo JSON-RPC / XML-RPC backend.
-   - **Schema:** Takes parameters such as `model`, `method`, `args`, and `kwargs`.
-   - **Usage:** The LLM can use it to call `execute_kw` and perform `search_read`, `create`, `write`, or execute any method exposed on Odoo models.
+1. **Modular Odoo operations**:
+   - Core tools such as `odoo_search`, `odoo_read`, `odoo_create`, `odoo_write`.
+   - Safer business actions exposed as explicit tools instead of free-form unrestricted calls.
 
-2. **`odoo-read-excel-attachment`**:
-   - A key tool for data analysis.
-   - **Schema:** Receives an `attachment_id`.
-   - **Usage:** Downloads the attachment file from `ir.attachment` in Odoo, decodes the Base64, and uses **Pandas** to convert Excel or CSV files into JSON that the AI can interpret and analyze for the user in the chat.
+2. **Permission-aware execution context**:
+   - Calls are executed with the invoking user context to preserve Odoo ACLs and record rules.
+   - Security controls include denylist/allowlist protections for sensitive models/operations.
+
+3. **Attachment/data workflows**:
+   - Attachment handling and structured extraction remain supported through MCP skill composition.
 
 #### Dependencies
 The internal MCP server runs a Python process, so it assumes that the container or environment where you run OdooClaw has Python 3 and `pandas` installed if you want to make use of the Excel reading features.

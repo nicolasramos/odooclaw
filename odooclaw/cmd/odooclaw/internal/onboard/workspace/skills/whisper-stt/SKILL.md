@@ -68,7 +68,7 @@ When user sends a voice note, the webhook includes `voice_attachments` with the 
 
 1. User sends voice note → webhook includes `voice_attachments: [{id: 1234, name: "voice.mp3"}]`
 2. Use `whisper-transcribe` to get text
-3. Use `odoo-manager` to query the data user is asking about
+3. Use `odoo-mcp` tools to query the data user is asking about
 4. Reply with text or use `edge-tts-synthesize` for voice response
 
 ## Integration with Odoo

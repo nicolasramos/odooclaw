@@ -114,7 +114,7 @@ After generating audio:
 
 **Posting voice message to Odoo:**
 ```python
-# Using odoo-manager skill after edge-tts returns attachment_id
+# Using odoo-mcp tools after edge-tts returns attachment_id
 {
   "model": "discuss.channel",
   "method": "message_post",

@@ -216,7 +216,7 @@ The AI agent automatically:
 1. Detects user wants voice output
 2. Calls `edge-tts-synthesize` with text and optional voice
 3. Gets back `attachment_id` and `voice_metadata_id`
-4. Uses `odoo-manager` to post message with attachments:
+4. Uses `odoo-mcp` tools to post the message with attachments:
 
 ```python
 {
