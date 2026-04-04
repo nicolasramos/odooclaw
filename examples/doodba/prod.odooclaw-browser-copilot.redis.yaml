@@ -1,0 +1,68 @@
+services:
+  odooclaw:
+    build:
+      context: ./odooclaw
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .docker/odoo.env
+    environment:
+      - ODOO_URL=http://odoo:8069
+      - ODOO_DB=${ODOO_DB:-prod}
+      - ODOO_USERNAME=${ODOO_USERNAME:-admin}
+      - ODOO_PASSWORD=${ODOO_PASSWORD:-admin}
+      - ODOOCLAW_AGENTS_DEFAULTS_PROVIDER=openai
+      - ODOOCLAW_AGENTS_DEFAULTS_MODEL=gpt-4o-mini
+      - ODOOCLAW_PROVIDERS_OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ODOOCLAW_PROVIDERS_OPENAI_API_BASE=${OPENAI_API_BASE:-https://api.openai.com/v1}
+      - ODOOCLAW_CHANNELS_ODOO_ENABLED=true
+      - ODOOCLAW_CHANNELS_ODOO_WEBHOOK_HOST=0.0.0.0
+      - ODOOCLAW_CHANNELS_ODOO_WEBHOOK_PORT=18790
+      - ODOOCLAW_CHANNELS_ODOO_WEBHOOK_PATH=/webhook/odoo
+      - ODOOCLAW_REDIS_URL=redis://redis:6379/0
+      - ODOOCLAW_JOB_STORE=odoo
+    ports:
+      - "18790:18790"
+    volumes:
+      - odooclaw_data:/home/odooclaw/.odooclaw
+      - ./odooclaw/config/config.json:/home/odooclaw/.odooclaw/config.json:ro
+    depends_on:
+      - odoo
+      - redis
+    networks:
+      - default
+
+  browser-copilot:
+    image: python:3.11-slim
+    container_name: browser-copilot
+    working_dir: /workspace
+    restart: unless-stopped
+    env_file:
+      - .docker/odoo.env
+    environment:
+      - BROWSER_COPILOT_ALLOWED_DOMAINS=${BROWSER_COPILOT_ALLOWED_DOMAINS}
+      - BROWSER_COPILOT_TOKEN=${BROWSER_COPILOT_TOKEN}
+      - BROWSER_COPILOT_READ_ONLY=${BROWSER_COPILOT_READ_ONLY:-true}
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - ./odooclaw:/workspace/odooclaw:ro
+    command: >
+      sh -lc "
+      pip install --no-cache-dir -r /workspace/odooclaw/odooclaw/browser_copilot/requirements.txt &&
+      uvicorn browser_copilot.app:app --host 0.0.0.0 --port 8765 --app-dir /workspace/odooclaw/odooclaw
+      "
+    depends_on:
+      - odooclaw
+    networks:
+      - default
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    networks:
+      - default
+
+volumes:
+  odooclaw_data:

@@ -47,6 +47,12 @@ When a voice message is received, the webhook includes:
 
 ### Transcription Methods
 
+Provider selection is controlled with `STT_PROVIDER`:
+
+- `local`: force local Whisper CLI only
+- `openai`: force API transcription only (OpenAI or OpenAI-compatible)
+- `auto` (default): local first, fallback to API
+
 #### 1. Faster Whisper (Local - PRIORITY)
 
 This is the **recommended** method as it runs locally without API costs.
@@ -63,20 +69,21 @@ RUN pip install faster-whisper --break-system-packages
 RUN pip install whisper --break-system-packages
 ```
 
-#### 2. Whisper API (OpenAI - Fallback)
+#### 2. Whisper API (OpenAI / OpenAI-compatible)
 
-Used when local transcription fails or is not available.
+Used when `STT_PROVIDER=openai`, or as fallback when `STT_PROVIDER=auto`.
 
-- **Requires `OPENAI_API_KEY`**
+- **Requires `STT_API_KEY` or `OPENAI_API_KEY`**
 - More accurate transcription
 - Costs ~$0.006/minute
 
 ```yaml
 environment:
-  - OPENAI_API_KEY=sk-...
+  - STT_PROVIDER=openai
+  - STT_API_BASE=https://api.openai.com/v1
+  - STT_API_KEY=sk-...
+  - STT_OPENAI_MODEL=whisper-1
 ```
-
-The skill automatically tries Faster Whisper first, then falls back to Whisper API if needed.
 
 ---
 
@@ -144,9 +151,11 @@ services:
       - ODOOCLAW_AGENTS_DEFAULTS_MODEL=gpt-4o
       - ODOOCLAW_PROVIDERS_OPENAI_API_KEY=${OPENAI_API_KEY}
       
-      # Voice (STT - Optional)
-      # Set to enable Whisper API fallback
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+       # Voice (STT)
+       - STT_PROVIDER=${STT_PROVIDER:-auto}
+       - STT_API_BASE=${STT_API_BASE:-https://api.openai.com/v1}
+       - STT_API_KEY=${STT_API_KEY}
+       - STT_OPENAI_MODEL=${STT_OPENAI_MODEL:-whisper-1}
       
       # Voice (TTS - No config needed)
       # Edge TTS is included by default
@@ -167,7 +176,11 @@ Both voice skills are configured in `config.json`:
         "args": ["/usr/local/bin/whisper-stt-mcp.py"],
         "env": {
           "PYTHONUNBUFFERED": "1",
-          "OPENAI_API_KEY": "${OPENAI_API_KEY}"
+          "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+          "STT_PROVIDER": "${STT_PROVIDER}",
+          "STT_API_BASE": "${STT_API_BASE}",
+          "STT_API_KEY": "${STT_API_KEY}",
+          "STT_OPENAI_MODEL": "${STT_OPENAI_MODEL}"
         }
       },
       "edge-tts": {
@@ -226,11 +239,15 @@ The AI agent automatically:
 
 **"Faster Whisper not available"**
 - Install: `pip install faster-whisper`
-- Or set `OPENAI_API_KEY` to use Whisper API fallback
+- Or set `STT_PROVIDER=openai` with API vars
 
-**"OPENAI_API_KEY not configured"**
-- Add `OPENAI_API_KEY` to environment variables
-- Or ensure Faster Whisper is installed
+**"STT API key not configured"**
+- Set `STT_API_KEY` (or `OPENAI_API_KEY` fallback)
+- Verify `STT_PROVIDER` mode
+
+**"Wrong OpenAI-compatible model"**
+- Set `STT_OPENAI_MODEL` to the model name required by your provider
+- Check `STT_API_BASE` points to your provider `/v1`
 
 ### TTS Issues
 

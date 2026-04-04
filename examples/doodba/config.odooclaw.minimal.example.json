@@ -1,0 +1,22 @@
+{
+  "agents": {
+    "defaults": {
+      "provider": "openai",
+      "model": "gpt-4o-mini"
+    }
+  },
+  "channels": {
+    "odoo": {
+      "enabled": true,
+      "webhook_host": "0.0.0.0",
+      "webhook_port": 18790,
+      "webhook_path": "/webhook/odoo"
+    }
+  },
+  "providers": {
+    "openai": {
+      "api_base": "https://api.openai.com/v1",
+      "api_key": "${OPENAI_API_KEY}"
+    }
+  }
+}
