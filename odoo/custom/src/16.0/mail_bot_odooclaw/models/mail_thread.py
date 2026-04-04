@@ -34,7 +34,7 @@ class MailThread(models.AbstractModel):
             channel = self.env["mail.channel"].browse(message.res_id)
             if (
                 channel.channel_type == "chat"
-                and odooclaw_partner_id in channel.channel_partner_ids.ids
+                and odooclaw_partner_id in channel.channel_member_ids.mapped("partner_id").ids
             ):
                 is_dm = True
 
@@ -53,7 +53,7 @@ class MailThread(models.AbstractModel):
                     name = (att.name or "").lower()
 
                     # Check if it's a voice attachment
-                    if att.voice_ids:
+                    if hasattr(att, "voice_ids") and att.voice_ids:
                         voice_attachments.append(
                             {"id": att.id, "name": att.name, "mimetype": att.mimetype}
                         )
@@ -100,12 +100,22 @@ class MailThread(models.AbstractModel):
                 .get_param("odooclaw.webhook_url", "http://odooclaw:18790/webhook/odoo")
             )
 
+            def send_webhook():
+                try:
+                    _logger.info("Sending webhook to OdooClaw: %s", webhook_url)
+                    res = requests.post(webhook_url, json=payload, timeout=10)
+                    _logger.info("OdooClaw response: %s", res.text)
+                except Exception:
+                    _logger.exception("Failed to send webhook to OdooClaw")
+
+            threading.Thread(target=send_webhook).start()
+
             # Trigger "typing..." indicator if it's a mail channel
             if message.model == "mail.channel":
                 channel = self.env["mail.channel"].browse(message.res_id)
                 # In Odoo 16, channel_partner_ids is a many2many to res.partner
-                # We need to find the mail.channel.partner record for the bot
-                channel_partner = self.env["mail.channel.partner"].search(
+                # We need to find the mail.channel.member record for the bot
+                channel_partner = self.env["mail.channel.member"].search(
                     [
                         ("channel_id", "=", channel.id),
                         ("partner_id", "=", odooclaw_partner_id),
@@ -114,3 +124,5 @@ class MailThread(models.AbstractModel):
                 )
                 if channel_partner:
                     channel_partner._notify_typing(is_typing=True)
+
+        return message

@@ -251,6 +251,13 @@ See full backend and extension documentation:
 - `browser_extension/README.md`
 - `odooclaw/docs/BROWSER_COPILOT_DOODBA_SETUP.md`
 - `odooclaw/docs/BROWSER_EXTENSION_DISTRIBUTION.md`
+- `odooclaw/docs/DOODBA_MINIMAL_STACK_EXAMPLE.md`
+
+Copy/paste-ready baseline files for Doodba are available in:
+
+- `examples/doodba/prod.odooclaw-browser-copilot.redis.yaml`
+- `examples/doodba/odoo-env-odooclaw-browser-copilot.example`
+- `examples/doodba/config.odooclaw.minimal.example.json`
 
 ### 3. Configuration Files
 

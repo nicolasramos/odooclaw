@@ -71,7 +71,7 @@ class OdooClawController(http.Controller):
                 record.with_user(bot_user).message_post(**post_values)
 
                 if model_name == "mail.channel":
-                    channel_partner = request.env["mail.channel.partner"].search(
+                    channel_partner = request.env["mail.channel.member"].search(
                         [
                             ("channel_id", "=", record.id),
                             ("partner_id", "=", bot_user.partner_id.id),
