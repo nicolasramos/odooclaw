@@ -1,5 +1,5 @@
 ### 1. Refactorización Inicial de Odoo-Manager a Odoo-MCP
-**Problem/Requirement**: El skill monolítico "odoo-manager" era demasiado genérico y representaba un riesgo de seguridad al exponer acceso completo CRUD al modelo.
+**Problem/Requirement**: El skill monolítico anterior era demasiado genérico y representaba un riesgo de seguridad al exponer acceso completo CRUD al modelo.
 **Solution**: 
 - Se definió un nuevo `implementation_plan.md` modular para separar responsabilidades.
 - [Backend]: Se implementaron los endpoints `session.py` y `client.py` con inyección de autenticación de usuario (`call_kw_as_user`).

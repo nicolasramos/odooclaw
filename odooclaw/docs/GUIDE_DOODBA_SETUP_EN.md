@@ -242,7 +242,7 @@ docker compose logs --since=5m odooclaw
 - Discuss support (operational Q&A)
 - Attachment reading (Excel/CSV)
 - Provider invoice OCR
-- Multi-model Odoo queries via `odoo-manager`
+- Multi-model Odoo queries via `odoo-mcp` tools (`odoo_search`, `odoo_read`, `odoo_create`, `odoo_write`)
 
 ## 12) Common errors and quick fixes
 

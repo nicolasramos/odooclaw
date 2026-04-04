@@ -38,7 +38,7 @@ The Agent handles the lifecycle of a conversation. It retrieves the chat history
 An abstraction layer that standardizes requests across various backends (OpenAI, Anthropic, Gemini, DeepSeek, vLLM). It handles streaming, tool-calling capabilities, and token limitations transparently.
 
 ### 5. Model Context Protocol (MCP) Server
-OdooClaw implements Anthropic's MCP standard. Instead of hardcoding Odoo logic into the Go binary, OdooClaw spawns a lightweight Python process (`workspace/skills/odoo-manager/server.py`).
+OdooClaw implements Anthropic's MCP standard. Instead of hardcoding Odoo logic into the Go binary, OdooClaw spawns a lightweight Python MCP server from `workspace/skills/odoo-mcp`.
 - The LLM requests to execute an action (e.g., `search_read`).
 - OdooClaw passes this via `stdio` to the Python process.
 - The Python process connects to Odoo via JSON-RPC / XML-RPC, returning the JSON result back to the LLM.

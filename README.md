@@ -32,20 +32,20 @@ By using this engine, **OdooClaw** inherits the ability to run directly inside a
 
 ---
 
-🦐 **OdooClaw** is an ultra-lightweight AI assistant written in Go. We added a **native Odoo channel** and a specialized `odoo-manager` skill, allowing the agent to directly interact with your Odoo instance (read, search, write, execute functions) through its XML-RPC API, replying directly within the Odoo Discuss module.
+🦐 **OdooClaw** is an ultra-lightweight AI assistant written in Go. We added a **native Odoo channel** and a specialized `odoo-mcp` server, allowing the agent to interact with your Odoo instance through secure, granular tools (search/read/create/write and safe business actions) while replying directly in Odoo Discuss.
 
 ## ✨ Key Features
 
 - 🪶 **Ultra-Lightweight**: Under 10MB of RAM footprint. It can run on the exact same server as Odoo without impacting performance!
 - 🤝 **Odoo Discuss Integration**: Talk to the AI directly from your Odoo chat.
 - 🔐 **Native Permission Inheritance**: Secure by default. The AI dynamically assumes Odoo user permissions, preventing any bypass of native Security Rights or Record Rules.
-- 🧠 **Intelligent ORM Bridge**: High-precision tool execution. The `odoo-manager` bridge includes a logic layer that automatically corrects LLM query hallucinations and maps non-standard arguments to valid Odoo ORM calls.
+- 🧠 **Intelligent ORM Bridge**: High-precision tool execution. The `odoo-mcp` bridge provides modular tools with strict validation, denylist/allowlist controls, and safer mappings for real Odoo ORM operations.
 - 🔁 **RLM Acceleration (Context-Rot Resistant)**: For large Odoo datasets, OdooClaw decomposes analysis into recursive Map-Reduce steps (`rlm_partition` -> sub-agents -> `rlm_aggregate`) to keep context clean, improve accuracy, and reduce long-context cost.
 - 📄 **Smart OCR & Action Generation**: Automatically scans PDF invoices, extracts data, and creates vendor bills or purchase orders intelligently.
 - 🎤 **Voice Messages**: Send and receive voice notes! Supports transcription (STT) and speech synthesis (TTS).
 - ⚡ **Asynchronous & Non-Blocking**: Odoo ↔ OdooClaw communication relies on Webhooks ("Fire & Forget"), releasing Odoo workers instantly.
 - 🧠 **Segregated Context**: AI memory is independent per channel/user. It doesn't mix private information.
-- 🤖 **Integrated MCP Server**: Uses the industry standard Model Context Protocol (MCP) via an embedded Python server, providing the LLM with the `odoo-manager` tool (full access to the XML-RPC API), `odoo-read-excel-attachment` (automatic parsing of Excel/CSV attachments), `ocr-invoice` (Invoice/PO parsing), `whisper-stt` (voice transcription), and `edge-tts` (text-to-speech).
+- 🤖 **Integrated MCP Server**: Uses the industry standard Model Context Protocol (MCP) via embedded Python servers, providing `odoo-mcp` (granular Odoo tools with permission-aware execution), `ocr-invoice` (invoice/PO parsing), `whisper-stt` (voice transcription), and `edge-tts` (text-to-speech).
 - 🛡️ **Secure by Design**: Pre-configured personality (`AGENTS.md`) designed to query, ask for confirmation, and *never* perform critical modifications without explicit permission.
 
 ---
@@ -60,7 +60,7 @@ The integration consists of two parts:
 
 1. **User writes to OdooClaw**: In Odoo, a user mentions `@OdooClaw` in any channel, or sends a Direct Message. The module overrides `_message_post` to detect this intent.
 2. **Odoo sends an Asynchronous Webhook**: Instead of blocking while waiting for the AI, Odoo sends an HTTP POST JSON payload in the background to the OdooClaw API (`http://odooclaw:18790/webhook/odoo`).
-3. **OdooClaw processes it**: The agent evaluates the intent and contacts the LLM provider (OpenAI, Anthropic, vLLM, etc.). The LLM invokes the `odoo-manager` skill from our **internal MCP server** (Python) which makes the XML-RPC calls (search, read, write) to Odoo to retrieve the requested info or execute actions.
+3. **OdooClaw processes it**: The agent evaluates the intent and contacts the LLM provider (OpenAI, Anthropic, vLLM, etc.). The LLM invokes `odoo-mcp` tools from our **internal MCP server** (Python), executing permission-aware Odoo operations (search, read, create, write, safe actions) for the requesting user context.
 4. **OdooClaw replies to Odoo**: Once the response is ready, OdooClaw makes an HTTP POST back to the Odoo endpoint (`/odooclaw/reply`), which injects the message into Discuss, impersonating the bot.
 
 ---
@@ -309,7 +309,7 @@ OdooClaw stores its data in the configured workspace (default inside Docker: `/h
 ├── sessions/          # Conversation sessions and history for Odoo users
 ├── memory/            # Long-term vector memory 
 ├── state/             # Persistent state (last channel, etc.)
-├── skills/            # Custom skills (like odoo-manager)
+├── skills/            # Custom skills (like odoo-mcp)
 ├── AGENTS.md          # AI personality and strict Odoo directives
 ├── HEARTBEAT.md       # Periodic task prompts (checked every 30 min)
 ├── IDENTITY.md        # Agent identity (Odoo Assistant)
@@ -379,8 +379,7 @@ One of the most advanced features of OdooClaw is its use of the [Model Context P
 
 | Skill | Description |
 |-------|-------------|
-| `odoo-manager` | Full Odoo JSON-RPC API access, inheriting Odoo User Permissions securely |
-| `odoo-read-excel-attachment` | Parse Excel/CSV attachments using Pandas |
+| `odoo-mcp` | Modular Odoo tools (`odoo_search`, `odoo_read`, `odoo_create`, `odoo_write`, safe actions) with strict permission context and denylist/allowlist security |
 | `ocr-invoice` | Parse and extract structured data from PDF/Image documents |
 | `rlm-utils` | Partition and aggregate large datasets for recursive long-context analysis |
 
