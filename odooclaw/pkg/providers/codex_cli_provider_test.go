@@ -113,6 +113,63 @@ func TestParseJSONLEvents_MultipleToolCalls(t *testing.T) {
 	}
 }
 
+func TestParseJSONLEvents_GemmaStyleToolCall(t *testing.T) {
+	p := &CodexCliProvider{}
+	toolCallText := `<|toolcall>call:mcpwhisper-sttwhisper-transcribe{"audio_path":"/tmp/voice.mp3"}`
+	item := codexEvent{
+		Type: "item.completed",
+		Item: &codexEventItem{ID: "item_1", Type: "agent_message", Text: toolCallText},
+	}
+	itemJSON, _ := json.Marshal(item)
+	events := `{"type":"turn.started"}` + "\n" + string(itemJSON) + "\n" + `{"type":"turn.completed"}`
+
+	resp, err := p.parseJSONLEvents(events)
+	if err != nil {
+		t.Fatalf("parseJSONLEvents() error: %v", err)
+	}
+	if resp.FinishReason != "tool_calls" {
+		t.Errorf("FinishReason = %q, want %q", resp.FinishReason, "tool_calls")
+	}
+	if len(resp.ToolCalls) != 1 {
+		t.Fatalf("ToolCalls count = %d, want 1", len(resp.ToolCalls))
+	}
+	if resp.ToolCalls[0].Name != "mcp_whisper-sttwhisper-transcribe" {
+		t.Errorf("ToolCalls[0].Name = %q, want %q", resp.ToolCalls[0].Name, "mcp_whisper-sttwhisper-transcribe")
+	}
+	if resp.ToolCalls[0].Arguments["audio_path"] != "/tmp/voice.mp3" {
+		t.Errorf("ToolCalls[0].Arguments[audio_path] = %v, want /tmp/voice.mp3", resp.ToolCalls[0].Arguments["audio_path"])
+	}
+	if strings.Contains(resp.Content, "call:") {
+		t.Errorf("Content should have Gemma tool call stripped, got: %q", resp.Content)
+	}
+}
+
+func TestParseJSONLEvents_RepairsMalformedToolCallWrapper(t *testing.T) {
+	p := &CodexCliProvider{}
+	toolCallText := `Before.
+{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"/tmp/test.txt\"}"}}]`
+	item := codexEvent{
+		Type: "item.completed",
+		Item: &codexEventItem{ID: "item_1", Type: "agent_message", Text: toolCallText},
+	}
+	itemJSON, _ := json.Marshal(item)
+	events := `{"type":"turn.started"}` + "\n" + string(itemJSON) + "\n" + `{"type":"turn.completed"}`
+
+	resp, err := p.parseJSONLEvents(events)
+	if err != nil {
+		t.Fatalf("parseJSONLEvents() error: %v", err)
+	}
+	if resp.FinishReason != "tool_calls" {
+		t.Errorf("FinishReason = %q, want %q", resp.FinishReason, "tool_calls")
+	}
+	if len(resp.ToolCalls) != 1 {
+		t.Fatalf("ToolCalls count = %d, want 1", len(resp.ToolCalls))
+	}
+	if resp.ToolCalls[0].Name != "read_file" {
+		t.Errorf("ToolCalls[0].Name = %q, want %q", resp.ToolCalls[0].Name, "read_file")
+	}
+}
+
 func TestParseJSONLEvents_MultipleMessages(t *testing.T) {
 	p := &CodexCliProvider{}
 	events := `{"type":"turn.started"}

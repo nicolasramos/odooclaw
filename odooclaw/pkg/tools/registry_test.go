@@ -90,6 +90,19 @@ func TestToolRegistry_Get_NotFound(t *testing.T) {
 	}
 }
 
+func TestToolRegistry_Get_FuzzyMatch(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(newMockTool("mcp_whisper-stt_whisper-transcribe", "voice"))
+
+	got, ok := r.Get("mcpwhisper-sttwhisper-transcribe")
+	if !ok {
+		t.Fatal("expected fuzzy lookup to match registered tool")
+	}
+	if got.Name() != "mcp_whisper-stt_whisper-transcribe" {
+		t.Errorf("expected matched tool name %q, got %q", "mcp_whisper-stt_whisper-transcribe", got.Name())
+	}
+}
+
 func TestToolRegistry_RegisterOverwrite(t *testing.T) {
 	r := NewToolRegistry()
 	r.Register(newMockTool("dup", "first"))
