@@ -41,3 +41,27 @@ Example snippet:
 ```
 
 Get your key at [OpenRouter Keys](https://openrouter.ai/keys).
+
+## Gemma emits literal tool-call text (e.g. `<|toolcall>call:...`)
+
+**Symptom:** With Gemma-family models, answers include raw tool-call text instead of standard `tool_calls` JSON, for example:
+
+- `<|toolcall>call:mcpwhisper-sttwhisper-transcribe{"audio_path":"..."}`
+- `<|toolcall>call:mcpodoo-mcp...{...}`
+
+**Cause:** Some models emit pseudo function-call syntax that differs from OpenAI-style `{"tool_calls":[...]}` wrappers.
+
+**Current behavior:** OdooClaw now normalizes these variants by:
+
+1. extracting Gemma-style `call:<tool>{args}` tool calls,
+2. repairing malformed JSON when braces are truncated,
+3. parsing nested payload arguments (for example `payload:{domain:[...],model:"project.task"}`),
+4. stripping pseudo tool-call text from user-visible content,
+5. resolving normalized tool names through fallback fuzzy lookup.
+
+**If it still fails:**
+
+- keep tool names stable in prompts (`mcp_<server>_<tool>`),
+- avoid extra prose around tool-call snippets,
+- verify the target tool appears in runtime tool list,
+- upgrade to the latest branch with Gemma compatibility patches.
