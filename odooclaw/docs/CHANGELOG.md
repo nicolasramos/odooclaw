@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `mail_bot_odooclaw` module: Webhook now includes `voice_attachments` array, and added a safe `call_kw_as_user` controller for secure impersonation.
 - `mail_bot_odooclaw` controller: Endpoint `/odooclaw/reply` accepts `attachment_ids` and `voice_metadata_ids`.
 - `odoo-mcp` MCP server: Passes the `sender_id` to Odoo to enforce secure execution scopes.
+- Provider tool-call extraction: Added compatibility for Gemma-style pseudo tool-call text (`<|toolcall>call:...{...}`) plus malformed JSON brace repair during extraction.
+- OpenAI-compatible provider runtime: Added fallback parsing for content-only Gemma4 pseudo tool-calls (`<|tool_call>...`) when `message.tool_calls` is empty, with nested payload argument normalization.
+- Tool registry lookup: Added normalized/fuzzy matching fallback so model-emitted tool names with punctuation drift can still resolve to registered tools.
 - Dockerfile: Added `edge-tts`, `aiohttp`, and `faster-whisper` dependencies
 - `config.json`: Added `whisper-stt` and `edge-tts` MCP server configurations
 

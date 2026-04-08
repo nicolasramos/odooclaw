@@ -46,6 +46,7 @@ By using this engine, **OdooClaw** inherits the ability to run directly inside a
 - ⚡ **Asynchronous & Non-Blocking**: Odoo ↔ OdooClaw communication relies on Webhooks ("Fire & Forget"), releasing Odoo workers instantly.
 - 🧠 **Segregated Context**: AI memory is independent per channel/user. It doesn't mix private information.
 - 🤖 **Integrated MCP Server**: Uses the industry standard Model Context Protocol (MCP) via embedded Python servers, providing `odoo-mcp` (granular Odoo tools with permission-aware execution), `ocr-invoice` (invoice/PO parsing), `whisper-stt` (voice transcription), and `edge-tts` (text-to-speech).
+- 🧩 **Gemma4 Tool-Calling Compatibility**: Supports Gemma4/OpenAI-compatible endpoints that emit pseudo tool-call content (`<|tool_call>call:...{...}`), including normalization of tool names, nested argument parsing, and automatic conversion to executable tool calls.
 - 🛡️ **Secure by Design**: Pre-configured personality (`AGENTS.md`) designed to query, ask for confirmation, and *never* perform critical modifications without explicit permission.
 
 ---
