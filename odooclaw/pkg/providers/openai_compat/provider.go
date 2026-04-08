@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -274,15 +275,385 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 		toolCalls = append(toolCalls, toolCall)
 	}
 
+	content := choice.Message.Content
+	finishReason := choice.FinishReason
+	if len(toolCalls) == 0 {
+		if extracted := extractGemmaContentToolCalls(content); len(extracted) > 0 {
+			toolCalls = extracted
+			content = stripGemmaContentToolCalls(content)
+			if finishReason == "" || finishReason == "stop" {
+				finishReason = "tool_calls"
+			}
+		}
+	}
+
 	return &LLMResponse{
-		Content:          choice.Message.Content,
+		Content:          strings.TrimSpace(content),
 		ReasoningContent: choice.Message.ReasoningContent,
 		Reasoning:        choice.Message.Reasoning,
 		ReasoningDetails: choice.Message.ReasoningDetails,
 		ToolCalls:        toolCalls,
-		FinishReason:     choice.FinishReason,
+		FinishReason:     finishReason,
 		Usage:            apiResponse.Usage,
 	}, nil
+}
+
+func extractGemmaContentToolCalls(text string) []ToolCall {
+	const token = "call:"
+	searchFrom := 0
+	callIndex := 1
+	result := make([]ToolCall, 0)
+
+	for {
+		rel := strings.Index(text[searchFrom:], token)
+		if rel == -1 {
+			break
+		}
+
+		idx := searchFrom + rel
+		nameStart := idx + len(token)
+		for nameStart < len(text) && (text[nameStart] == ' ' || text[nameStart] == '\t') {
+			nameStart++
+		}
+		if nameStart >= len(text) {
+			break
+		}
+
+		nameEnd := nameStart
+		for nameEnd < len(text) {
+			ch := text[nameEnd]
+			if ch == '{' || ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '<' {
+				break
+			}
+			nameEnd++
+		}
+
+		rawName := strings.TrimSpace(text[nameStart:nameEnd])
+		name := normalizeGemmaToolName(rawName)
+		if name == "" {
+			searchFrom = nameEnd
+			continue
+		}
+
+		argStart := nameEnd
+		for argStart < len(text) && (text[argStart] == ' ' || text[argStart] == '\t') {
+			argStart++
+		}
+
+		argsMap := map[string]any{}
+		argsJSON := "{}"
+		nextFrom := nameEnd
+		if argStart < len(text) && text[argStart] == '{' {
+			argEnd := findMatchingBrace(text, argStart)
+			if argEnd > argStart {
+				rawArgs := strings.TrimSpace(text[argStart+1 : argEnd-1])
+				argsMap = parseGemmaArguments(rawArgs)
+				if encoded, err := json.Marshal(argsMap); err == nil {
+					argsJSON = string(encoded)
+				}
+				nextFrom = argEnd
+			}
+		}
+
+		result = append(result, ToolCall{
+			ID:        "gemma_call_" + strconv.Itoa(callIndex),
+			Type:      "function",
+			Name:      name,
+			Arguments: argsMap,
+			Function: &FunctionCall{
+				Name:      name,
+				Arguments: argsJSON,
+			},
+		})
+
+		callIndex++
+		searchFrom = nextFrom
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func stripGemmaContentToolCalls(text string) string {
+	const token = "call:"
+	for {
+		rel := strings.Index(text, token)
+		if rel == -1 {
+			return text
+		}
+
+		start := rel
+		if prefix := strings.LastIndex(text[:rel], "<|tool_call>"); prefix >= 0 && strings.TrimSpace(text[prefix:rel]) == "<|tool_call>" {
+			start = prefix
+		} else if prefix := strings.LastIndex(text[:rel], "<|toolcall>"); prefix >= 0 && strings.TrimSpace(text[prefix:rel]) == "<|toolcall>" {
+			start = prefix
+		}
+
+		nameStart := rel + len(token)
+		for nameStart < len(text) && (text[nameStart] == ' ' || text[nameStart] == '\t') {
+			nameStart++
+		}
+		nameEnd := nameStart
+		for nameEnd < len(text) {
+			ch := text[nameEnd]
+			if ch == '{' || ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '<' {
+				break
+			}
+			nameEnd++
+		}
+
+		end := nameEnd
+		for end < len(text) && (text[end] == ' ' || text[end] == '\t') {
+			end++
+		}
+		if end < len(text) && text[end] == '{' {
+			argEnd := findMatchingBrace(text, end)
+			if argEnd > end {
+				end = argEnd
+			}
+		}
+
+		if suffix := strings.Index(text[end:], "<tool_call|>"); suffix >= 0 && suffix < 20 {
+			end = end + suffix + len("<tool_call|>")
+		}
+		text = strings.TrimSpace(text[:start] + text[end:])
+	}
+}
+
+func normalizeGemmaToolName(name string) string {
+	name = strings.TrimSpace(name)
+	name = strings.Trim(name, "\"'`")
+	if name == "" {
+		return ""
+	}
+	if strings.HasPrefix(name, "mcp") && !strings.HasPrefix(name, "mcp_") {
+		name = "mcp_" + strings.TrimPrefix(name, "mcp")
+	}
+	name = strings.ReplaceAll(name, "::", "_")
+	name = strings.ReplaceAll(name, "/", "_")
+	name = strings.ReplaceAll(name, ".", "_")
+	for strings.Contains(name, "__") {
+		name = strings.ReplaceAll(name, "__", "_")
+	}
+	return name
+}
+
+func parseGemmaArguments(raw string) map[string]any {
+	result := map[string]any{}
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return result
+	}
+
+	if parsed, ok := parseGemmaObject(trimmed); ok && len(parsed) > 0 {
+		return parsed
+	}
+
+	if len(result) == 0 {
+		result["_raw"] = trimmed
+	}
+	return result
+}
+
+func parseGemmaObject(raw string) (map[string]any, bool) {
+	obj := map[string]any{}
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return nil, false
+	}
+
+	parts := splitTopLevel(s, ',')
+	if len(parts) == 0 {
+		return nil, false
+	}
+
+	for _, part := range parts {
+		piece := strings.TrimSpace(part)
+		if piece == "" {
+			continue
+		}
+		idx := indexTopLevelColon(piece)
+		if idx <= 0 {
+			continue
+		}
+		key := sanitizeGemmaString(piece[:idx])
+		if key == "" {
+			continue
+		}
+		valueRaw := strings.TrimSpace(piece[idx+1:])
+		obj[key] = parseGemmaValue(valueRaw)
+	}
+
+	if len(obj) == 0 {
+		return nil, false
+	}
+	return obj, true
+}
+
+func parseGemmaValue(raw string) any {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return ""
+	}
+
+	v = strings.ReplaceAll(v, `<|"|>`, `"`)
+
+	if strings.HasPrefix(v, "{") && strings.HasSuffix(v, "}") {
+		inner := strings.TrimSpace(v[1 : len(v)-1])
+		if nested, ok := parseGemmaObject(inner); ok {
+			return nested
+		}
+	}
+
+	if strings.HasPrefix(v, "[") && strings.HasSuffix(v, "]") {
+		var arr any
+		if err := json.Unmarshal([]byte(v), &arr); err == nil {
+			return arr
+		}
+	}
+
+	v = sanitizeGemmaString(v)
+	if n, err := strconv.Atoi(v); err == nil {
+		return n
+	}
+	if f, err := strconv.ParseFloat(v, 64); err == nil {
+		return f
+	}
+	if strings.EqualFold(v, "true") {
+		return true
+	}
+	if strings.EqualFold(v, "false") {
+		return false
+	}
+	return v
+}
+
+func sanitizeGemmaString(s string) string {
+	out := strings.TrimSpace(s)
+	out = strings.ReplaceAll(out, `<|"|>`, `"`)
+	out = strings.Trim(out, " \t\n\r\"'`")
+	for strings.HasSuffix(out, "}") && !strings.Contains(out, "{") {
+		out = strings.TrimSuffix(out, "}")
+	}
+	return strings.TrimSpace(out)
+}
+
+func splitTopLevel(input string, sep byte) []string {
+	parts := make([]string, 0)
+	start := 0
+	braceDepth := 0
+	bracketDepth := 0
+	inString := false
+	var quote byte
+
+	for i := 0; i < len(input); i++ {
+		ch := input[i]
+		if inString {
+			if ch == '\\' {
+				i++
+				continue
+			}
+			if ch == quote {
+				inString = false
+			}
+			continue
+		}
+
+		switch ch {
+		case '\'', '"':
+			inString = true
+			quote = ch
+		case '{':
+			braceDepth++
+		case '}':
+			if braceDepth > 0 {
+				braceDepth--
+			}
+		case '[':
+			bracketDepth++
+		case ']':
+			if bracketDepth > 0 {
+				bracketDepth--
+			}
+		case sep:
+			if braceDepth == 0 && bracketDepth == 0 {
+				parts = append(parts, input[start:i])
+				start = i + 1
+			}
+		}
+	}
+
+	if start <= len(input) {
+		parts = append(parts, input[start:])
+	}
+	return parts
+}
+
+func indexTopLevelColon(input string) int {
+	braceDepth := 0
+	bracketDepth := 0
+	inString := false
+	var quote byte
+
+	for i := 0; i < len(input); i++ {
+		ch := input[i]
+		if inString {
+			if ch == '\\' {
+				i++
+				continue
+			}
+			if ch == quote {
+				inString = false
+			}
+			continue
+		}
+
+		switch ch {
+		case '\'', '"':
+			inString = true
+			quote = ch
+		case '{':
+			braceDepth++
+		case '}':
+			if braceDepth > 0 {
+				braceDepth--
+			}
+		case '[':
+			bracketDepth++
+		case ']':
+			if bracketDepth > 0 {
+				bracketDepth--
+			}
+		case ':':
+			if braceDepth == 0 && bracketDepth == 0 {
+				return i
+			}
+		}
+	}
+
+	return -1
+}
+
+func findMatchingBrace(text string, start int) int {
+	if start < 0 || start >= len(text) || text[start] != '{' {
+		return start
+	}
+
+	depth := 0
+	for i := start; i < len(text); i++ {
+		switch text[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return start
 }
 
 // openaiMessage is the wire-format message for OpenAI-compatible APIs.

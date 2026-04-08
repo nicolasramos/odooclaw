@@ -149,6 +149,93 @@ func TestProviderChat_ParsesReasoningContent(t *testing.T) {
 	}
 }
 
+func TestProviderChat_ParsesGemmaPseudoToolCallsFromContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": `<|tool_call>call:mcp_whisper-stt_whisper-transcribe{attachment_id:1555}<tool_call|>`,
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "transcribe audio"}}, nil, "gemma-4-26b-a4b-it-4bit", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if out.FinishReason != "tool_calls" {
+		t.Fatalf("FinishReason = %q, want %q", out.FinishReason, "tool_calls")
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].Name != "mcp_whisper-stt_whisper-transcribe" {
+		t.Fatalf("ToolCalls[0].Name = %q", out.ToolCalls[0].Name)
+	}
+	if id, ok := out.ToolCalls[0].Arguments["attachment_id"]; !ok || id != 1555 {
+		t.Fatalf("attachment_id = %v, want 1555", out.ToolCalls[0].Arguments["attachment_id"])
+	}
+	if strings.Contains(out.Content, "call:") {
+		t.Fatalf("Content still contains pseudo tool call: %q", out.Content)
+	}
+}
+
+func TestProviderChat_ParsesGemmaPseudoToolCallsWithNestedPayload(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": `<|tool_call>call:mcp_odoo-mcp_odoo_search{payload:{domain:[["state","=","open"]],model:<|"|>project.task<|"|>}}<tool_call|>`,
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "cuantas tareas abiertas"}}, nil, "gemma-4-26b-a4b-it-4bit", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	args := out.ToolCalls[0].Arguments
+	payloadAny, ok := args["payload"]
+	if !ok {
+		t.Fatalf("payload missing in arguments: %#v", args)
+	}
+	payload, ok := payloadAny.(map[string]any)
+	if !ok {
+		t.Fatalf("payload type = %T, want map[string]any", payloadAny)
+	}
+	if payload["model"] != "project.task" {
+		t.Fatalf("payload.model = %v, want project.task", payload["model"])
+	}
+	domainAny, ok := payload["domain"]
+	if !ok {
+		t.Fatalf("payload.domain missing")
+	}
+	if _, ok := domainAny.([]any); !ok {
+		t.Fatalf("payload.domain type = %T, want []any", domainAny)
+	}
+}
+
 func TestProviderChat_PreservesReasoningContentInHistory(t *testing.T) {
 	var requestBody map[string]any
 
