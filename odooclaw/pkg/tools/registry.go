@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,7 +38,33 @@ func (r *ToolRegistry) Get(name string) (Tool, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	tool, ok := r.tools[name]
-	return tool, ok
+	if ok {
+		return tool, true
+	}
+
+	lookupKey := canonicalToolLookupKey(name)
+	if lookupKey == "" {
+		return nil, false
+	}
+
+	for registeredName, registeredTool := range r.tools {
+		if canonicalToolLookupKey(registeredName) == lookupKey {
+			return registeredTool, true
+		}
+	}
+
+	return nil, false
+}
+
+func canonicalToolLookupKey(name string) string {
+	var b strings.Builder
+	b.Grow(len(name))
+	for _, r := range strings.ToLower(name) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string]any) *ToolResult {
