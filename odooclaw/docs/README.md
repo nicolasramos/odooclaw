@@ -16,7 +16,8 @@ OdooClaw is a specialized version of PicoClaw, tailored for integration with **O
 - [Browser Copilot + Doodba Setup](BROWSER_COPILOT_DOODBA_SETUP.md): End-to-end setup for pairing flow, per-tab sharing, Chrome/Firefox local testing, plus minimal `prod.yaml` and mount strategy (required vs optional).
 - [Browser Extension Distribution](BROWSER_EXTENSION_DISTRIBUTION.md): Internal packaging, dual-browser ZIP artifacts, and store-readiness notes.
 - [Doodba Minimal Stack Example](DOODBA_MINIMAL_STACK_EXAMPLE.md): Copy/paste-ready files for `prod.yaml`, env variables, minimal OdooClaw config, and Redis-backed baseline.
-- [SQLite Memory Backend](SQLITE_MEMORY.md): Core memory architecture, runtime paths, and retrieval behavior.
+- [SQLite Memory Backend](SQLITE_MEMORY.md): HOT + COLD memory architecture, runtime paths, retrieval behavior, and historical memory tools.
+- [Odoo Chat Memory QA Guide](ODOO_CHAT_MEMORY_QA.md): Manual end-to-end validation scenarios from Odoo Discuss (scope isolation, temporal facts, explainability, and Odoo source-of-truth checks).
 
 ### 3. The Odoo MCP Server (`odoo-mcp`)
 

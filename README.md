@@ -40,6 +40,7 @@ By using this engine, **OdooClaw** inherits the ability to run directly inside a
 - 🤝 **Odoo Discuss Integration**: Talk to the AI directly from your Odoo chat.
 - 🔐 **Native Permission Inheritance**: Secure by default. The AI dynamically assumes Odoo user permissions, preventing any bypass of native Security Rights or Record Rules.
 - 🧠 **Intelligent ORM Bridge**: High-precision tool execution. The `odoo-mcp` bridge provides modular tools with strict validation, denylist/allowlist controls, and safer mappings for real Odoo ORM operations.
+- 🧠 **Dual-Layer Memory (HOT + COLD)**: Keeps current prompt memory behavior while adding scoped historical memory, temporal facts, timeline recall, retrieval explainability, and optional historical markdown import.
 - 🔁 **RLM Acceleration (Context-Rot Resistant)**: For large Odoo datasets, OdooClaw decomposes analysis into recursive Map-Reduce steps (`rlm_partition` -> sub-agents -> `rlm_aggregate`) to keep context clean, improve accuracy, and reduce long-context cost.
 - 📄 **Smart OCR & Action Generation**: Automatically scans PDF invoices, extracts data, and creates vendor bills or purchase orders intelligently.
 - 🎤 **Voice Messages**: Send and receive voice notes! Supports transcription (STT) and speech synthesis (TTS).
@@ -460,6 +461,8 @@ Deeper configuration (alternative providers like Anthropic, Ollama, etc., troubl
 - [Main Documentation](odooclaw/docs/README.md)
 - [General Configuration (JSON)](odooclaw/docs/CONFIGURATION.md)
 - [Voice Features (STT/TTS)](odooclaw/docs/VOICE_FEATURES.md)
+- [SQLite + Historical Memory](odooclaw/docs/SQLITE_MEMORY.md)
+- [Odoo Chat Memory QA Guide](odooclaw/docs/ODOO_CHAT_MEMORY_QA.md)
 - [Changelog](odooclaw/docs/CHANGELOG.md)
 - [General Troubleshooting](odooclaw/docs/troubleshooting.md)
 - [Antigravity Auth and Usage](odooclaw/docs/ANTIGRAVITY_USAGE.md)
@@ -474,7 +477,7 @@ OdooClaw shares the ultra-lightweight architectural principles of its predecesso
 
 - **Core Engine**: Written in Go (1.21+), compiling to a single standalone binary.
 - **Event Bus**: An internal `bus` package decouples the Odoo webhooks from the LLM execution, allowing true asynchronous background processing.
-- **Routing & Memory**: Channels route conversations seamlessly. Each user/thread gets isolated context to avoid data contamination between different Odoo records.
+- **Routing & Memory**: Channels route conversations seamlessly. Each user/thread gets isolated context to avoid data contamination between different Odoo records. Memory uses a HOT operational layer plus a scoped COLD historical layer with temporal facts and explainability tools.
 - **Skills Framework (MCP)**: Native support for the *Model Context Protocol*, allowing you to plug any external Python/Node script securely.
 
 For an in-depth look at the architecture, please refer to the [Design Documentation](odooclaw/docs/design/ARCHITECTURE.md).
