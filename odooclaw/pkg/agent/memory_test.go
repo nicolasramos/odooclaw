@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	corememory "github.com/nicolasramos/odooclaw/pkg/memory"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -85,5 +87,79 @@ func TestMemoryStoreAppendTodaySyncsSQLite(t *testing.T) {
 	context := store.GetMemoryContext()
 	if !strings.Contains(context, "Captured deployment follow-up") {
 		t.Fatal("expected appended note in memory context")
+	}
+}
+
+func TestMemoryStoreGetRelevantContextFallsBackToHistorical(t *testing.T) {
+	tmpDir := setupWorkspace(t, nil)
+	defer os.RemoveAll(tmpDir)
+
+	store := NewMemoryStore(tmpDir)
+	if _, err := store.historical.Save(corememory.HistoricalSaveInput{
+		Content: "Customer requested fiscal position reminder for next billing cycle.",
+		Source:  "memory_save",
+		Channel: "odoo",
+		ChatID:  "res.partner_42",
+		Metadata: map[string]string{
+			"company_id": "7",
+			"model":      "res.partner",
+			"res_id":     "42",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	context := store.GetRelevantContext(PromptMemoryOptions{
+		Query:   "fiscal position reminder",
+		Channel: "odoo",
+		ChatID:  "res.partner_42",
+		Metadata: map[string]string{
+			"company_id": "7",
+			"model":      "res.partner",
+			"res_id":     "42",
+		},
+	})
+
+	if !strings.Contains(context, "## Historical Memory Recall") {
+		t.Fatal("expected historical memory fallback section")
+	}
+	if !strings.Contains(context, "fiscal position reminder") {
+		t.Fatal("expected historical memory content in relevant context")
+	}
+}
+
+func TestMemoryStoreGetRelevantContextAugmentsHotWithHistorical(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"memory/scopes/odoo/sender-18.md": "Customer 18 prefers concise deployment updates.",
+	})
+	defer os.RemoveAll(tmpDir)
+
+	store := NewMemoryStore(tmpDir)
+	if _, err := store.historical.Save(corememory.HistoricalSaveInput{
+		Content:  "Historical note: customer 18 requested monthly summary on deployments.",
+		Source:   "memory_save",
+		Channel:  "odoo",
+		SenderID: "18",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	context := store.GetRelevantContext(PromptMemoryOptions{
+		Query:    "deployment updates summary",
+		Channel:  "odoo",
+		SenderID: "18",
+	})
+
+	if !strings.Contains(context, "## Relevant Memory Recall") {
+		t.Fatal("expected hot memory relevant section")
+	}
+	if !strings.Contains(context, "## Historical Memory Recall") {
+		t.Fatal("expected historical augmentation section")
+	}
+	if !strings.Contains(context, "prefers concise deployment updates") {
+		t.Fatal("expected hot memory content in relevant context")
+	}
+	if !strings.Contains(context, "requested monthly summary") {
+		t.Fatal("expected historical memory content in relevant context")
 	}
 }

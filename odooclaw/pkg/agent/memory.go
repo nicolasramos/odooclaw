@@ -25,6 +25,7 @@ type MemoryStore struct {
 	memoryDir  string
 	memoryFile string
 	sqlite     *corememory.Store
+	historical *corememory.HistoricalStore
 }
 
 type PromptMemoryOptions struct {
@@ -49,6 +50,7 @@ func NewMemoryStore(workspace string) *MemoryStore {
 		memoryDir:  memoryDir,
 		memoryFile: memoryFile,
 		sqlite:     corememory.NewStore(memoryDir),
+		historical: corememory.NewHistoricalStore(memoryDir),
 	}
 }
 
@@ -181,22 +183,50 @@ func (ms *MemoryStore) GetMemoryContext() string {
 }
 
 func (ms *MemoryStore) GetRelevantContext(opts PromptMemoryOptions) string {
-	if ms.sqlite == nil {
-		return ""
-	}
-
-	context, err := ms.sqlite.BuildRelevantContext(corememory.SearchOptions{
+	searchOpts := corememory.SearchOptions{
 		Query:    opts.Query,
 		Limit:    3,
 		Channel:  opts.Channel,
 		ChatID:   opts.ChatID,
 		SenderID: opts.SenderID,
 		Metadata: opts.Metadata,
-	})
-	if err != nil {
+	}
+
+	hotContext := ""
+	if ms.sqlite != nil {
+		context, err := ms.sqlite.BuildRelevantContext(searchOpts)
+		if err == nil {
+			hotContext = context
+		}
+	}
+
+	coldContext := ""
+	if ms.historical != nil {
+		context, err := ms.historical.BuildRelevantContext(searchOpts)
+		if err == nil {
+			coldContext = rewriteRelevantHeading(context, "## Historical Memory Recall")
+		}
+	}
+
+	if hotContext == "" {
+		return coldContext
+	}
+	if coldContext == "" {
+		return hotContext
+	}
+
+	return hotContext + "\n\n---\n\n" + coldContext
+}
+
+func rewriteRelevantHeading(context string, heading string) string {
+	trimmed := strings.TrimSpace(context)
+	if trimmed == "" {
 		return ""
 	}
-	return context
+	if strings.HasPrefix(trimmed, "## Relevant Memory Recall") {
+		return strings.Replace(trimmed, "## Relevant Memory Recall", heading, 1)
+	}
+	return heading + "\n\n" + trimmed
 }
 
 func (ms *MemoryStore) syncFile(path string) error {

@@ -152,6 +152,14 @@ func registerSharedTools(
 			})
 		})
 		agent.Tools.Register(messageTool)
+		agent.Tools.Register(tools.NewMemorySearchTool(agent.Workspace))
+		agent.Tools.Register(tools.NewMemorySaveDecisionTool())
+		agent.Tools.Register(tools.NewMemorySaveTool(agent.Workspace))
+		agent.Tools.Register(tools.NewMemoryAddFactTool(agent.Workspace))
+		agent.Tools.Register(tools.NewMemoryQueryFactsTool(agent.Workspace))
+		agent.Tools.Register(tools.NewMemoryGetTimelineTool(agent.Workspace))
+		agent.Tools.Register(tools.NewMemoryDebugExplainRetrievalTool(agent.Workspace))
+		agent.Tools.Register(tools.NewMemoryImportHistoryTool(agent.Workspace))
 
 		// Skill discovery and installation tools
 		registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
