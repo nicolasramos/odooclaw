@@ -41,6 +41,8 @@ type SearchResult struct {
 	Content    string
 	Collection string
 	Score      float64
+	Source     string
+	CreatedAt  int64
 }
 
 type documentRecord struct {
