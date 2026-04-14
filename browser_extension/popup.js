@@ -90,6 +90,7 @@ async function refreshState() {
     return;
   }
   updateStateView(result);
+  updateSettingsView(result);
 }
 
 async function onToggleCapture(event) {
@@ -137,9 +138,61 @@ async function onClearPairing() {
   await refreshState();
 }
 
+function updateSettingsView(state) {
+  const apiBaseInput = document.getElementById("settingsApiBase");
+  const tokenInput = document.getElementById("settingsToken");
+  const healthDot = document.getElementById("healthIndicator");
+  const healthLabel = document.getElementById("healthLabel");
+
+  if (apiBaseInput && state.apiBase && document.activeElement !== apiBaseInput) {
+    apiBaseInput.value = state.apiBase;
+  }
+  if (tokenInput && document.activeElement !== tokenInput) {
+    tokenInput.value = state.hasToken ? "********" : "";
+  }
+
+  const health = state.backendHealth;
+  if (health && health.reachable) {
+    healthDot.className = "health-dot ok";
+    healthLabel.textContent = "Conectado" + (health.domains && health.domains.length > 0 ? " (" + health.domains.join(", ") + ")" : "");
+  } else if (health && health.error) {
+    healthDot.className = "health-dot fail";
+    healthLabel.textContent = "Sin conexion: " + health.error;
+  } else {
+    healthDot.className = "health-dot unknown";
+    healthLabel.textContent = "Sin conectar";
+  }
+}
+
+function toggleSettingsPanel() {
+  const body = document.getElementById("settingsBody");
+  const chevron = document.getElementById("settingsChevron");
+  const isOpen = !body.classList.contains("hidden");
+  body.classList.toggle("hidden", isOpen);
+  chevron.classList.toggle("open", !isOpen);
+}
+
+async function onSaveSettings() {
+  const rawBase = document.getElementById("settingsApiBase").value.trim();
+  const rawToken = document.getElementById("settingsToken").value.trim();
+  const result = await sendMessage({
+    type: "UPDATE_SETTINGS",
+    apiBase: rawBase,
+    token: rawToken
+  });
+  if (!result || !result.ok) {
+    setMessage((result && result.error) || "Error al guardar la configuracion", true);
+    return;
+  }
+  setMessage("Configuracion guardada. URL: " + result.apiBase);
+  await refreshState();
+}
+
 document.getElementById("captureToggle").addEventListener("change", onToggleCapture);
 document.getElementById("linkCode").addEventListener("click", onLinkCode);
 document.getElementById("clearPairing").addEventListener("click", onClearPairing);
+document.querySelector(".settings-section h2").addEventListener("click", toggleSettingsPanel);
+document.getElementById("saveSettings").addEventListener("click", onSaveSettings);
 
 refreshState().catch((error) => {
   setMessage(String(error), true);
