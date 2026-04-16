@@ -43,10 +43,15 @@ By using this engine, **OdooClaw** inherits the ability to run directly inside a
 - 🧠 **Dual-Layer Memory (HOT + COLD)**: Keeps current prompt memory behavior while adding scoped historical memory, temporal facts, timeline recall, retrieval explainability, and optional historical markdown import.
 - 🔁 **RLM Acceleration (Context-Rot Resistant)**: For large Odoo datasets, OdooClaw decomposes analysis into recursive Map-Reduce steps (`rlm_partition` -> sub-agents -> `rlm_aggregate`) to keep context clean, improve accuracy, and reduce long-context cost.
 - 📄 **Smart OCR & Action Generation**: Automatically scans PDF invoices, extracts data, and creates vendor bills or purchase orders intelligently.
+- 💼 **Workforce Ops Tools**: Native tools for attendance, check-in/check-out, task-centric timesheets, daily summaries, missing-timesheet detection, and expense report lifecycle.
+- 🧾 **Accounting Ops Tools**: Native tools for bank reconciliation workflows, AR/AP aging, period-close checks, journal entry creation/posting, tax summary, and duplicate bill risk checks.
+- 🚗 **OCR Expense Flows**: Attachment-to-expense creation for employee receipts and mileage (`ocr-create-employee-expense`, `ocr-create-mileage-expense`) with dry-run support.
 - 🎤 **Voice Messages**: Send and receive voice notes! Supports transcription (STT) and speech synthesis (TTS).
 - ⚡ **Asynchronous & Non-Blocking**: Odoo ↔ OdooClaw communication relies on Webhooks ("Fire & Forget"), releasing Odoo workers instantly.
 - 🧠 **Segregated Context**: AI memory is independent per channel/user. It doesn't mix private information.
 - 🤖 **Integrated MCP Server**: Uses the industry standard Model Context Protocol (MCP) via embedded Python servers, providing `odoo-mcp` (granular Odoo tools with permission-aware execution), `ocr-invoice` (invoice/PO parsing), `whisper-stt` (voice transcription), and `edge-tts` (text-to-speech).
+- 🧷 **Reliable Odoo Chat Identity Context**: Odoo Discuss sender context now consistently propagates to `odoo-mcp` calls (including `odoo-mcp` server alias), ensuring correct `sender_id`/company scope in tool execution.
+- 🔒 **Private Odoo Reply Routing**: Group mentions can be safely handled with private 1:1 reply targets and user-scoped sessions, preventing cross-user context leakage in shared channels.
 - 🧩 **Gemma4 Tool-Calling Compatibility**: Supports Gemma4/OpenAI-compatible endpoints that emit pseudo tool-call content (`<|tool_call>call:...{...}`), including normalization of tool names, nested argument parsing, and automatic conversion to executable tool calls.
 - 🛡️ **Secure by Design**: Pre-configured personality (`AGENTS.md`) designed to query, ask for confirmation, and *never* perform critical modifications without explicit permission.
 
@@ -60,7 +65,7 @@ The integration consists of two parts:
 
 ### The Communication Flow (Via Webhook)
 
-1. **User writes to OdooClaw**: In Odoo, a user mentions `@OdooClaw` in any channel, or sends a Direct Message. The module overrides `_message_post` to detect this intent.
+1. **User writes to OdooClaw**: In Odoo, a user sends a Direct Message (default mode) or, if enabled, mentions `@OdooClaw` in a channel. The module overrides `_message_post` to detect this intent.
 2. **Odoo sends an Asynchronous Webhook**: Instead of blocking while waiting for the AI, Odoo sends an HTTP POST JSON payload in the background to the OdooClaw API (`http://odooclaw:18790/webhook/odoo`).
 3. **OdooClaw processes it**: The agent evaluates the intent and contacts the LLM provider (OpenAI, Anthropic, vLLM, etc.). The LLM invokes `odoo-mcp` tools from our **internal MCP server** (Python), executing permission-aware Odoo operations (search, read, create, write, safe actions) for the requesting user context.
 4. **OdooClaw replies to Odoo**: Once the response is ready, OdooClaw makes an HTTP POST back to the Odoo endpoint (`/odooclaw/reply`), which injects the message into Discuss, impersonating the bot.
@@ -172,6 +177,7 @@ services:
       - ODOOCLAW_CHANNELS_ODOO_WEBHOOK_HOST=0.0.0.0
       - ODOOCLAW_CHANNELS_ODOO_WEBHOOK_PORT=18790
       - ODOOCLAW_CHANNELS_ODOO_WEBHOOK_PATH=/webhook/odoo
+      - ODOOCLAW_CHANNELS_ODOO_ALLOW_GROUP_MENTIONS=false # Recommended default: DM-only
     volumes:
       # Persistent volume for memory, configs, and OdooClaw local DB
       - odooclaw_data:/home/odooclaw/.odooclaw
@@ -216,6 +222,18 @@ docker compose logs -f odooclaw
 For complete Doodba setup guides:
 - English: `odooclaw/docs/GUIDE_DOODBA_SETUP_EN.md`
 - Spanish: `odooclaw/docs/GUIA_DOODBA_PUESTA_EN_MARCHA_ES.md`
+
+### Odoo Privacy Modes (Recommended)
+
+- **DM-only (default and recommended):**
+  - `ODOOCLAW_CHANNELS_ODOO_ALLOW_GROUP_MENTIONS=false`
+  - Group mentions are ignored; only direct messages trigger the assistant.
+
+- **Group mentions enabled (advanced mode):**
+  - `ODOOCLAW_CHANNELS_ODOO_ALLOW_GROUP_MENTIONS=true`
+  - Group mentions are accepted.
+  - Odoo module provides private reply targets so responses can still be posted in a user↔bot private chat.
+  - Session scope is isolated per requesting user for those interactions.
 
 ### Browser Copilot in Doodba (Phase 1 MVP)
 
