@@ -19,7 +19,13 @@ OdooClaw is a specialized version of PicoClaw, tailored for integration with **O
 - [SQLite Memory Backend](SQLITE_MEMORY.md): HOT + COLD memory architecture, runtime paths, retrieval behavior, and historical memory tools.
 - [Odoo Chat Memory QA Guide](ODOO_CHAT_MEMORY_QA.md): Manual end-to-end validation scenarios from Odoo Discuss (scope isolation, temporal facts, explainability, and Odoo source-of-truth checks).
 
-### 3. The Odoo MCP Server (`odoo-mcp`)
+### 3. Business Operations Guides
+- [Odoo Workforce Tools](odoo-workforce-tools.md): Attendance, check-in/out, task updates, timesheet assistance, expense reports, and pending-action notifications.
+- [Odoo Accounting Tools](odoo-accounting-tools.md): Bank reconciliation, AR/AP aging, period close checks, journal entries, tax summary, duplicate vendor-bill checks, and OCR-validated bill creation.
+- [OCR Vendor Bill & Expense Flows](ocr-vendor-bill-skill.md): Vendor bill creation plus employee expense and mileage expense extraction/creation from attachments.
+- [Odoo Private Reply Routing](odoo-private-reply-routing.md): DM-only mode, optional group mention mode, private reply targets, and user-scoped session isolation.
+
+### 4. The Odoo MCP Server (`odoo-mcp`)
 
 The core interaction of this agent with Odoo is governed by the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) standard. We provide a modular MCP server (Python) located at `odooclaw/workspace/skills/odoo-mcp`.
 
@@ -33,10 +39,12 @@ MCP is the protocol promoted by Anthropic that standardizes how an LLM discovers
 1. **Modular Odoo operations**:
    - Core tools such as `odoo_search`, `odoo_read`, `odoo_create`, `odoo_write`.
    - Safer business actions exposed as explicit tools instead of free-form unrestricted calls.
+   - Business domains now include Workforce, Accounting, Helpdesk, and OCR-assisted accounting workflows.
 
 2. **Permission-aware execution context**:
    - Calls are executed with the invoking user context to preserve Odoo ACLs and record rules.
    - Security controls include denylist/allowlist protections for sensitive models/operations.
+   - Odoo chat identity context (`sender_id`, company scope) is auto-injected for `odoo-mcp` tool calls.
 
 3. **Attachment/data workflows**:
    - Attachment handling and structured extraction remain supported through MCP skill composition.

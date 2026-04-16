@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Speech-to-Text (STT): Transcribe voice notes using Whisper
   - Text-to-Speech (TTS): Generate voice responses using Edge TTS
 - **OCR vendor bill flow rebuilt**: `ocr-invoice` skill now supports provider-agnostic OpenAI-compatible vision extraction and a direct `ocr-create-vendor-bill` tool for attachment -> extraction -> bill creation.
+- **Workforce toolset expansion**: Added attendance queries, task-oriented timesheet logging, personal task discovery/status update, check-in/check-out, daily summary, missing-timesheet detection, timesheet suggestions, expense report lifecycle, and pending-action notifications.
+- **Accounting operations suite**: Added tools for unreconciled bank lines, reconciliation suggestions/actions, AR/AP aging, period-close checks, journal entries (create/post), tax summary, duplicate vendor-bill validation, expense account/tax suggestions, and OCR-validated vendor bill creation.
+- **OCR expense flows**: Added `ocr-create-employee-expense` and `ocr-create-mileage-expense` (attachment -> extraction -> expense creation, with dry-run support).
+- **Odoo private reply routing controls**: Added DM-only default mode plus optional group-mention mode with private reply targets and user-scoped session isolation.
 
 ### New MCP Skills
 
@@ -30,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `mail_bot_odooclaw` module: Webhook now includes `voice_attachments` array, and added a safe `call_kw_as_user` controller for secure impersonation.
 - `mail_bot_odooclaw` controller: Endpoint `/odooclaw/reply` accepts `attachment_ids` and `voice_metadata_ids`.
 - `odoo-mcp` MCP server: Passes the `sender_id` to Odoo to enforce secure execution scopes.
+- Odoo context injection in tool runtime: Added server/tool alias compatibility for `odoo-mcp` (legacy `odoo-manager` remains supported), ensuring `sender_id`, `company_id`, and `allowed_company_ids` are consistently injected from Odoo chat context.
+- Odoo channel routing: Added `allow_group_mentions` config toggle (`ODOOCLAW_CHANNELS_ODOO_ALLOW_GROUP_MENTIONS`) with default `false` for DM-only behavior.
+- Odoo webhook payload handling: Added `reply_model`/`reply_res_id` support to separate source thread from private reply target when group mentions are enabled.
+- Odoo MCP security allowlist: Added Workforce/expense models (`hr.employee`, `hr.attendance`, `account.analytic.line`, `hr.expense`, `hr.expense.sheet`) to support check-in/checkout and expense flows without fallback access-denied errors.
 - Provider tool-call extraction: Added compatibility for Gemma-style pseudo tool-call text (`<|toolcall>call:...{...}`) plus malformed JSON brace repair during extraction.
 - OpenAI-compatible provider runtime: Added fallback parsing for content-only Gemma4 pseudo tool-calls (`<|tool_call>...`) when `message.tool_calls` is empty, with nested payload argument normalization.
 - Tool registry lookup: Added normalized/fuzzy matching fallback so model-emitted tool names with punctuation drift can still resolve to registered tools.
