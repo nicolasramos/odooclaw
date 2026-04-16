@@ -72,6 +72,63 @@ prompt_yesno() {
   [[ "$answer" =~ ^[Yy] ]]
 }
 
+# -- Compose include helpers --------------------------------------------------
+ensure_compose_include_entry() {
+  local compose_target="$1"
+
+  [ -f "$compose_target" ] || return 0
+
+  if grep -Eq '^[[:space:]]*-[[:space:]]*odooclaw\.yaml([[:space:]]|$)' "$compose_target" ||
+     grep -Eq '^[[:space:]]*include:[[:space:]]*\[[^]]*odooclaw\.yaml[^]]*\]' "$compose_target"; then
+    ok "${compose_target} already includes odooclaw.yaml"
+    return 0
+  fi
+
+  local backup_file="${compose_target}.bak.$(date +%s)"
+  cp "$compose_target" "$backup_file"
+
+  local tmp_file
+  tmp_file="$(mktemp)"
+
+  if grep -Eq '^[[:space:]]*include:[[:space:]]*$' "$compose_target"; then
+    awk '
+      BEGIN { inserted=0 }
+      {
+        print
+        if ($0 ~ /^[[:space:]]*include:[[:space:]]*$/ && inserted == 0) {
+          print "  - odooclaw.yaml"
+          inserted=1
+        }
+      }
+    ' "$compose_target" > "$tmp_file"
+  else
+    {
+      printf 'include:\n'
+      printf '  - odooclaw.yaml\n\n'
+      cat "$compose_target"
+    } > "$tmp_file"
+  fi
+
+  mv "$tmp_file" "$compose_target"
+  ok "Updated ${compose_target} with include: odooclaw.yaml (backup: ${backup_file})"
+}
+
+integrate_odooclaw_include() {
+  local found_compose=0
+
+  for compose_target in devel.yaml prod.yaml; do
+    if [ -f "$compose_target" ]; then
+      found_compose=1
+      ensure_compose_include_entry "$compose_target"
+    fi
+  done
+
+  if [ "$found_compose" -eq 0 ]; then
+    warn "No devel.yaml or prod.yaml found to auto-insert include."
+    warn "You can still use: docker compose -f <stack>.yaml -f odooclaw.yaml up -d"
+  fi
+}
+
 # ============================================================================
 # PHASE 1: Prerequisites
 # ============================================================================
@@ -304,6 +361,9 @@ phase_generate_configs() {
     echo "ODOOCLAW_CHANNELS_ODOO_WEBHOOK_HOST=0.0.0.0"
     echo "ODOOCLAW_CHANNELS_ODOO_WEBHOOK_PORT=18790"
     echo "ODOOCLAW_CHANNELS_ODOO_WEBHOOK_PATH=/webhook/odoo"
+    echo "ODOOCLAW_CHANNELS_ODOO_ALLOW_FROM="
+    echo "ODOOCLAW_CHANNELS_ODOO_ALLOW_GROUP_MENTIONS=false"
+    echo "ODOOCLAW_CHANNELS_ODOO_REASONING_CHANNEL_ID="
     echo "ODOOCLAW_REDIS_URL=redis://redis:6379/0"
     echo "ODOOCLAW_JOB_STORE=odoo"
     if [ "$INSTALL_BROWSER_COPILOT" -eq 1 ]; then
@@ -336,7 +396,8 @@ phase_generate_configs() {
       "enabled": true,
       "webhook_host": "0.0.0.0",
       "webhook_port": 18790,
-      "webhook_path": "/webhook/odoo"
+      "webhook_path": "/webhook/odoo",
+      "allow_group_mentions": false
     }
   },
   "providers": {
@@ -401,6 +462,9 @@ services:
       - ODOOCLAW_CHANNELS_ODOO_WEBHOOK_HOST=0.0.0.0
       - ODOOCLAW_CHANNELS_ODOO_WEBHOOK_PORT=18790
       - ODOOCLAW_CHANNELS_ODOO_WEBHOOK_PATH=/webhook/odoo
+      - ODOOCLAW_CHANNELS_ODOO_ALLOW_FROM=${ODOOCLAW_CHANNELS_ODOO_ALLOW_FROM:-}
+      - ODOOCLAW_CHANNELS_ODOO_ALLOW_GROUP_MENTIONS=${ODOOCLAW_CHANNELS_ODOO_ALLOW_GROUP_MENTIONS:-false}
+      - ODOOCLAW_CHANNELS_ODOO_REASONING_CHANNEL_ID=${ODOOCLAW_CHANNELS_ODOO_REASONING_CHANNEL_ID:-}
       - ODOOCLAW_REDIS_URL=redis://redis:6379/0
       - ODOOCLAW_JOB_STORE=odoo
     ports:
@@ -465,6 +529,9 @@ volumes:
 VOLUMES
 
   ok "${compose_file} generated."
+
+  # Auto-integrate include in common Doodba compose files
+  integrate_odooclaw_include
 
   # --- Instructions for integration ---
   log "To integrate with your existing Doodba stack:"
