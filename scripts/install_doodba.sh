@@ -49,16 +49,16 @@ trap cleanup EXIT
 # -- Prompt helpers ----------------------------------------------------------
 prompt_default() {
   local label="$1" default="$2"
-  printf "  ${BOLD}%s${RESET} [${default}]: " "$label"
+  printf "  ${BOLD}%s${RESET} [${default}]: " "$label" >&2
   read -r answer
   echo "${answer:-$default}"
 }
 
 prompt_password() {
   local label="$1"
-  printf "  ${BOLD}%s${RESET}: " "$label"
+  printf "  ${BOLD}%s${RESET}: " "$label" >&2
   read -rs answer
-  echo ""
+  echo "" >&2
   echo "$answer"
 }
 
@@ -66,7 +66,7 @@ prompt_yesno() {
   local label="$1" default="${2:-Y}"
   local options=""
   [ "$default" = "Y" ] && options="[Y/n]" || options="[y/N]"
-  printf "  ${BOLD}%s${RESET} %s: " "$label" "$options"
+  printf "  ${BOLD}%s${RESET} %s: " "$label" "$options" >&2
   read -r answer
   answer="${answer:-$default}"
   [[ "$answer" =~ ^[Yy] ]]
