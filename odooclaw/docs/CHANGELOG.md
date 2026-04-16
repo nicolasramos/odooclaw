@@ -44,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dockerfile: Added `edge-tts`, `aiohttp`, and `faster-whisper` dependencies
 - `config.json`: Added `whisper-stt` and `edge-tts` MCP server configurations
 
+### Fixed
+- **Doodba installer interactive prompts**: Fixed `scripts/install_doodba.sh` prompt helpers so interactive labels are written to `stderr` instead of `stdout`. This prevents command-substitution capture corruption (for example, Odoo version validation receiving prompt text plus value) and restores reliable capture for version/DB/provider/API inputs.
+
 ---
 
 ## [1.0.0] - 2024-03-05
