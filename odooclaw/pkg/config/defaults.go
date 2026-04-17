@@ -157,11 +157,12 @@ func DefaultConfig() *Config {
 				AllowFrom:      FlexibleStringSlice{},
 			},
 			Odoo: OdooConfig{
-				Enabled:     false,
-				WebhookHost: "0.0.0.0",
-				WebhookPort: 18794,
-				WebhookPath: "/webhook/odoo",
-				AllowFrom:   FlexibleStringSlice{},
+				Enabled:            false,
+				WebhookHost:        "0.0.0.0",
+				WebhookPort:        18794,
+				WebhookPath:        "/webhook/odoo",
+				AllowFrom:          FlexibleStringSlice{},
+				AllowGroupMentions: false,
 			},
 		},
 		Providers: ProvidersConfig{

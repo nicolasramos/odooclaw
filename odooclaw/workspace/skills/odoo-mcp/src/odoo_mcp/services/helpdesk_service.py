@@ -183,6 +183,7 @@ def draft_ticket_email(
                 partner_email = partner[0].get("email")
 
     draft_payload = {
+        "ticket_id": ticket_id,
         "model": "helpdesk.ticket",
         "res_id": ticket_id,
         "subject": subject,

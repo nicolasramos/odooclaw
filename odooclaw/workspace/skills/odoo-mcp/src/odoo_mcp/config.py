@@ -17,6 +17,12 @@ DEFAULT_ALLOWED_MODELS: Set[str] = {
     "purchase.order.line",
     "account.move",
     "account.move.line",
+    "account.bank.statement.line",
+    "account.payment",
+    "account.payment.register",
+    "account.journal",
+    "account.tax",
+    "account.account",
     "crm.lead",
     "contract.contract",
     "contract.line",
@@ -25,6 +31,11 @@ DEFAULT_ALLOWED_MODELS: Set[str] = {
     "mail.compose.message",
     "discuss.channel",
     "project.task",
+    "hr.employee",
+    "hr.attendance",
+    "account.analytic.line",
+    "hr.expense",
+    "hr.expense.sheet",
 }
 
 DEFAULT_DENIED_FIELDS: Set[str] = {

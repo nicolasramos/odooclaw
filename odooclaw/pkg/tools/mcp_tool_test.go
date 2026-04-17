@@ -370,6 +370,69 @@ func TestMCPTool_Execute_MultipleContent(t *testing.T) {
 	}
 }
 
+func TestMCPTool_Execute_InjectsOdooContextForManagerAliases(t *testing.T) {
+	tests := []struct {
+		name       string
+		serverName string
+		toolName   string
+	}{
+		{name: "legacy alias", serverName: "odoo-manager", toolName: "odoo_check_in"},
+		{name: "current alias", serverName: "odoo-mcp", toolName: "odoo_check_in"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := &MockMCPManager{
+				callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]any) (*mcp.CallToolResult, error) {
+					if serverName != tt.serverName {
+						t.Fatalf("expected server %s, got %s", tt.serverName, serverName)
+					}
+					if toolName != tt.toolName {
+						t.Fatalf("expected tool %s, got %s", tt.toolName, toolName)
+					}
+
+					senderID, ok := arguments["sender_id"].(int)
+					if !ok || senderID != 42 {
+						t.Fatalf("expected sender_id=42, got %#v", arguments["sender_id"])
+					}
+
+					companyID, ok := arguments["company_id"].(int)
+					if !ok || companyID != 7 {
+						t.Fatalf("expected company_id=7, got %#v", arguments["company_id"])
+					}
+
+					allowed, ok := arguments["allowed_company_ids"].([]int)
+					if !ok || len(allowed) != 2 || allowed[0] != 7 || allowed[1] != 8 {
+						t.Fatalf("expected allowed_company_ids=[7 8], got %#v", arguments["allowed_company_ids"])
+					}
+
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: "ok"}},
+						IsError: false,
+					}, nil
+				},
+			}
+
+			tool := &mcp.Tool{Name: tt.toolName}
+			mcpTool := NewMCPTool(manager, tt.serverName, tool)
+			mcpTool.SetMessageContext(
+				"odoo",
+				"project.task_10",
+				"42",
+				map[string]string{
+					"company_id":          "7",
+					"allowed_company_ids": "[7,8]",
+				},
+			)
+
+			result := mcpTool.Execute(context.Background(), map[string]any{})
+			if result == nil || result.IsError {
+				t.Fatalf("expected successful result, got %#v", result)
+			}
+		})
+	}
+}
+
 // TestExtractContentText_TextContent tests text content extraction
 func TestExtractContentText_TextContent(t *testing.T) {
 	content := []mcp.Content{

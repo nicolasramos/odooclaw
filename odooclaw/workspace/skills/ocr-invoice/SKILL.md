@@ -13,6 +13,8 @@ Complete vendor bill flow from an Odoo attachment:
 2) Extract invoice data with a vision model (OpenAI-compatible API)
 3) Normalize invoice JSON
 4) Optionally create vendor bill (`account.move`, `in_invoice`) and attach original file
+5) Optionally create employee expense (`hr.expense`) and attach original file
+6) Optionally create mileage expense (`hr.expense`) and attach original file
 
 ## When to use this skill
 
@@ -50,6 +52,46 @@ Extract and create vendor bill in Odoo.
 
 - `dry_run=true`: extract and normalize only; do not create `account.move`.
 - `sender_id` + company context: executes ORM as the Odoo user and respects multi-company (`company_id`, `allowed_company_ids`).
+
+### `ocr-create-employee-expense`
+
+Extract and create employee expense in Odoo.
+
+```json
+{
+  "attachment_id": 1234,
+  "dry_run": false,
+  "sender_id": 7,
+  "company_id": 3,
+  "allowed_company_ids": [3, 5],
+  "employee_id": 12,
+  "product_id": 345
+}
+```
+
+- `dry_run=true`: extract and normalize only; do not create `hr.expense`.
+- `employee_id` and `product_id` are optional overrides.
+- If `employee_id` is omitted, the skill resolves employee from `sender_id`.
+
+### `ocr-create-mileage-expense`
+
+Extract and create mileage expense in Odoo.
+
+```json
+{
+  "attachment_id": 1234,
+  "dry_run": false,
+  "sender_id": 7,
+  "company_id": 3,
+  "allowed_company_ids": [3, 5],
+  "employee_id": 12,
+  "product_id": 345
+}
+```
+
+- `dry_run=true`: extract and normalize mileage data only.
+- Extracted fields include `trip_date`, `origin`, `destination`, `distance_km`, `rate_per_km`, and `total_amount`.
+- If `distance_km` and `rate_per_km` are detected, the expense uses them as `quantity` and `unit_amount`.
 
 ## Environment variables
 
