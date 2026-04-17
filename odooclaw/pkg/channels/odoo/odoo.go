@@ -29,6 +29,8 @@ type OdooWebhookPayload struct {
 	MessageID         int    `json:"message_id"`
 	Model             string `json:"model"`
 	ResID             int    `json:"res_id"`
+	ReplyModel        string `json:"reply_model"`
+	ReplyResID        int    `json:"reply_res_id"`
 	AuthorID          int    `json:"author_id"`
 	AuthorUserID      int    `json:"author_user_id"`
 	AuthorName        string `json:"author_name"`
@@ -152,7 +154,25 @@ func (c *OdooChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	chatID := fmt.Sprintf("%s_%d", payload.Model, payload.ResID)
+	if !payload.IsDM && !c.config.AllowGroupMentions {
+		slog.Info("Ignoring Odoo group mention because allow_group_mentions is disabled", "model", payload.Model, "res_id", payload.ResID)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ignored","reason":"group_mentions_disabled"}`))
+		return
+	}
+
+	sourceChatID := fmt.Sprintf("%s_%d", payload.Model, payload.ResID)
+	replyModel := strings.TrimSpace(payload.ReplyModel)
+	if replyModel == "" {
+		replyModel = payload.Model
+	}
+	replyResID := payload.ReplyResID
+	if replyResID <= 0 {
+		replyResID = payload.ResID
+	}
+	replyChatID := fmt.Sprintf("%s_%d", replyModel, replyResID)
+	hasPrivateReplyTarget := !payload.IsDM && payload.ReplyModel != "" && payload.ReplyResID > 0
+
 	senderNumericID := payload.AuthorUserID
 	if senderNumericID <= 0 {
 		senderNumericID = payload.AuthorID
@@ -167,13 +187,15 @@ func (c *OdooChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	peerKind := "group"
-	if payload.IsDM {
+	peerID := sourceChatID
+	if payload.IsDM || hasPrivateReplyTarget {
 		peerKind = "direct"
+		peerID = senderID
 	}
 
 	peer := bus.Peer{
 		Kind: peerKind,
-		ID:   chatID,
+		ID:   peerID,
 	}
 
 	content := strings.TrimSpace(payload.Body)
@@ -181,8 +203,10 @@ func (c *OdooChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Odoo filters mentions server-side before sending to the webhook.
 	var mediaPaths []string
 	metadata := map[string]string{
-		"model":  payload.Model,
-		"res_id": strconv.Itoa(payload.ResID),
+		"model":        payload.Model,
+		"res_id":       strconv.Itoa(payload.ResID),
+		"reply_model":  replyModel,
+		"reply_res_id": strconv.Itoa(replyResID),
 	}
 	if payload.CompanyID > 0 {
 		metadata["company_id"] = strconv.Itoa(payload.CompanyID)
@@ -193,7 +217,7 @@ func (c *OdooChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	c.HandleMessage(r.Context(), peer, strconv.Itoa(payload.MessageID), senderID, chatID, content, mediaPaths, metadata, sender)
+	c.HandleMessage(r.Context(), peer, strconv.Itoa(payload.MessageID), senderID, replyChatID, content, mediaPaths, metadata, sender)
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status":"ok"}`))

@@ -262,7 +262,7 @@ func (t *MCPTool) injectOdooContext(args map[string]any) {
 		return
 	}
 
-	if t.serverName != "odoo-manager" && t.serverName != "ocr-invoice" {
+	if !isOdooContextServer(t.serverName) {
 		return
 	}
 
@@ -276,8 +276,8 @@ func (t *MCPTool) injectOdooContext(args map[string]any) {
 	companyID, hasCompany := parseInt(t.metadata["company_id"])
 	allowedCompanyIDs := parseCompanyIDs(t.metadata["allowed_company_ids"])
 
-	if t.serverName == "odoo-manager" {
-		if t.tool.Name == "odoo-manager" {
+	if isOdooManagerServer(t.serverName) {
+		if isOdooManagerTool(t.tool.Name) {
 			kwargs, _ := args["kwargs"].(map[string]any)
 			if kwargs == nil {
 				kwargs = map[string]any{}
@@ -326,6 +326,20 @@ func (t *MCPTool) injectOdooContext(args map[string]any) {
 			args["allowed_company_ids"] = allowedCompanyIDs
 		}
 	}
+}
+
+func isOdooContextServer(serverName string) bool {
+	return isOdooManagerServer(serverName) || strings.EqualFold(strings.TrimSpace(serverName), "ocr-invoice")
+}
+
+func isOdooManagerServer(serverName string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(serverName))
+	return normalized == "odoo-manager" || normalized == "odoo-mcp"
+}
+
+func isOdooManagerTool(toolName string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(toolName))
+	return normalized == "odoo-manager" || normalized == "odoo-mcp"
 }
 
 func parseInt(raw string) (int, bool) {

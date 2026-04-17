@@ -200,6 +200,126 @@ class LogTimesheetSchema(BaseOdooRequest):
     date: str = Field(..., description="Date of the timesheet log (YYYY-MM-DD)")
 
 
+class FindAttendanceSchema(BaseOdooRequest):
+    user_id: Optional[int] = Field(
+        None, description="Odoo user ID to resolve attendance employee"
+    )
+    employee_id: Optional[int] = Field(
+        None, description="Employee ID for direct attendance query"
+    )
+    date_from: Optional[str] = Field(
+        None, description="Start date (YYYY-MM-DD). Defaults to today"
+    )
+    date_to: Optional[str] = Field(
+        None, description="End date (YYYY-MM-DD). Defaults to date_from"
+    )
+    limit: int = Field(50, description="Max results")
+
+
+class LogTaskTimesheetSchema(BaseOdooRequest):
+    task_id: int = Field(..., description="project.task ID")
+    name: str = Field(..., description="Description of the work done")
+    unit_amount: float = Field(..., description="Time spent in hours")
+    employee_id: Optional[int] = Field(
+        None, description="Employee ID (defaults to current user's employee)"
+    )
+    date: Optional[str] = Field(
+        None, description="Date of the timesheet log (YYYY-MM-DD), defaults to today"
+    )
+
+
+class CheckInSchema(BaseOdooRequest):
+    employee_id: Optional[int] = Field(
+        None, description="Employee ID override (defaults to sender user employee)"
+    )
+    check_in_at: Optional[str] = Field(
+        None, description="Optional datetime override YYYY-MM-DD HH:MM:SS"
+    )
+
+
+class CheckOutSchema(BaseOdooRequest):
+    employee_id: Optional[int] = Field(
+        None, description="Employee ID override (defaults to sender user employee)"
+    )
+    check_out_at: Optional[str] = Field(
+        None, description="Optional datetime override YYYY-MM-DD HH:MM:SS"
+    )
+
+
+class GetMyTodaySummarySchema(BaseOdooRequest):
+    employee_id: Optional[int] = Field(
+        None, description="Employee ID override (defaults to sender user employee)"
+    )
+
+
+class FindMyTasksSchema(BaseOdooRequest):
+    project_id: Optional[int] = Field(None, description="Filter by project ID")
+    state: Optional[str] = Field(None, description="Task state filter: open | closed")
+    date_deadline_from: Optional[str] = Field(
+        None, description="Deadline from YYYY-MM-DD"
+    )
+    date_deadline_to: Optional[str] = Field(None, description="Deadline to YYYY-MM-DD")
+    limit: int = Field(20, description="Max results")
+
+
+class UpdateTaskStatusSchema(BaseOdooRequest):
+    task_id: int = Field(..., description="Task ID to update")
+    stage_id: Optional[int] = Field(None, description="Target stage ID")
+    stage_name: Optional[str] = Field(
+        None, description="Target stage name (resolved automatically)"
+    )
+    comment: Optional[str] = Field(
+        None, description="Optional comment to post in task chatter"
+    )
+
+
+class CreateExpenseReportSchema(BaseOdooRequest):
+    name: Optional[str] = Field(None, description="Expense report name")
+    expense_ids: Optional[list[int]] = Field(
+        None, description="Optional explicit list of hr.expense IDs"
+    )
+    employee_id: Optional[int] = Field(
+        None, description="Employee ID override (defaults to sender user employee)"
+    )
+    date_from: Optional[str] = Field(None, description="Expense date from YYYY-MM-DD")
+    date_to: Optional[str] = Field(None, description="Expense date to YYYY-MM-DD")
+
+
+class SubmitExpenseReportSchema(BaseOdooRequest):
+    sheet_id: int = Field(..., description="hr.expense.sheet ID")
+
+
+class ApproveExpenseSchema(BaseOdooRequest):
+    sheet_id: int = Field(..., description="hr.expense.sheet ID")
+    approve: bool = Field(True, description="True=approve, False=reject")
+    reason: Optional[str] = Field(None, description="Reason for rejection/decision")
+
+
+class FindMissingTimesheetsSchema(BaseOdooRequest):
+    employee_id: Optional[int] = Field(
+        None, description="Employee ID override (defaults to sender user employee)"
+    )
+    date_from: Optional[str] = Field(None, description="Analysis start date YYYY-MM-DD")
+    date_to: Optional[str] = Field(None, description="Analysis end date YYYY-MM-DD")
+    tolerance_hours: float = Field(0.25, description="Missing-hours threshold per day")
+
+
+class SuggestTimesheetFromAttendanceSchema(BaseOdooRequest):
+    employee_id: Optional[int] = Field(
+        None, description="Employee ID override (defaults to sender user employee)"
+    )
+    date_from: Optional[str] = Field(None, description="Analysis start date YYYY-MM-DD")
+    date_to: Optional[str] = Field(None, description="Analysis end date YYYY-MM-DD")
+    tolerance_hours: float = Field(0.25, description="Missing-hours threshold per day")
+
+
+class NotifyPendingActionsSchema(BaseOdooRequest):
+    employee_id: Optional[int] = Field(
+        None, description="Employee ID override (defaults to sender user employee)"
+    )
+    days_back: int = Field(7, description="Number of days to analyze for reminders")
+
+
 class RegisterPaymentSchema(BaseOdooRequest):
     invoice_id: int = Field(
         ..., description="The ID of the account.move (invoice) to pay"
@@ -211,6 +331,121 @@ class RegisterPaymentSchema(BaseOdooRequest):
     journal_id: Optional[int] = Field(
         None,
         description="Payment Journal ID (Bank/Cash). If not provided, Odoo will try to use the default one.",
+    )
+
+
+class FindUnreconciledBankLinesSchema(BaseOdooRequest):
+    journal_id: Optional[int] = Field(None, description="Filter by bank journal ID")
+    date_from: Optional[str] = Field(None, description="Start date YYYY-MM-DD")
+    date_to: Optional[str] = Field(None, description="End date YYYY-MM-DD")
+    amount_min: Optional[float] = Field(None, description="Minimum absolute amount")
+    amount_max: Optional[float] = Field(None, description="Maximum absolute amount")
+    limit: int = Field(50, description="Max statement lines")
+
+
+class SuggestBankReconciliationSchema(BaseOdooRequest):
+    statement_line_id: int = Field(..., description="account.bank.statement.line ID")
+    tolerance_amount: float = Field(0.01, description="Amount tolerance for matching")
+    days_window: int = Field(30, description="Allowed day distance for date matching")
+    limit: int = Field(20, description="Max suggestion rows")
+
+
+class ReconcileBankLineSchema(BaseOdooRequest):
+    statement_line_id: int = Field(..., description="account.bank.statement.line ID")
+    move_line_ids: list[int] = Field(
+        ..., description="account.move.line IDs to reconcile"
+    )
+    confirm: bool = Field(
+        False,
+        description="Must be true to execute reconciliation",
+    )
+
+
+class RegisterInvoicePaymentSchema(BaseOdooRequest):
+    invoice_id: int = Field(..., description="account.move invoice ID")
+    amount: Optional[float] = Field(None, description="Amount to register")
+    payment_date: Optional[str] = Field(None, description="Date YYYY-MM-DD")
+    journal_id: Optional[int] = Field(None, description="account.journal ID")
+    memo: Optional[str] = Field(None, description="Payment communication/reference")
+
+
+class GetARAPAgingSchema(BaseOdooRequest):
+    report_type: str = Field(
+        "both",
+        description="receivable | payable | both",
+    )
+    as_of: Optional[str] = Field(None, description="Reference date YYYY-MM-DD")
+    company_id: Optional[int] = Field(None, description="Restrict to company ID")
+    limit: int = Field(500, description="Max invoices to analyze")
+
+
+class RunPeriodCloseChecksSchema(BaseOdooRequest):
+    period_start: str = Field(..., description="Start date YYYY-MM-DD")
+    period_end: str = Field(..., description="End date YYYY-MM-DD")
+    company_id: Optional[int] = Field(None, description="Restrict to company ID")
+
+
+class JournalEntryLineSchema(BaseOdooRequest):
+    account_id: int = Field(..., description="account.account ID")
+    name: str = Field("Line", description="Line label")
+    debit: float = Field(0.0, description="Debit amount")
+    credit: float = Field(0.0, description="Credit amount")
+    partner_id: Optional[int] = Field(None, description="Optional partner")
+    analytic_account_id: Optional[int] = Field(
+        None, description="Optional analytic account"
+    )
+    tax_ids: Optional[list[int]] = Field(None, description="Optional tax IDs")
+
+
+class CreateJournalEntrySchema(BaseOdooRequest):
+    journal_id: int = Field(..., description="account.journal ID")
+    date: str = Field(..., description="Entry date YYYY-MM-DD")
+    lines: list[JournalEntryLineSchema] = Field(..., description="Move lines")
+    ref: Optional[str] = Field(None, description="Reference text")
+    company_id: Optional[int] = Field(None, description="Restrict to company ID")
+
+
+class PostJournalEntrySchema(BaseOdooRequest):
+    move_id: int = Field(..., description="account.move ID")
+    confirm: bool = Field(False, description="Must be true to post entry")
+
+
+class GetTaxSummarySchema(BaseOdooRequest):
+    date_from: str = Field(..., description="Start date YYYY-MM-DD")
+    date_to: str = Field(..., description="End date YYYY-MM-DD")
+    company_id: Optional[int] = Field(None, description="Restrict to company ID")
+    tax_group_id: Optional[int] = Field(None, description="Optional tax group filter")
+
+
+class ValidateVendorBillDuplicateSchema(BaseOdooRequest):
+    partner_id: int = Field(..., description="Vendor partner ID")
+    vendor_bill_number: Optional[str] = Field(None, description="Vendor reference")
+    invoice_date: Optional[str] = Field(None, description="Invoice date YYYY-MM-DD")
+    amount_total: Optional[float] = Field(None, description="Invoice total amount")
+    currency_id: Optional[int] = Field(None, description="Currency ID")
+    tolerance: float = Field(0.01, description="Amount tolerance")
+
+
+class SuggestExpenseAccountAndTaxesSchema(BaseOdooRequest):
+    description: str = Field(..., description="Line description")
+    amount: float = Field(..., description="Line amount")
+    partner_id: Optional[int] = Field(None, description="Vendor partner ID")
+    product_id: Optional[int] = Field(None, description="product.product ID")
+    company_id: Optional[int] = Field(None, description="Company ID")
+
+
+class CreateVendorBillFromOCRValidatedSchema(BaseOdooRequest):
+    ocr_payload: Dict[str, Any] = Field(..., description="Normalized OCR payload")
+    attachment_id: Optional[int] = Field(
+        None,
+        description="Optional ir.attachment ID to link",
+    )
+    confirm: bool = Field(False, description="Must be true to create vendor bill")
+    dry_run: bool = Field(False, description="Return preview without creation")
+    company_id: Optional[int] = Field(None, description="Company override")
+    allowed_company_ids: Optional[list[int]] = Field(
+        None,
+        description="Optional allowed_company_ids context",
     )
 
 

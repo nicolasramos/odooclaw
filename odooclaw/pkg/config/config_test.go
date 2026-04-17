@@ -255,6 +255,34 @@ func TestDefaultConfig_Gateway(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_OdooDisablesGroupMentionsByDefault(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.Channels.Odoo.AllowGroupMentions {
+		t.Error("Odoo group mentions should be disabled by default")
+	}
+}
+
+func TestConfig_OdooAllowGroupMentionsParse(t *testing.T) {
+	jsonData := `{
+		"channels": {
+			"odoo": {
+				"enabled": true,
+				"allow_group_mentions": true
+			}
+		}
+	}`
+
+	cfg := DefaultConfig()
+	if err := json.Unmarshal([]byte(jsonData), cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if !cfg.Channels.Odoo.AllowGroupMentions {
+		t.Error("expected channels.odoo.allow_group_mentions to be true")
+	}
+}
+
 // TestDefaultConfig_Providers verifies provider structure
 func TestDefaultConfig_Providers(t *testing.T) {
 	cfg := DefaultConfig()

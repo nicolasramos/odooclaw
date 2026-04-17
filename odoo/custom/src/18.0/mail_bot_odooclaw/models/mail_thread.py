@@ -10,6 +10,30 @@ _logger = logging.getLogger(__name__)
 class MailThread(models.AbstractModel):
     _inherit = "mail.thread"
 
+    def _resolve_private_reply_channel(self, author_partner, bot_partner):
+        Channel = self.env["discuss.channel"].sudo()
+        existing = Channel.search(
+            [
+                ("channel_type", "=", "chat"),
+                ("channel_member_ids.partner_id", "=", author_partner.id),
+                ("channel_member_ids.partner_id", "=", bot_partner.id),
+            ],
+            limit=1,
+        )
+        if existing:
+            return existing
+
+        return Channel.create(
+            {
+                "name": _("Chat with OdooClaw"),
+                "channel_type": "chat",
+                "channel_member_ids": [
+                    (0, 0, {"partner_id": author_partner.id}),
+                    (0, 0, {"partner_id": bot_partner.id}),
+                ],
+            }
+        )
+
     @api.returns("mail.message", lambda value: value.id)
     def message_post(self, **kwargs):
         message = super(MailThread, self).message_post(**kwargs)
@@ -82,6 +106,8 @@ class MailThread(models.AbstractModel):
                 "message_id": message.id,
                 "model": message.model,
                 "res_id": message.res_id,
+                "reply_model": message.model,
+                "reply_res_id": message.res_id,
                 "author_id": message.author_id.id,
                 "author_user_id": message.author_id.user_ids[:1].id or False,
                 "author_name": message.author_id.name,
@@ -93,6 +119,13 @@ class MailThread(models.AbstractModel):
                 "invoice_attachments": invoice_attachments,
                 "attachments": other_attachments,
             }
+
+            if not is_dm and message.model == "discuss.channel":
+                private_channel = self._resolve_private_reply_channel(
+                    message.author_id, odooclaw_user.partner_id
+                )
+                payload["reply_model"] = "discuss.channel"
+                payload["reply_res_id"] = private_channel.id
 
             # We use threading to not block the current transaction
             webhook_url = (
