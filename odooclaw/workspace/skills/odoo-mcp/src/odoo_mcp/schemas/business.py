@@ -525,3 +525,216 @@ class CloseContractLineSchema(BaseOdooRequest):
     line_id: int = Field(..., description="contract.line ID")
     reason: Optional[str] = Field(None, description="Reason/annotation for closure")
     close_date: Optional[str] = Field(None, description="Close date YYYY-MM-DD")
+
+
+class GetViewByXmlIdSchema(BaseOdooRequest):
+    xmlid: str = Field(..., description="View xmlid, for example sale.view_order_form")
+    include_inherited_chain: bool = Field(
+        True,
+        description="Include first-level inherited views linked through inherit_id",
+    )
+
+
+class FindViewsByModelSchema(BaseOdooRequest):
+    model: str = Field(..., description="Target model name, for example sale.order")
+    view_type: Optional[str] = Field(
+        None,
+        description="Optional view type filter (form, list, kanban, search, qweb)",
+    )
+    limit: int = Field(50, description="Maximum number of views returned")
+
+
+class GetReportTemplateSchema(BaseOdooRequest):
+    xmlid: str = Field(
+        ...,
+        description="Report action xmlid, for example sale.action_report_saleorder",
+    )
+
+
+class ScanViewMigrationIssuesSchema(BaseOdooRequest):
+    xmlid: str = Field(..., description="View xmlid to scan")
+    target_version: str = Field("18.0", description="Target Odoo version")
+    rule_sets: Optional[list[str]] = Field(
+        None,
+        description="Optional rule-set names to tag scan execution",
+    )
+
+
+class ScanReportMigrationIssuesSchema(BaseOdooRequest):
+    xmlid: str = Field(..., description="Report xmlid to scan")
+    target_version: str = Field("18.0", description="Target Odoo version")
+    rule_sets: Optional[list[str]] = Field(
+        None,
+        description="Optional rule-set names to tag scan execution",
+    )
+
+
+class ProposeViewPatchSchema(BaseOdooRequest):
+    xmlid: str = Field(..., description="View xmlid")
+    intent: str = Field("migrate_to_18", description="Proposal intent")
+    constraints: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional proposal constraints (for example deny_base_overwrite)",
+    )
+
+
+class ProposeReportPatchSchema(BaseOdooRequest):
+    xmlid: str = Field(..., description="Report xmlid")
+    intent: str = Field("migrate_to_18", description="Proposal intent")
+    constraints: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional proposal constraints (for example deny_base_overwrite)",
+    )
+
+
+class ValidateViewPatchSchema(BaseOdooRequest):
+    base_view_xmlid: str = Field(..., description="Base view xmlid used for validation")
+    patch: Dict[str, Any] = Field(..., description="Patch payload")
+    strict: bool = Field(True, description="Fail when xpath matches multiple nodes")
+    target_version: str = Field("18.0", description="Compatibility validation target")
+
+
+class ValidateReportPatchSchema(BaseOdooRequest):
+    report_xmlid: str = Field(..., description="Report action xmlid")
+    patch: Dict[str, Any] = Field(..., description="Patch payload")
+    strict: bool = Field(True, description="Fail when xpath matches multiple nodes")
+    target_version: str = Field("18.0", description="Compatibility validation target")
+
+
+class PreviewViewPatchSchema(BaseOdooRequest):
+    base_view_xmlid: str = Field(..., description="Base view xmlid used for preview")
+    patch: Dict[str, Any] = Field(..., description="Patch payload")
+    diff_format: str = Field("unified", description="Diff output format")
+
+
+class PreviewReportPatchSchema(BaseOdooRequest):
+    report_xmlid: str = Field(..., description="Report action xmlid used for preview")
+    patch: Dict[str, Any] = Field(..., description="Patch payload")
+    diff_format: str = Field("unified", description="Diff output format")
+
+
+class TestViewCompilationSchema(BaseOdooRequest):
+    view_xmlid: str = Field(..., description="View xmlid for compilation check")
+    context: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional Odoo context overrides",
+    )
+
+
+class ApplyViewPatchSafeSchema(BaseOdooRequest):
+    base_view_xmlid: str = Field(..., description="Base view xmlid to extend safely")
+    patch: Dict[str, Any] = Field(..., description="xml_inheritance patch payload")
+    strict: bool = Field(True, description="Fail when xpath matches multiple nodes")
+    confirm: bool = Field(False, description="Must be true to execute persistent apply")
+    dry_run: bool = Field(
+        False, description="Preview write plan without creating records"
+    )
+    inherited_view_name: Optional[str] = Field(
+        None,
+        description="Optional name for the generated inherited view",
+    )
+    priority: int = Field(
+        90, description="Priority assigned to generated inherited view"
+    )
+
+
+class ApplyReportPatchSafeSchema(BaseOdooRequest):
+    report_xmlid: str = Field(..., description="Report action xmlid to extend safely")
+    patch: Dict[str, Any] = Field(..., description="xml_inheritance patch payload")
+    strict: bool = Field(True, description="Fail when xpath matches multiple nodes")
+    confirm: bool = Field(False, description="Must be true to execute persistent apply")
+    dry_run: bool = Field(
+        False, description="Preview write plan without creating records"
+    )
+    inherited_view_name: Optional[str] = Field(
+        None,
+        description="Optional name for the generated inherited report template",
+    )
+    priority: int = Field(
+        90, description="Priority assigned to generated inherited view"
+    )
+
+
+class RollbackPatchSafeSchema(BaseOdooRequest):
+    snapshot: Dict[str, Any] = Field(
+        ...,
+        description="Snapshot payload returned by apply_safe tools",
+    )
+    confirm: bool = Field(False, description="Must be true to execute rollback")
+    dry_run: bool = Field(False, description="Preview rollback plan without writes")
+
+
+class AssistViewMigrationSchema(BaseOdooRequest):
+    xmlid: str = Field(..., description="View xmlid to analyze end-to-end")
+    target_version: str = Field("18.0", description="Target Odoo version")
+    intent: str = Field("migrate", description="Migration intent")
+    constraints: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional proposal constraints",
+    )
+    strict: bool = Field(True, description="Strict XPath validation mode")
+    include_compile_test: bool = Field(
+        True,
+        description="Include fields_view_get best-effort compilation check",
+    )
+
+
+class AssistReportMigrationSchema(BaseOdooRequest):
+    xmlid: str = Field(..., description="Report xmlid to analyze end-to-end")
+    target_version: str = Field("18.0", description="Target Odoo version")
+    intent: str = Field("migrate", description="Migration intent")
+    constraints: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional proposal constraints",
+    )
+    strict: bool = Field(True, description="Strict XPath validation mode")
+
+
+class VisualizeViewPatchSchema(BaseOdooRequest):
+    base_view_xmlid: str = Field(
+        ..., description="Base view xmlid used for visual preview"
+    )
+    patch: Dict[str, Any] = Field(..., description="Patch payload")
+    diff_format: str = Field("unified", description="Diff output format")
+
+
+class VisualizeReportPatchSchema(BaseOdooRequest):
+    report_xmlid: str = Field(
+        ..., description="Report action xmlid used for visual preview"
+    )
+    patch: Dict[str, Any] = Field(..., description="Patch payload")
+    diff_format: str = Field("unified", description="Diff output format")
+
+
+class BatchAssistViewMigrationSchema(BaseOdooRequest):
+    xmlids: List[str] = Field(..., description="View xmlids to analyze in batch")
+    target_version: str = Field("18.0", description="Target Odoo version")
+    intent: str = Field("migrate", description="Migration intent")
+    constraints: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional proposal constraints",
+    )
+    strict: bool = Field(True, description="Strict XPath validation mode")
+    include_compile_test: bool = Field(
+        False,
+        description="Include fields_view_get compilation checks for each item",
+    )
+    continue_on_error: bool = Field(
+        True,
+        description="Continue processing remaining xmlids when one item fails",
+    )
+
+
+class BatchAssistReportMigrationSchema(BaseOdooRequest):
+    xmlids: List[str] = Field(..., description="Report xmlids to analyze in batch")
+    target_version: str = Field("18.0", description="Target Odoo version")
+    intent: str = Field("migrate", description="Migration intent")
+    constraints: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional proposal constraints",
+    )
+    strict: bool = Field(True, description="Strict XPath validation mode")
+    continue_on_error: bool = Field(
+        True,
+        description="Continue processing remaining xmlids when one item fails",
+    )
