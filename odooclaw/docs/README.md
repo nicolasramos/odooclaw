@@ -5,10 +5,11 @@ OdooClaw is a specialized version of PicoClaw, tailored for integration with **O
 ## Documentation Index
 
 ### 1. Core Configuration
- - [General Configuration (JSON)](CONFIGURATION.md): Detailed structure of the `config.json` file.
- - [Guia completa Doodba (ES)](GUIA_DOODBA_PUESTA_EN_MARCHA_ES.md): Instalacion, configuracion, uso y cambios de `config.json` paso a paso.
- - [Complete Doodba Guide (EN)](GUIDE_DOODBA_SETUP_EN.md): Installation, configuration, usage and `config.json` changes step by step.
- - [Tools Configuration](tools_configuration.md): How to configure web search, cron jobs, etc.
+  - [General Configuration (JSON)](CONFIGURATION.md): Detailed structure of the `config.json` file.
+  - [Guia completa Doodba (ES)](GUIA_DOODBA_PUESTA_EN_MARCHA_ES.md): Instalacion, configuracion, uso y cambios de `config.json` paso a paso.
+  - [Complete Doodba Guide (EN)](GUIDE_DOODBA_SETUP_EN.md): Installation, configuration, usage and `config.json` changes step by step.
+  - [Official Update Script](ODOOCLAW_OFFICIAL_UPDATE.md): Safe repository update flow that preserves `workspace/**`, `config/**`, and `.env*` files.
+  - [Tools Configuration](tools_configuration.md): How to configure web search, cron jobs, etc.
 
 ### 2. Integration & Support
 - [General Troubleshooting](troubleshooting.md): Answers to common issues.
