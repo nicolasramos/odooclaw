@@ -62,5 +62,6 @@ Requires environment variables:
 ## Documentación relacionada
 - `docs/odoo-workforce-tools.md`
 - `docs/odoo-accounting-tools.md`
+- `docs/odoo-view-report-migration-tools.md`
 - `docs/ocr-vendor-bill-skill.md`
 - `docs/odoo-private-reply-routing.md`

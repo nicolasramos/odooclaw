@@ -89,6 +89,27 @@ from odoo_mcp.schemas.business import (
     CreateContractLineSchema,
     ReplaceContractLineSchema,
     CloseContractLineSchema,
+    GetViewByXmlIdSchema,
+    FindViewsByModelSchema,
+    GetReportTemplateSchema,
+    ScanViewMigrationIssuesSchema,
+    ScanReportMigrationIssuesSchema,
+    ProposeViewPatchSchema,
+    ProposeReportPatchSchema,
+    ValidateViewPatchSchema,
+    ValidateReportPatchSchema,
+    PreviewViewPatchSchema,
+    PreviewReportPatchSchema,
+    TestViewCompilationSchema,
+    ApplyViewPatchSafeSchema,
+    ApplyReportPatchSafeSchema,
+    RollbackPatchSafeSchema,
+    AssistViewMigrationSchema,
+    AssistReportMigrationSchema,
+    VisualizeViewPatchSchema,
+    VisualizeReportPatchSchema,
+    BatchAssistViewMigrationSchema,
+    BatchAssistReportMigrationSchema,
 )
 from odoo_mcp.services.invoice_service import (
     find_pending_invoices,
@@ -128,6 +149,29 @@ from odoo_mcp.services.workforce_service import (
     find_missing_timesheets,
     suggest_timesheet_from_attendance,
     notify_pending_actions,
+)
+from odoo_mcp.services.view_migration_service import (
+    get_view_by_xmlid,
+    find_views_by_model,
+    get_report_template,
+    scan_view_migration_issues,
+    scan_report_migration_issues,
+    propose_view_patch,
+    propose_report_patch,
+    validate_view_patch,
+    validate_report_patch,
+    preview_view_patch,
+    preview_report_patch,
+    test_view_compilation,
+    apply_view_patch_safe,
+    apply_report_patch_safe,
+    rollback_patch_safe,
+    assist_view_migration,
+    assist_report_migration,
+    visualize_view_patch,
+    visualize_report_patch,
+    batch_assist_view_migration,
+    batch_assist_report_migration,
 )
 
 _logger = get_logger("server")
@@ -1115,4 +1159,297 @@ def odoo_create_vendor_bill_from_ocr_validated(
             dry_run=payload.dry_run,
             company_id=payload.company_id,
             allowed_company_ids=payload.allowed_company_ids,
+        )
+
+
+@mcp.tool()
+def odoo_get_view_by_xmlid(payload: GetViewByXmlIdSchema) -> dict:
+    with measure_time("odoo_get_view_by_xmlid"):
+        client = get_odoo_client()
+        return get_view_by_xmlid(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            xmlid=payload.xmlid,
+            include_inherited_chain=payload.include_inherited_chain,
+        )
+
+
+@mcp.tool()
+def odoo_find_views_by_model(payload: FindViewsByModelSchema) -> dict:
+    with measure_time("odoo_find_views_by_model"):
+        client = get_odoo_client()
+        return find_views_by_model(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            model=payload.model,
+            view_type=payload.view_type,
+            limit=payload.limit,
+        )
+
+
+@mcp.tool()
+def odoo_get_report_template(payload: GetReportTemplateSchema) -> dict:
+    with measure_time("odoo_get_report_template"):
+        client = get_odoo_client()
+        return get_report_template(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            xmlid=payload.xmlid,
+        )
+
+
+@mcp.tool()
+def odoo_scan_view_migration_issues(payload: ScanViewMigrationIssuesSchema) -> dict:
+    with measure_time("odoo_scan_view_migration_issues"):
+        client = get_odoo_client()
+        return scan_view_migration_issues(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            xmlid=payload.xmlid,
+            target_version=payload.target_version,
+            rule_sets=payload.rule_sets,
+        )
+
+
+@mcp.tool()
+def odoo_scan_report_migration_issues(payload: ScanReportMigrationIssuesSchema) -> dict:
+    with measure_time("odoo_scan_report_migration_issues"):
+        client = get_odoo_client()
+        return scan_report_migration_issues(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            xmlid=payload.xmlid,
+            target_version=payload.target_version,
+            rule_sets=payload.rule_sets,
+        )
+
+
+@mcp.tool()
+def odoo_propose_view_patch(payload: ProposeViewPatchSchema) -> dict:
+    with measure_time("odoo_propose_view_patch"):
+        client = get_odoo_client()
+        return propose_view_patch(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            xmlid=payload.xmlid,
+            intent=payload.intent,
+            constraints=payload.constraints,
+        )
+
+
+@mcp.tool()
+def odoo_propose_report_patch(payload: ProposeReportPatchSchema) -> dict:
+    with measure_time("odoo_propose_report_patch"):
+        client = get_odoo_client()
+        return propose_report_patch(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            xmlid=payload.xmlid,
+            intent=payload.intent,
+            constraints=payload.constraints,
+        )
+
+
+@mcp.tool()
+def odoo_validate_view_patch(payload: ValidateViewPatchSchema) -> dict:
+    with measure_time("odoo_validate_view_patch"):
+        client = get_odoo_client()
+        return validate_view_patch(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            base_view_xmlid=payload.base_view_xmlid,
+            patch=payload.patch,
+            strict=payload.strict,
+            target_version=payload.target_version,
+        )
+
+
+@mcp.tool()
+def odoo_validate_report_patch(payload: ValidateReportPatchSchema) -> dict:
+    with measure_time("odoo_validate_report_patch"):
+        client = get_odoo_client()
+        return validate_report_patch(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            report_xmlid=payload.report_xmlid,
+            patch=payload.patch,
+            strict=payload.strict,
+            target_version=payload.target_version,
+        )
+
+
+@mcp.tool()
+def odoo_preview_view_patch(payload: PreviewViewPatchSchema) -> dict:
+    with measure_time("odoo_preview_view_patch"):
+        client = get_odoo_client()
+        return preview_view_patch(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            base_view_xmlid=payload.base_view_xmlid,
+            patch=payload.patch,
+            diff_format=payload.diff_format,
+        )
+
+
+@mcp.tool()
+def odoo_preview_report_patch(payload: PreviewReportPatchSchema) -> dict:
+    with measure_time("odoo_preview_report_patch"):
+        client = get_odoo_client()
+        return preview_report_patch(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            report_xmlid=payload.report_xmlid,
+            patch=payload.patch,
+            diff_format=payload.diff_format,
+        )
+
+
+@mcp.tool()
+def odoo_test_view_compilation(payload: TestViewCompilationSchema) -> dict:
+    with measure_time("odoo_test_view_compilation"):
+        client = get_odoo_client()
+        return test_view_compilation(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            view_xmlid=payload.view_xmlid,
+            context=payload.context,
+        )
+
+
+@mcp.tool()
+def odoo_apply_view_patch_safe(payload: ApplyViewPatchSafeSchema) -> dict:
+    with measure_time("odoo_apply_view_patch_safe"):
+        client = get_odoo_client()
+        return apply_view_patch_safe(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            base_view_xmlid=payload.base_view_xmlid,
+            patch=payload.patch,
+            strict=payload.strict,
+            confirm=payload.confirm,
+            dry_run=payload.dry_run,
+            inherited_view_name=payload.inherited_view_name,
+            priority=payload.priority,
+        )
+
+
+@mcp.tool()
+def odoo_apply_report_patch_safe(payload: ApplyReportPatchSafeSchema) -> dict:
+    with measure_time("odoo_apply_report_patch_safe"):
+        client = get_odoo_client()
+        return apply_report_patch_safe(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            report_xmlid=payload.report_xmlid,
+            patch=payload.patch,
+            strict=payload.strict,
+            confirm=payload.confirm,
+            dry_run=payload.dry_run,
+            inherited_view_name=payload.inherited_view_name,
+            priority=payload.priority,
+        )
+
+
+@mcp.tool()
+def odoo_rollback_patch_safe(payload: RollbackPatchSafeSchema) -> dict:
+    with measure_time("odoo_rollback_patch_safe"):
+        client = get_odoo_client()
+        return rollback_patch_safe(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            snapshot=payload.snapshot,
+            confirm=payload.confirm,
+            dry_run=payload.dry_run,
+        )
+
+
+@mcp.tool()
+def odoo_assist_view_migration(payload: AssistViewMigrationSchema) -> dict:
+    with measure_time("odoo_assist_view_migration"):
+        client = get_odoo_client()
+        return assist_view_migration(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            xmlid=payload.xmlid,
+            target_version=payload.target_version,
+            intent=payload.intent,
+            constraints=payload.constraints,
+            strict=payload.strict,
+            include_compile_test=payload.include_compile_test,
+        )
+
+
+@mcp.tool()
+def odoo_assist_report_migration(payload: AssistReportMigrationSchema) -> dict:
+    with measure_time("odoo_assist_report_migration"):
+        client = get_odoo_client()
+        return assist_report_migration(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            xmlid=payload.xmlid,
+            target_version=payload.target_version,
+            intent=payload.intent,
+            constraints=payload.constraints,
+            strict=payload.strict,
+        )
+
+
+@mcp.tool()
+def odoo_visualize_view_patch(payload: VisualizeViewPatchSchema) -> dict:
+    with measure_time("odoo_visualize_view_patch"):
+        client = get_odoo_client()
+        return visualize_view_patch(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            base_view_xmlid=payload.base_view_xmlid,
+            patch=payload.patch,
+            diff_format=payload.diff_format,
+        )
+
+
+@mcp.tool()
+def odoo_visualize_report_patch(payload: VisualizeReportPatchSchema) -> dict:
+    with measure_time("odoo_visualize_report_patch"):
+        client = get_odoo_client()
+        return visualize_report_patch(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            report_xmlid=payload.report_xmlid,
+            patch=payload.patch,
+            diff_format=payload.diff_format,
+        )
+
+
+@mcp.tool()
+def odoo_batch_assist_view_migration(payload: BatchAssistViewMigrationSchema) -> dict:
+    with measure_time("odoo_batch_assist_view_migration"):
+        client = get_odoo_client()
+        return batch_assist_view_migration(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            xmlids=payload.xmlids,
+            target_version=payload.target_version,
+            intent=payload.intent,
+            constraints=payload.constraints,
+            strict=payload.strict,
+            include_compile_test=payload.include_compile_test,
+            continue_on_error=payload.continue_on_error,
+        )
+
+
+@mcp.tool()
+def odoo_batch_assist_report_migration(
+    payload: BatchAssistReportMigrationSchema,
+) -> dict:
+    with measure_time("odoo_batch_assist_report_migration"):
+        client = get_odoo_client()
+        return batch_assist_report_migration(
+            client=client,
+            sender_id=payload.sender_id or client.odoo_session.uid,
+            xmlids=payload.xmlids,
+            target_version=payload.target_version,
+            intent=payload.intent,
+            constraints=payload.constraints,
+            strict=payload.strict,
+            continue_on_error=payload.continue_on_error,
         )
