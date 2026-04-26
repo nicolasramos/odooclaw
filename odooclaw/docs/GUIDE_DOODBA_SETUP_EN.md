@@ -99,6 +99,10 @@ Manage secrets in `.docker/odoo.env` (or your central `.env`):
 ODOO_PASSWORD=your_odoo_api_key
 OPENAI_API_KEY=sk-xxxx
 OPENAI_API_BASE=https://api.openai.com/v1
+STT_PROVIDER=auto
+STT_API_BASE=${OPENAI_API_BASE}
+STT_API_KEY=
+STT_OPENAI_MODEL=whisper-1
 TZ=Europe/Madrid
 ```
 
@@ -182,6 +186,7 @@ Practical points:
 - Enable global MCP and needed MCP servers
 - Keep `exec.enable_deny_patterns=true` to block dangerous commands
 - Configure `tools.mcp.servers` in `config.json`, not via env for nested structures
+- Prefer generic commands in MCP server definitions (for example `whisper-stt-mcp.py`, `edge-tts-mcp.py`, `python3 -m odoo_mcp.server`) instead of workspace-specific absolute paths
 
 ## 7) Bring up the stack
 

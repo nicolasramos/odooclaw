@@ -140,6 +140,12 @@ ODOO_PASSWORD=admin
 OPENAI_API_KEY=sk-xxxxxxxx
 OPENAI_API_BASE=https://api.openai.com/v1
 
+# STT provider selector: local | openai | auto
+STT_PROVIDER=auto
+STT_API_BASE=${OPENAI_API_BASE}
+STT_API_KEY=
+STT_OPENAI_MODEL=whisper-1
+
 # Browser Copilot
 BROWSER_COPILOT_TOKEN=replace-with-a-long-random-token
 BROWSER_COPILOT_ALLOWED_DOMAINS=*.odoo.com,localhost,127.0.0.1

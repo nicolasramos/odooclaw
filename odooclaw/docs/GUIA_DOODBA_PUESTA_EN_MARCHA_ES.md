@@ -94,6 +94,7 @@ Notas importantes:
 - Usa prefijo en mayusculas `ODOOCLAW_...` para variables de entorno.
 - No dejes API keys hardcodeadas en `devel.yaml`.
 - En produccion, usa API key de Odoo en lugar de password de admin.
+- En servidores MCP usa comandos genericos (por ejemplo `whisper-stt-mcp.py`, `edge-tts-mcp.py`, `python3 -m odoo_mcp.server`) en lugar de rutas absolutas del workspace.
 
 ## 5) Variables en `.docker/odoo.env`
 
@@ -103,6 +104,10 @@ Gestiona secretos en `.docker/odoo.env` (o tu `.env` central):
 ODOO_PASSWORD=tu_api_key_de_odoo
 OPENAI_API_KEY=sk-xxxx
 OPENAI_API_BASE=https://api.openai.com/v1
+STT_PROVIDER=auto
+STT_API_BASE=${OPENAI_API_BASE}
+STT_API_KEY=
+STT_OPENAI_MODEL=whisper-1
 TZ=Europe/Madrid
 ```
 

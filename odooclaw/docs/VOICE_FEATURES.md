@@ -167,28 +167,30 @@ Both voice skills are configured in `config.json`:
 
 ```json
 {
-  "mcp": {
-    "enabled": true,
-    "servers": {
-      "whisper-stt": {
-        "enabled": true,
-        "command": "python3",
-        "args": ["/usr/local/bin/whisper-stt-mcp.py"],
-        "env": {
-          "PYTHONUNBUFFERED": "1",
-          "OPENAI_API_KEY": "${OPENAI_API_KEY}",
-          "STT_PROVIDER": "${STT_PROVIDER}",
-          "STT_API_BASE": "${STT_API_BASE}",
-          "STT_API_KEY": "${STT_API_KEY}",
-          "STT_OPENAI_MODEL": "${STT_OPENAI_MODEL}"
-        }
-      },
-      "edge-tts": {
-        "enabled": true,
-        "command": "python3",
-        "args": ["/usr/local/bin/edge-tts-mcp.py"],
-        "env": {
-          "PYTHONUNBUFFERED": "1"
+  "tools": {
+    "mcp": {
+      "enabled": true,
+      "servers": {
+        "whisper-stt": {
+          "enabled": true,
+          "command": "whisper-stt-mcp.py",
+          "args": [],
+          "env": {
+            "PYTHONUNBUFFERED": "1",
+            "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+            "STT_PROVIDER": "${STT_PROVIDER}",
+            "STT_API_BASE": "${STT_API_BASE}",
+            "STT_API_KEY": "${STT_API_KEY}",
+            "STT_OPENAI_MODEL": "${STT_OPENAI_MODEL}"
+          }
+        },
+        "edge-tts": {
+          "enabled": true,
+          "command": "edge-tts-mcp.py",
+          "args": [],
+          "env": {
+            "PYTHONUNBUFFERED": "1"
+          }
         }
       }
     }
@@ -265,9 +267,9 @@ The AI agent automatically:
 
 | File | Location |
 |------|----------|
-| STT Server | `workspace/skills/whisper-stt/server.py` |
+| STT MCP command | `whisper-stt-mcp.py` (PATH) |
 | STT Skill Doc | `workspace/skills/whisper-stt/SKILL.md` |
-| TTS Server | `workspace/skills/edge-tts/server.py` |
+| TTS MCP command | `edge-tts-mcp.py` (PATH) |
 | TTS Skill Doc | `workspace/skills/edge-tts/SKILL.md` |
 | Odoo Module | `odoo/custom/src/private/mail_bot_odooclaw/` |
 | Dockerfile | `docker/Dockerfile` |
