@@ -352,6 +352,12 @@ phase_generate_configs() {
     echo "OPENAI_API_KEY=${CFG_LLM_API_KEY}"
     echo "OPENAI_API_BASE=${CFG_LLM_API_BASE}"
     echo ""
+    echo "# STT (OpenAI-compatible)"
+    echo "STT_PROVIDER=auto"
+    echo "STT_API_BASE=\${OPENAI_API_BASE}"
+    echo "STT_API_KEY="
+    echo "STT_OPENAI_MODEL=whisper-1"
+    echo ""
     echo "# OdooClaw Gateway"
     echo "ODOOCLAW_AGENTS_DEFAULTS_PROVIDER=${CFG_LLM_PROVIDER}"
     echo "ODOOCLAW_AGENTS_DEFAULTS_MODEL=${CFG_LLM_MODEL}"
@@ -366,6 +372,7 @@ phase_generate_configs() {
     echo "ODOOCLAW_CHANNELS_ODOO_REASONING_CHANNEL_ID="
     echo "ODOOCLAW_REDIS_URL=redis://redis:6379/0"
     echo "ODOOCLAW_JOB_STORE=odoo"
+    echo "ODOOCLAW_WORKSPACE_PATH=/home/odooclaw/.odooclaw/workspace"
     if [ "$INSTALL_BROWSER_COPILOT" -eq 1 ]; then
       echo ""
       echo "# Browser Copilot"
@@ -404,6 +411,65 @@ phase_generate_configs() {
     "openai": {
       "api_base": "${CFG_LLM_API_BASE}",
       "api_key": "\${OPENAI_API_KEY}"
+    }
+  },
+  "tools": {
+    "mcp": {
+      "enabled": true,
+      "servers": {
+        "odoo-mcp": {
+          "enabled": true,
+          "command": "python3",
+          "args": ["-m", "odoo_mcp.server"],
+          "env": {
+            "PYTHONUNBUFFERED": "1"
+          }
+        },
+        "whisper-stt": {
+          "enabled": true,
+          "command": "whisper-stt-mcp.py",
+          "args": [],
+          "env": {
+            "PYTHONUNBUFFERED": "1",
+            "OPENAI_API_KEY": "\${OPENAI_API_KEY}",
+            "STT_PROVIDER": "\${STT_PROVIDER}",
+            "STT_API_BASE": "\${STT_API_BASE}",
+            "STT_API_KEY": "\${STT_API_KEY}",
+            "STT_OPENAI_MODEL": "\${STT_OPENAI_MODEL}"
+          }
+        },
+        "edge-tts": {
+          "enabled": true,
+          "command": "edge-tts-mcp.py",
+          "args": [],
+          "env": {
+            "PYTHONUNBUFFERED": "1"
+          }
+        },
+        "ocr-invoice": {
+          "enabled": true,
+          "command": "ocr-invoice-mcp.py",
+          "args": [],
+          "env": {
+            "PYTHONUNBUFFERED": "1",
+            "VISION_API_BASE": "\${OPENAI_API_BASE}",
+            "VISION_MODEL": "gpt-4o-mini",
+            "OPENAI_API_KEY": "\${OPENAI_API_KEY}",
+            "OCR_TIMEOUT_SECONDS": "240",
+            "OCR_MAX_PAGES": "4",
+            "OCR_IMAGE_DPI": "170"
+          }
+        },
+        "rlm-utils": {
+          "enabled": true,
+          "command": "rlm-utils-mcp.py",
+          "args": [],
+          "env": {
+            "PYTHONUNBUFFERED": "1",
+            "WORKSPACE_PATH": "\${ODOOCLAW_WORKSPACE_PATH}"
+          }
+        }
+      }
     }
   }
 }

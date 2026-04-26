@@ -277,7 +277,8 @@
           "enabled": true,
           "command": "python3",
           "args": [
-            "/usr/local/bin/odoo-mcp.py"
+            "-m",
+            "odoo_mcp.server"
           ],
           "env": {
             "PYTHONUNBUFFERED": "1"
@@ -285,31 +286,29 @@
         },
         "whisper-stt": {
           "enabled": true,
-          "command": "python3",
-          "args": [
-            "/usr/local/bin/whisper-stt-mcp.py"
-          ],
+          "command": "whisper-stt-mcp.py",
+          "args": [],
           "env": {
             "PYTHONUNBUFFERED": "1",
-            "OPENAI_API_KEY": "${OPENAI_API_KEY}"
+            "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+            "STT_PROVIDER": "${STT_PROVIDER}",
+            "STT_API_BASE": "${STT_API_BASE}",
+            "STT_API_KEY": "${STT_API_KEY}",
+            "STT_OPENAI_MODEL": "${STT_OPENAI_MODEL}"
           }
         },
         "edge-tts": {
           "enabled": true,
-          "command": "python3",
-          "args": [
-            "/usr/local/bin/edge-tts-mcp.py"
-          ],
+          "command": "edge-tts-mcp.py",
+          "args": [],
           "env": {
             "PYTHONUNBUFFERED": "1"
           }
         },
         "ocr-invoice": {
           "enabled": true,
-          "command": "python3",
-          "args": [
-            "/usr/local/bin/ocr-invoice-mcp.py"
-          ],
+          "command": "ocr-invoice-mcp.py",
+          "args": [],
           "env": {
             "PYTHONUNBUFFERED": "1",
             "VISION_API_BASE": "https://api.openai.com/v1",
@@ -374,13 +373,11 @@
         },
         "rlm-utils": {
           "enabled": true,
-          "command": "python3",
-          "args": [
-            "/usr/local/bin/rlm-utils-mcp.py"
-          ],
+          "command": "rlm-utils-mcp.py",
+          "args": [],
           "env": {
             "PYTHONUNBUFFERED": "1",
-            "WORKSPACE_PATH": "/home/odooclaw/.odooclaw/workspace"
+            "WORKSPACE_PATH": "${ODOOCLAW_WORKSPACE_PATH}"
           }
         }
       }
