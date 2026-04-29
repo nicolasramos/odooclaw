@@ -176,6 +176,7 @@
       "webhook_host": "0.0.0.0",
       "webhook_port": 18790,
       "webhook_path": "/webhook/odoo",
+      "target_db": "${ODOO_DB}",
       "allow_from": [],
       "reasoning_channel_id": ""
     }

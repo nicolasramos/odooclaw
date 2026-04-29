@@ -206,6 +206,7 @@ type OdooConfig struct {
 	WebhookHost        string              `json:"webhook_host"         env:"ODOOCLAW_CHANNELS_ODOO_WEBHOOK_HOST"`
 	WebhookPort        int                 `json:"webhook_port"         env:"ODOOCLAW_CHANNELS_ODOO_WEBHOOK_PORT"`
 	WebhookPath        string              `json:"webhook_path"         env:"ODOOCLAW_CHANNELS_ODOO_WEBHOOK_PATH"`
+	TargetDB           string              `json:"target_db,omitempty"  env:"ODOOCLAW_CHANNELS_ODOO_TARGET_DB"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"ODOOCLAW_CHANNELS_ODOO_ALLOW_FROM"`
 	AllowGroupMentions bool                `json:"allow_group_mentions" env:"ODOOCLAW_CHANNELS_ODOO_ALLOW_GROUP_MENTIONS"`
 	ReasoningChannelID string              `json:"reasoning_channel_id" env:"ODOOCLAW_CHANNELS_ODOO_REASONING_CHANNEL_ID"`
