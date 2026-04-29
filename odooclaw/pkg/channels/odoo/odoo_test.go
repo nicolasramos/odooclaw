@@ -137,3 +137,27 @@ func TestServeHTTP_AllowsDMEvenWhenGroupDisabled(t *testing.T) {
 		t.Fatalf("SenderID = %q, want %q", msg.SenderID, "12")
 	}
 }
+
+func TestBuildReplyEndpoint_TargetDBPriority(t *testing.T) {
+	got := buildReplyEndpoint("http://odoo:8069", "devel", "otherdb")
+	want := "http://odoo:8069/odooclaw/reply?db=devel"
+	if got != want {
+		t.Fatalf("buildReplyEndpoint() = %q, want %q", got, want)
+	}
+}
+
+func TestBuildReplyEndpoint_FallbackEnvDB(t *testing.T) {
+	got := buildReplyEndpoint("http://odoo:8069/", "", "devel")
+	want := "http://odoo:8069/odooclaw/reply?db=devel"
+	if got != want {
+		t.Fatalf("buildReplyEndpoint() = %q, want %q", got, want)
+	}
+}
+
+func TestBuildReplyEndpoint_NoDB(t *testing.T) {
+	got := buildReplyEndpoint("http://odoo:8069", "", "")
+	want := "http://odoo:8069/odooclaw/reply"
+	if got != want {
+		t.Fatalf("buildReplyEndpoint() = %q, want %q", got, want)
+	}
+}

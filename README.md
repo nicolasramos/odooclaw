@@ -70,6 +70,20 @@ The integration consists of two parts:
 3. **OdooClaw processes it**: The agent evaluates the intent and contacts the LLM provider (OpenAI, Anthropic, vLLM, etc.). The LLM invokes `odoo-mcp` tools from our **internal MCP server** (Python), executing permission-aware Odoo operations (search, read, create, write, safe actions) for the requesting user context.
 4. **OdooClaw replies to Odoo**: Once the response is ready, OdooClaw makes an HTTP POST back to the Odoo endpoint (`/odooclaw/reply`), which injects the message into Discuss, impersonating the bot.
 
+### Multi-Database Routing (Important)
+
+If your Odoo instance contains more than one database, configure an explicit target DB for Odoo channel replies:
+
+```env
+ODOO_DB=devel
+ODOO_DBFILTER=^devel$
+ODOOCLAW_CHANNELS_ODOO_TARGET_DB=devel
+```
+
+- `ODOOCLAW_CHANNELS_ODOO_TARGET_DB` forces deterministic routing for `/odooclaw/reply` requests.
+- `ODOO_DBFILTER` prevents ambiguous DB resolution on the Odoo HTTP side.
+- Without these settings in multi-DB setups, Odoo replies may fail with `404`.
+
 ---
 
 ## 🎤 Voice Messages (STT & TTS)
@@ -177,6 +191,7 @@ services:
       - ODOOCLAW_CHANNELS_ODOO_WEBHOOK_HOST=0.0.0.0
       - ODOOCLAW_CHANNELS_ODOO_WEBHOOK_PORT=18790
       - ODOOCLAW_CHANNELS_ODOO_WEBHOOK_PATH=/webhook/odoo
+      - ODOOCLAW_CHANNELS_ODOO_TARGET_DB=${POSTGRES_DB:-devel}
       - ODOOCLAW_CHANNELS_ODOO_ALLOW_GROUP_MENTIONS=false # Recommended default: DM-only
     volumes:
       # Persistent volume for memory, configs, and OdooClaw local DB
@@ -222,6 +237,12 @@ docker compose logs -f odooclaw
 For complete Doodba setup guides:
 - English: `odooclaw/docs/GUIDE_DOODBA_SETUP_EN.md`
 - Spanish: `odooclaw/docs/GUIA_DOODBA_PUESTA_EN_MARCHA_ES.md`
+
+## 🔗 Related Projects
+
+- **OdooClaw MCP** (standalone MCP server): https://github.com/nicolasramos/odooclaw-mcp
+- **OdooClaw Core** (this repository): https://github.com/nicolasramos/odooclaw
+- **OdooClaw Doodba Template** (clone-and-run deployment template): https://github.com/nicolasramos/odooclaw-doodba
 
 ### Odoo Privacy Modes (Recommended)
 

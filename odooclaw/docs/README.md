@@ -55,3 +55,7 @@ The internal MCP server runs a Python process, so it assumes that the container 
 
 ---
 For more details on the integration architecture with Discuss, channels, and deployment, check the **Main README** of the repository.
+
+## Related Repositories
+
+- [OdooClaw Doodba Template](https://github.com/nicolasramos/odooclaw-doodba): Clone-and-run deployment template for Doodba environments.
