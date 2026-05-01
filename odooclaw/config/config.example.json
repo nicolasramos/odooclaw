@@ -264,7 +264,7 @@
       "exec_timeout_minutes": 5
     },
     "mcp": {
-      "enabled": false,
+      "enabled": true,
       "servers": {
         "context7": {
           "enabled": false,
