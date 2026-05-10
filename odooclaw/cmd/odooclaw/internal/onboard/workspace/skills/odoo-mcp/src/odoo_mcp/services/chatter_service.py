@@ -3,22 +3,25 @@ from odoo_mcp.observability.logging import get_logger
 
 _logger = get_logger("chatter_service")
 
-def create_activity(client: OdooClient, user_id: int, model: str, res_id: int, summary: str, note: str = None, assign_to: int = None) -> int:
+def create_activity(client: OdooClient, user_id: int, model: str, res_id: int, summary: str, note: str = None, assign_to: int = None, date_deadline: str = None) -> int:
     values = {
         "res_model": model,
         "res_id": res_id,
         "summary": summary,
         "note": note,
     }
-    
+
     # Resolving res_model_id which is required by mail.activity
     model_ids = client.call_kw("ir.model", "search", args=[[("model", "=", model)]], kwargs={"limit": 1}, sender_id=user_id)
     if model_ids:
         values["res_model_id"] = model_ids[0]
-        
+
     if assign_to:
         values["user_id"] = assign_to
-        
+
+    if date_deadline:
+        values["date_deadline"] = date_deadline
+
     _logger.info(f"Creating activity for {model} id {res_id}")
     return client.call_kw("mail.activity", "create", args=[values], sender_id=user_id)
 
@@ -28,7 +31,7 @@ def list_pending_activities(client: OdooClient, user_id: int, model: str = None,
         domain.append(("res_model", "=", model))
     if assign_to:
         domain.append(("user_id", "=", assign_to))
-        
+
     _logger.info(f"Listing pending activities with domain: {domain}")
     return client.call_kw("mail.activity", "search_read", args=[domain], kwargs={"fields": ["summary", "note", "date_deadline", "res_model", "res_name", "user_id", "state"]}, sender_id=user_id)
 
