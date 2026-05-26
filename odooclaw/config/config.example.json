@@ -9,6 +9,10 @@
       "max_tool_iterations": 20
     }
   },
+  "engram": {
+    "enabled": false,
+    "mcp_server": "engram"
+  },
   "model_list": [
     {
       "model_name": "gpt4",
@@ -273,6 +277,14 @@
           "headers": {
             "CONTEXT7_API_KEY": "ctx7sk-xx"
           }
+        },
+        "engram": {
+          "enabled": false,
+          "command": "engram",
+          "args": [
+            "mcp"
+          ],
+          "exclude_from_auto_register": true
         },
         "odoo-manager": {
           "enabled": true,

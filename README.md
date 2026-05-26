@@ -410,6 +410,14 @@ If you want to use a 100% free and local model hosted on your server alongside O
 #### Load Balancing
 If you manage a huge Odoo instance with hundreds of users querying the AI, you can configure multiple API keys/endpoints for the same model name, and OdooClaw will automatically **round-robin** between them to prevent rate-limiting!
 
+### Engram Internal Memory
+
+OdooClaw can use Engram as an internal strategic-memory backend for durable knowledge such as architecture decisions, bug fixes, discoveries, conventions, and stable preferences.
+
+Engram should be configured as an **internal MCP server**: connected through `engram mcp`, but excluded from global MCP tool registration. This keeps raw `mem_*` tools away from the LLM and exposes only OdooClaw's controlled `memory_save_strategic` path.
+
+See `odooclaw/docs/tools_configuration.md` for the full configuration example.
+
 ---
 
 ## 🛠️ MCP Server and Skills
@@ -530,6 +538,7 @@ This project is distributed under the **MIT** license.
 - **OdooClaw** and its Odoo native integration have been developed by **Nicolás Ramos** and the OdooClaw contributors.
 - It is a deeply adapted **fork** of [PicoClaw](https://github.com/sipeed/picoclaw) by Sipeed.
 - In turn, PicoClaw is heavily inspired by [nanobot](https://github.com/HKUDS/nanobot) by HKUDS.
+- Strategic memory integration is powered by [Engram](https://github.com/Gentleman-Programming/engram.git), created by **Gentleman Programming**.
 
 ### Forking and Attribution
 

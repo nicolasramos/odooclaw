@@ -198,6 +198,87 @@ func TestDefaultConfig_HeartbeatEnabled(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_EngramDisabledByDefault(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.Engram.Enabled {
+		t.Fatal("Engram should be disabled by default")
+	}
+	if cfg.Engram.MCPServer != "engram" {
+		t.Fatalf("Engram MCPServer = %q, want engram", cfg.Engram.MCPServer)
+	}
+}
+
+func TestLoadConfig_EngramCanBeEnabledFromEnv(t *testing.T) {
+	t.Setenv("ODOOCLAW_ENGRAM_ENABLED", "true")
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(configPath, []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if !cfg.Engram.Enabled {
+		t.Fatal("Engram should be enabled from ODOOCLAW_ENGRAM_ENABLED=true")
+	}
+}
+
+func TestLoadConfig_EngramMCPServerCanBeSetFromEnv(t *testing.T) {
+	t.Setenv("ODOOCLAW_ENGRAM_MCP_SERVER", "project-memory")
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(configPath, []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Engram.MCPServer != "project-memory" {
+		t.Fatalf("Engram MCPServer = %q", cfg.Engram.MCPServer)
+	}
+}
+
+func TestMCPServerConfig_AutoRegistersByDefault(t *testing.T) {
+	var cfg MCPServerConfig
+	if cfg.ExcludeFromAutoRegister {
+		t.Fatal("MCP servers should be included in auto-registration by default")
+	}
+}
+
+func TestLoadConfig_MCPServerCanBeExcludedFromAutoRegister(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	configJSON := `{
+		"tools": {
+			"mcp": {
+				"enabled": true,
+				"servers": {
+					"engram": {
+						"enabled": true,
+						"command": "engram",
+						"args": ["mcp"],
+						"exclude_from_auto_register": true
+					}
+				}
+			}
+		}
+	}`
+	if err := os.WriteFile(configPath, []byte(configJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	engram := cfg.Tools.MCP.Servers["engram"]
+	if !engram.ExcludeFromAutoRegister {
+		t.Fatal("expected engram server to be excluded from global MCP tool registration")
+	}
+}
+
 // TestDefaultConfig_WorkspacePath verifies workspace path is correctly set
 func TestDefaultConfig_WorkspacePath(t *testing.T) {
 	cfg := DefaultConfig()
