@@ -93,6 +93,46 @@ In your `devel.yaml` or `prod.yaml`, make sure the following environment variabl
 - `ODOO_USERNAME`: The Odoo user (use an API Key for production).
 - `ODOO_PASSWORD`: The password or API Key.
 
-## 5. Advanced: Model Routing
+## 5. Engram Internal Memory Configuration
+
+Engram can be used as OdooClaw's strategic-memory backend for durable project knowledge such as decisions, bug fixes, discoveries, conventions, and stable preferences.
+
+Keep Engram as an **internal MCP server** so the model cannot call raw `mem_*` tools directly. OdooClaw will expose the controlled `memory_save_strategic` tool instead.
+
+```json
+{
+  "engram": {
+    "enabled": true,
+    "mcp_server": "engram"
+  },
+  "tools": {
+    "mcp": {
+      "enabled": true,
+      "servers": {
+        "engram": {
+          "enabled": true,
+          "command": "engram",
+          "args": ["mcp"],
+          "exclude_from_auto_register": true
+        }
+      }
+    }
+  }
+}
+```
+
+| Field | Purpose |
+| --- | --- |
+| `engram.enabled` | Enables OdooClaw's strategic-memory integration. |
+| `engram.mcp_server` | MCP server name used by the internal Engram client. Defaults to `engram`. |
+| `tools.mcp.servers.engram` | Starts `engram mcp` as a normal MCP server connection. |
+| `exclude_from_auto_register` | Keeps raw Engram MCP tools internal instead of exposing them to the AI model. |
+
+Environment overrides:
+
+- `ODOOCLAW_ENGRAM_ENABLED=true`
+- `ODOOCLAW_ENGRAM_MCP_SERVER=engram`
+
+## 6. Advanced: Model Routing
 
 You can override the model for specific agents or purposes by adding more specific configurations in the `agents` section (see `config.example.json` for details).

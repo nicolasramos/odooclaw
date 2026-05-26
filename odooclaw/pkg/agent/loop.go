@@ -27,6 +27,7 @@ import (
 	"github.com/nicolasramos/odooclaw/pkg/logger"
 	"github.com/nicolasramos/odooclaw/pkg/mcp"
 	"github.com/nicolasramos/odooclaw/pkg/media"
+	corememory "github.com/nicolasramos/odooclaw/pkg/memory"
 	"github.com/nicolasramos/odooclaw/pkg/providers"
 	"github.com/nicolasramos/odooclaw/pkg/routing"
 	"github.com/nicolasramos/odooclaw/pkg/skills"
@@ -218,12 +219,36 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 		} else {
 			// Register MCP tools for all agents
 			servers := mcpManager.GetServers()
+			if al.cfg.Engram.Enabled {
+				if _, ok := servers[al.cfg.Engram.MCPServer]; ok {
+					engramClient := corememory.NewEngramMCPClient(mcpManager, al.cfg.Engram.MCPServer)
+					memoryRouter := corememory.NewMemoryRouter(true, engramClient)
+					al.RegisterTool(tools.NewStrategicMemorySaveTool(memoryRouter))
+					logger.InfoCF("agent", "Registered strategic memory tool", map[string]any{
+						"server": al.cfg.Engram.MCPServer,
+					})
+				} else {
+					logger.WarnCF("agent", "Engram is enabled but MCP server is not connected", map[string]any{
+						"server": al.cfg.Engram.MCPServer,
+					})
+				}
+			}
 			uniqueTools := 0
 			totalRegistrations := 0
 			agentIDs := al.registry.ListAgentIDs()
 			agentCount := len(agentIDs)
 
 			for serverName, conn := range servers {
+				serverCfg := al.cfg.Tools.MCP.Servers[serverName]
+				if !shouldAutoRegisterMCPServer(serverCfg) {
+					logger.InfoCF("agent", "Skipping internal MCP server auto-registration",
+						map[string]any{
+							"server": serverName,
+							"tools":  len(conn.Tools),
+						})
+					continue
+				}
+
 				uniqueTools += len(conn.Tools)
 				for _, tool := range conn.Tools {
 					for _, agentID := range agentIDs {
@@ -323,6 +348,10 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func shouldAutoRegisterMCPServer(cfg config.MCPServerConfig) bool {
+	return !cfg.ExcludeFromAutoRegister
 }
 
 func (al *AgentLoop) Stop() {

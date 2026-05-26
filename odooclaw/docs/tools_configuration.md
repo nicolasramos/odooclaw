@@ -108,16 +108,17 @@ The MCP tool enables integration with external Model Context Protocol servers.
 
 ### Per-Server Config
 
-| Config     | Type   | Required | Description                                |
-| ---------- | ------ | -------- | ------------------------------------------ |
-| `enabled`  | bool   | yes      | Enable this MCP server                     |
-| `type`     | string | no       | Transport type: `stdio`, `sse`, `http`     |
-| `command`  | string | stdio    | Executable command for stdio transport     |
-| `args`     | array  | no       | Command arguments for stdio transport      |
-| `env`      | object | no       | Environment variables for stdio process    |
-| `env_file` | string | no       | Path to environment file for stdio process |
-| `url`      | string | sse/http | Endpoint URL for `sse`/`http` transport    |
-| `headers`  | object | no       | HTTP headers for `sse`/`http` transport    |
+| Config                       | Type   | Required | Description                                                                       |
+| ---------------------------- | ------ | -------- | --------------------------------------------------------------------------------- |
+| `enabled`                    | bool   | yes      | Enable this MCP server                                                            |
+| `type`                       | string | no       | Transport type: `stdio`, `sse`, `http`                                            |
+| `command`                    | string | stdio    | Executable command for stdio transport                                            |
+| `args`                       | array  | no       | Command arguments for stdio transport                                             |
+| `env`                        | object | no       | Environment variables for stdio process                                           |
+| `env_file`                   | string | no       | Path to environment file for stdio process                                        |
+| `url`                        | string | sse/http | Endpoint URL for `sse`/`http` transport                                           |
+| `headers`                    | object | no       | HTTP headers for `sse`/`http` transport                                           |
+| `exclude_from_auto_register` | bool   | no       | Keep the server connected for internal callers, but do not expose its tools to AI |
 
 ### Transport Behavior
 
@@ -169,6 +170,38 @@ The MCP tool enables integration with external Model Context Protocol servers.
   }
 }
 ```
+
+#### 3) Internal Engram MCP server
+
+Use Engram as an internal strategic-memory backend by connecting its MCP server but excluding its raw `mem_*` tools from global AI tool registration. OdooClaw then exposes only the controlled `memory_save_strategic` tool.
+
+```json
+{
+  "engram": {
+    "enabled": true,
+    "mcp_server": "engram"
+  },
+  "tools": {
+    "mcp": {
+      "enabled": true,
+      "servers": {
+        "engram": {
+          "enabled": true,
+          "command": "engram",
+          "args": ["mcp"],
+          "exclude_from_auto_register": true
+        }
+      }
+    }
+  }
+}
+```
+
+Expected behavior:
+
+- `engram mcp` is connected through the MCP manager.
+- Raw Engram tools such as `mem_save` are not exposed directly to the model.
+- OdooClaw exposes `memory_save_strategic` for high-value memories only: decisions, bug fixes, discoveries, patterns, config, architecture, and stable preferences.
 
 ## Skills Tool
 

@@ -39,6 +39,10 @@ func DefaultConfig() *Config {
 		Session: SessionConfig{
 			DMScope: "per-channel-peer",
 		},
+		Engram: EngramConfig{
+			Enabled:   false,
+			MCPServer: "engram",
+		},
 		Channels: ChannelsConfig{
 			WhatsApp: WhatsAppConfig{
 				Enabled:          false,

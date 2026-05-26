@@ -51,6 +51,7 @@ type Config struct {
 	Agents    AgentsConfig    `json:"agents"`
 	Bindings  []AgentBinding  `json:"bindings,omitempty"`
 	Session   SessionConfig   `json:"session,omitempty"`
+	Engram    EngramConfig    `json:"engram,omitempty"`
 	Channels  ChannelsConfig  `json:"channels"`
 	Providers ProvidersConfig `json:"providers,omitempty"`
 	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
@@ -165,6 +166,11 @@ type AgentBinding struct {
 type SessionConfig struct {
 	DMScope       string              `json:"dm_scope,omitempty"`
 	IdentityLinks map[string][]string `json:"identity_links,omitempty"`
+}
+
+type EngramConfig struct {
+	Enabled   bool   `json:"enabled" env:"ODOOCLAW_ENGRAM_ENABLED"`
+	MCPServer string `json:"mcp_server" env:"ODOOCLAW_ENGRAM_MCP_SERVER"`
 }
 
 type AgentDefaults struct {
@@ -640,6 +646,9 @@ type MCPServerConfig struct {
 	URL string `json:"url,omitempty"`
 	// Headers are HTTP headers to send with requests (sse/http only)
 	Headers map[string]string `json:"headers,omitempty"`
+	// ExcludeFromAutoRegister keeps the server connected for internal callers
+	// while preventing its tools from being exposed globally to agents.
+	ExcludeFromAutoRegister bool `json:"exclude_from_auto_register,omitempty"`
 }
 
 // MCPConfig defines configuration for all MCP servers
