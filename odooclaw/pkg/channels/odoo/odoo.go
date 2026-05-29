@@ -220,6 +220,16 @@ func (c *OdooChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	content := strings.TrimSpace(payload.Body)
 
+	// Enrich message with record context when coming from a non-channel model
+	if payload.Model != "" && payload.Model != "discuss.channel" && payload.ResID > 0 {
+		content = fmt.Sprintf(
+			"[Odoo Context: %s ID=%d]\n%s",
+			payload.Model,
+			payload.ResID,
+			content,
+		)
+	}
+
 	// Odoo filters mentions server-side before sending to the webhook.
 	var mediaPaths []string
 	metadata := map[string]string{
