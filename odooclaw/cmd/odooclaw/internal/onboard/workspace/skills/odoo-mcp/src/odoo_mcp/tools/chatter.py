@@ -3,10 +3,10 @@ from odoo_mcp.services.chatter_service import create_activity, list_pending_acti
 from odoo_mcp.security.audit import audit_action
 from odoo_mcp.security.guards import guard_model_access
 
-def odoo_create_activity(client: OdooClient, user_id: int, model: str, res_id: int, summary: str, note: str = None, assign_to: int = None) -> int:
+def odoo_create_activity(client: OdooClient, user_id: int, model: str, res_id: int, summary: str, note: str = None, assign_to: int = None, date_deadline: str = None) -> int:
     guard_model_access(model)
     audit_action("CREATE_ACTIVITY", user_id, model, [res_id], {"summary": summary})
-    return create_activity(client, user_id, model, res_id, summary, note, assign_to)
+    return create_activity(client, user_id, model, res_id, summary, note, assign_to, date_deadline)
 
 def odoo_list_pending_activities(client: OdooClient, user_id: int, model: str = None, assign_to: int = None) -> list:
     if model: guard_model_access(model)
