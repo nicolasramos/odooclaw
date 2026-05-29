@@ -419,6 +419,7 @@ def odoo_create_activity(
     note: str,
     user_id: int | None = None,
     sender_id: int | None = None,
+    date_deadline: str | None = None,
 ) -> int:
     with measure_time("odoo_create_activity"):
         client = get_odoo_client()
@@ -430,6 +431,7 @@ def odoo_create_activity(
             summary,
             note,
             user_id,
+            date_deadline,
         )
 
 

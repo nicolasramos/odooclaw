@@ -16,12 +16,14 @@ def create_activity(
     summary: str,
     note: str = None,
     assign_to: int = None,
+    date_deadline: str = None,
 ) -> int:
     values = {
         "res_model": model,
         "res_id": res_id,
         "summary": summary,
         "note": note,
+        "date_deadline": date_deadline,
     }
 
     # Resolving res_model_id which is required by mail.activity
