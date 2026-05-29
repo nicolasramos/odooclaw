@@ -134,15 +134,26 @@ class MailThread(models.AbstractModel):
                 .get_param("odooclaw.webhook_url", "http://odooclaw:18790/webhook/odoo")
             )
 
-            def send_webhook(url, data):
+            webhook_token = (
+                self.env["ir.config_parameter"]
+                .sudo()
+                .get_param("odooclaw.webhook_token", "")
+            )
+
+            def send_webhook(url, data, token):
                 try:
                     headers = {"Content-Type": "application/json"}
-                    requests.post(url, json=data, headers=headers, timeout=5)
+                    if token:
+                        headers["X-OdooClaw-Token"] = token
+                    response = requests.post(url, json=data, headers=headers, timeout=5)
+                    if response.status_code == 401:
+                        _logger.error("OdooClaw rejected webhook: invalid token for %s", url)
+
                 except Exception as e:
                     _logger.error("Failed to send webhook to OdooClaw: %s", str(e))
 
             threaded_call = threading.Thread(
-                target=send_webhook, args=(webhook_url, payload)
+                target=send_webhook, args=(webhook_url, payload, webhook_token)
             )
             threaded_call.start()
 

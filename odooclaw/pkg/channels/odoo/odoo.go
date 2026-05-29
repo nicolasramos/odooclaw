@@ -159,6 +159,14 @@ func (c *OdooChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
+	// Verify webhook token if configured
+	token := r.Header.Get("X-OdooClaw-Token")
+	if c.config.WebhookToken != "" && token != c.config.WebhookToken {
+		slog.Warn("Rejected webhook: invalid token", "remote", r.RemoteAddr)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	var payload OdooWebhookPayload
 	if err := json.Unmarshal(body, &payload); err != nil {
 		slog.Error("Failed to parse Odoo webhook", "error", err)
