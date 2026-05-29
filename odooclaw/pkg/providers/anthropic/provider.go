@@ -85,12 +85,17 @@ func (p *Provider) Chat(
 		return nil, err
 	}
 
-	resp, err := p.client.Messages.New(ctx, params, opts...)
-	if err != nil {
+	stream := p.client.Messages.NewStreaming(ctx, params, opts...)
+	msg := anthropic.Message{}
+	for stream.Next() {
+		event := stream.Current()
+		msg.Accumulate(event)
+	}
+	if err := stream.Err(); err != nil {
 		return nil, fmt.Errorf("claude API call: %w", err)
 	}
 
-	return parseResponse(resp), nil
+	return parseResponse(&msg), nil
 }
 
 func (p *Provider) GetDefaultModel() string {
@@ -161,7 +166,11 @@ func buildParams(
 						log.Printf("anthropic: skipping tool call with empty name (id=%q)", tc.ID)
 						continue
 					}
-					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, tc.Arguments, name))
+					args := tc.Arguments
+					if args == nil {
+						args = map[string]any{}
+					}
+					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, args, name))
 					if tc.ID != "" {
 						validToolCallIDs[tc.ID] = struct{}{}
 					}
