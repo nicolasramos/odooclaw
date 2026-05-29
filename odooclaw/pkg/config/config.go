@@ -209,6 +209,7 @@ type OdooConfig struct {
 	TargetDB           string              `json:"target_db,omitempty"  env:"ODOOCLAW_CHANNELS_ODOO_TARGET_DB"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from"           env:"ODOOCLAW_CHANNELS_ODOO_ALLOW_FROM"`
 	AllowGroupMentions bool                `json:"allow_group_mentions" env:"ODOOCLAW_CHANNELS_ODOO_ALLOW_GROUP_MENTIONS"`
+	WebhookToken       string              `json:"webhook_token"        env:"ODOOCLAW_CHANNELS_ODOO_WEBHOOK_TOKEN"`
 	ReasoningChannelID string              `json:"reasoning_channel_id" env:"ODOOCLAW_CHANNELS_ODOO_REASONING_CHANNEL_ID"`
 }
 
