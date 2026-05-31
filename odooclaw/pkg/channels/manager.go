@@ -82,10 +82,17 @@ type Manager struct {
 	dispatchTask  *asyncTask
 	mux           *http.ServeMux
 	httpServer    *http.Server
+	httpTLS       HTTPServerTLSConfig
 	mu            sync.RWMutex
 	placeholders  sync.Map // "channel:chatID" → placeholderID (string)
 	typingStops   sync.Map // "channel:chatID" → func()
 	reactionUndos sync.Map // "channel:chatID" → reactionEntry
+}
+
+type HTTPServerTLSConfig struct {
+	Enabled  bool
+	CertFile string
+	KeyFile  string
 }
 
 type asyncTask struct {
@@ -315,6 +322,25 @@ func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
 	}
 }
 
+func (m *Manager) SetupHTTPServerTLS(enabled bool, certFile string, keyFile string) error {
+	if !enabled {
+		m.httpTLS = HTTPServerTLSConfig{}
+		return nil
+	}
+	if certFile == "" {
+		return errors.New("gateway TLS cert file is required when TLS is enabled")
+	}
+	if keyFile == "" {
+		return errors.New("gateway TLS key file is required when TLS is enabled")
+	}
+	m.httpTLS = HTTPServerTLSConfig{
+		Enabled:  true,
+		CertFile: certFile,
+		KeyFile:  keyFile,
+	}
+	return nil
+}
+
 func (m *Manager) StartAll(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -357,10 +383,21 @@ func (m *Manager) StartAll(ctx context.Context) error {
 	// Start shared HTTP server if configured
 	if m.httpServer != nil {
 		go func() {
+			scheme := "http"
+			if m.httpTLS.Enabled {
+				scheme = "https"
+			}
 			logger.InfoCF("channels", "Shared HTTP server listening", map[string]any{
-				"addr": m.httpServer.Addr,
+				"addr":   m.httpServer.Addr,
+				"scheme": scheme,
 			})
-			if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			var err error
+			if m.httpTLS.Enabled {
+				err = m.httpServer.ListenAndServeTLS(m.httpTLS.CertFile, m.httpTLS.KeyFile)
+			} else {
+				err = m.httpServer.ListenAndServe()
+			}
+			if err != nil && err != http.ErrServerClosed {
 				logger.ErrorCF("channels", "Shared HTTP server error", map[string]any{
 					"error": err.Error(),
 				})

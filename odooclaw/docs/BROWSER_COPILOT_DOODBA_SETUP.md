@@ -33,6 +33,8 @@ doodba-18/
 
 ## 2) Start OdooClaw (main gateway)
 
+TLS note: for Doodba, the recommended production setup is TLS termination at the edge proxy (Traefik, Nginx or Caddy) while OdooClaw listens on HTTP inside the private Docker network. See `odooclaw/docs/GATEWAY_TLS.md`.
+
 Use the standard OdooClaw service in Doodba (`odooclaw`) as documented in:
 
 - `odooclaw/docs/GUIDE_DOODBA_SETUP_EN.md`

@@ -35,6 +35,45 @@ func newTestManager() *Manager {
 	}
 }
 
+func TestSetupHTTPServerTLSDisabledAllowsEmptyFiles(t *testing.T) {
+	m := newTestManager()
+
+	if err := m.SetupHTTPServerTLS(false, "", ""); err != nil {
+		t.Fatalf("SetupHTTPServerTLS disabled should not require files: %v", err)
+	}
+	if m.httpTLS.Enabled {
+		t.Fatal("TLS should remain disabled")
+	}
+}
+
+func TestSetupHTTPServerTLSEnabledRequiresCertAndKey(t *testing.T) {
+	m := newTestManager()
+
+	if err := m.SetupHTTPServerTLS(true, "", "/tmp/key.pem"); err == nil {
+		t.Fatal("expected missing cert file error")
+	}
+	if err := m.SetupHTTPServerTLS(true, "/tmp/cert.pem", ""); err == nil {
+		t.Fatal("expected missing key file error")
+	}
+}
+
+func TestSetupHTTPServerTLSEnabledStoresFiles(t *testing.T) {
+	m := newTestManager()
+
+	if err := m.SetupHTTPServerTLS(true, "/tmp/cert.pem", "/tmp/key.pem"); err != nil {
+		t.Fatalf("SetupHTTPServerTLS enabled: %v", err)
+	}
+	if !m.httpTLS.Enabled {
+		t.Fatal("TLS should be enabled")
+	}
+	if m.httpTLS.CertFile != "/tmp/cert.pem" {
+		t.Errorf("CertFile = %q", m.httpTLS.CertFile)
+	}
+	if m.httpTLS.KeyFile != "/tmp/key.pem" {
+		t.Errorf("KeyFile = %q", m.httpTLS.KeyFile)
+	}
+}
+
 func TestSendWithRetry_Success(t *testing.T) {
 	m := newTestManager()
 	var callCount int

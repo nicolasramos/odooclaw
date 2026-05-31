@@ -1035,6 +1035,9 @@ func (c GatewayConfig) ToStandardGateway() config.GatewayConfig {
 	return config.GatewayConfig{
 		Host: c.Host,
 		Port: c.Port,
+		TLS: config.GatewayTLSConfig{
+			Enabled: false,
+		},
 	}
 }
 
