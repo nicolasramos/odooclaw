@@ -329,6 +329,11 @@ func DefaultConfig() *Config {
 		Gateway: GatewayConfig{
 			Host: "127.0.0.1",
 			Port: 18790,
+			TLS: GatewayTLSConfig{
+				Enabled:  false,
+				CertFile: "",
+				KeyFile:  "",
+			},
 		},
 		Tools: ToolsConfig{
 			MediaCleanup: MediaCleanupConfig{

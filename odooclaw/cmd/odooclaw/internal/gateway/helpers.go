@@ -174,13 +174,24 @@ func gatewayCmd(debug bool) error {
 	healthServer := health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
 	addr := fmt.Sprintf("%s:%d", cfg.Gateway.Host, cfg.Gateway.Port)
 	channelManager.SetupHTTPServer(addr, healthServer)
+	if err := channelManager.SetupHTTPServerTLS(
+		cfg.Gateway.TLS.Enabled,
+		cfg.Gateway.TLS.CertFile,
+		cfg.Gateway.TLS.KeyFile,
+	); err != nil {
+		return err
+	}
 
 	if err := channelManager.StartAll(ctx); err != nil {
 		fmt.Printf("Error starting channels: %v\n", err)
 		return err
 	}
 
-	fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	scheme := "http"
+	if cfg.Gateway.TLS.Enabled {
+		scheme = "https"
+	}
+	fmt.Printf("✓ Health endpoints available at %s://%s:%d/health and /ready\n", scheme, cfg.Gateway.Host, cfg.Gateway.Port)
 
 	go agentLoop.Run(ctx)
 

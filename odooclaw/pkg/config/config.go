@@ -535,8 +535,15 @@ func (c *ModelConfig) Validate() error {
 }
 
 type GatewayConfig struct {
-	Host string `json:"host" env:"ODOOCLAW_GATEWAY_HOST"`
-	Port int    `json:"port" env:"ODOOCLAW_GATEWAY_PORT"`
+	Host string           `json:"host" env:"ODOOCLAW_GATEWAY_HOST"`
+	Port int              `json:"port" env:"ODOOCLAW_GATEWAY_PORT"`
+	TLS  GatewayTLSConfig `json:"tls,omitempty"`
+}
+
+type GatewayTLSConfig struct {
+	Enabled  bool   `json:"enabled,omitempty"   env:"ODOOCLAW_GATEWAY_TLS_ENABLED"`
+	CertFile string `json:"cert_file,omitempty" env:"ODOOCLAW_GATEWAY_TLS_CERT_FILE"`
+	KeyFile  string `json:"key_file,omitempty"  env:"ODOOCLAW_GATEWAY_TLS_KEY_FILE"`
 }
 
 type BraveConfig struct {
