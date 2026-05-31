@@ -18,6 +18,7 @@ It also starts the Website Edit Mode / Guided Training feasibility track with an
 - Added gateway TLS documentation with Doodba and standalone deployment guidance.
 - Updated Browser Copilot Doodba setup docs to reference the TLS deployment guide.
 - Added tests for gateway TLS config defaults, env parsing and TLS validation.
+- Updated Anthropic provider tests to mock the streaming API introduced in the current main branch.
 - Started the Website Edit Mode / Guided Training roadmap in `docs/website-edit-viability.md`.
 
 ## Why this matters
