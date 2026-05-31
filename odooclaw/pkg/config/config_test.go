@@ -334,6 +334,40 @@ func TestDefaultConfig_Gateway(t *testing.T) {
 	if cfg.Gateway.Port == 0 {
 		t.Error("Gateway port should have default value")
 	}
+	if cfg.Gateway.TLS.Enabled {
+		t.Error("Gateway TLS should be disabled by default")
+	}
+	if cfg.Gateway.TLS.CertFile != "" {
+		t.Error("Gateway TLS cert file should be empty by default")
+	}
+	if cfg.Gateway.TLS.KeyFile != "" {
+		t.Error("Gateway TLS key file should be empty by default")
+	}
+}
+
+func TestLoadConfig_GatewayTLSCanBeSetFromEnv(t *testing.T) {
+	t.Setenv("ODOOCLAW_GATEWAY_TLS_ENABLED", "true")
+	t.Setenv("ODOOCLAW_GATEWAY_TLS_CERT_FILE", "/etc/odooclaw/tls.crt")
+	t.Setenv("ODOOCLAW_GATEWAY_TLS_KEY_FILE", "/etc/odooclaw/tls.key")
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(configPath, []byte(`{}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if !cfg.Gateway.TLS.Enabled {
+		t.Fatal("Gateway TLS should be enabled from env")
+	}
+	if cfg.Gateway.TLS.CertFile != "/etc/odooclaw/tls.crt" {
+		t.Errorf("CertFile = %q", cfg.Gateway.TLS.CertFile)
+	}
+	if cfg.Gateway.TLS.KeyFile != "/etc/odooclaw/tls.key" {
+		t.Errorf("KeyFile = %q", cfg.Gateway.TLS.KeyFile)
+	}
 }
 
 func TestDefaultConfig_OdooDisablesGroupMentionsByDefault(t *testing.T) {

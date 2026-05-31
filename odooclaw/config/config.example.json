@@ -421,6 +421,11 @@
   },
   "gateway": {
     "host": "0.0.0.0",
-    "port": 18790
+    "port": 18790,
+    "tls": {
+      "enabled": false,
+      "cert_file": "",
+      "key_file": ""
+    }
   }
 }
