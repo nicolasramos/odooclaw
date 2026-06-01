@@ -11,6 +11,8 @@
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
     <br>
     <a href="https://github.com/nicolasramos/odooclaw"><img src="https://img.shields.io/badge/GitHub-Repository-black?style=flat&logo=github&logoColor=white" alt="GitHub"></a>
+    <a href="https://addons.mozilla.org/addon/odooclaw-browser-copilot/"><img src="https://img.shields.io/badge/Firefox%20Add--on-Available-FF7139?style=flat&logo=firefoxbrowser&logoColor=white" alt="Firefox Add-on"></a>
+    <img src="https://img.shields.io/badge/Chrome%20Web%20Store-Coming%20soon-4285F4?style=flat&logo=googlechrome&logoColor=white" alt="Chrome Web Store coming soon">
   </p>
 
 </div>
@@ -258,6 +260,11 @@ For complete Doodba setup guides:
 
 ### Browser Copilot in Doodba (Phase 1 MVP)
 
+Browser extension availability:
+
+- Firefox Add-ons: [OdooClaw Browser Copilot](https://addons.mozilla.org/addon/odooclaw-browser-copilot/)
+- Chrome Web Store: coming soon
+
 To enable the new browser-copilot module in the same dev/test stack:
 
 1. Start backend from project root:
@@ -271,8 +278,9 @@ docker compose -f "odooclaw/browser_copilot/docker-compose.browser-copilot.yml" 
     - Token: same value as `BROWSER_COPILOT_TOKEN`
 
    Browser support currently documented for:
-   - Chrome/Chromium (load unpacked)
-   - Firefox (load temporary add-on)
+   - Firefox Add-ons (public listing)
+   - Chrome/Chromium (load unpacked, Chrome Web Store coming soon)
+   - Firefox local development (load temporary add-on)
 
    See `browser_extension/README.md` for browser-specific install steps.
 
