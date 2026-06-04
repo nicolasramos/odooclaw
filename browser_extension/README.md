@@ -15,7 +15,7 @@ Branding assets are included under `browser_extension/assets/`.
 ## Browser Support
 
 - Firefox Add-ons: [OdooClaw Browser Copilot](https://addons.mozilla.org/addon/odooclaw-browser-copilot/)
-- Chrome / Chromium (Manifest V3, Chrome Web Store coming soon)
+- Chrome Web Store: [OdooClaw Browser Copilot](https://chromewebstore.google.com/detail/odooclaw-browser-copilot/lnmdgafmodbhnaijnllfcoabfofdffkc)
 - Firefox local development (temporary add-on flow)
 
 Manifest includes Firefox metadata under `browser_specific_settings.gecko`.

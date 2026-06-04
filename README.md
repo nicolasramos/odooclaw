@@ -12,7 +12,7 @@
     <br>
     <a href="https://github.com/nicolasramos/odooclaw"><img src="https://img.shields.io/badge/GitHub-Repository-black?style=flat&logo=github&logoColor=white" alt="GitHub"></a>
     <a href="https://addons.mozilla.org/addon/odooclaw-browser-copilot/"><img src="https://img.shields.io/badge/Firefox%20Add--on-Available-FF7139?style=flat&logo=firefoxbrowser&logoColor=white" alt="Firefox Add-on"></a>
-    <img src="https://img.shields.io/badge/Chrome%20Web%20Store-Coming%20soon-4285F4?style=flat&logo=googlechrome&logoColor=white" alt="Chrome Web Store coming soon">
+    <a href="https://chromewebstore.google.com/detail/odooclaw-browser-copilot/lnmdgafmodbhnaijnllfcoabfofdffkc"><img src="https://img.shields.io/badge/Chrome%20Web%20Store-Available-4285F4?style=flat&logo=googlechrome&logoColor=white" alt="Chrome Web Store"></a>
   </p>
 
 </div>
@@ -263,7 +263,7 @@ For complete Doodba setup guides:
 Browser extension availability:
 
 - Firefox Add-ons: [OdooClaw Browser Copilot](https://addons.mozilla.org/addon/odooclaw-browser-copilot/)
-- Chrome Web Store: coming soon
+- Chrome Web Store: [OdooClaw Browser Copilot](https://chromewebstore.google.com/detail/odooclaw-browser-copilot/lnmdgafmodbhnaijnllfcoabfofdffkc)
 
 To enable the new browser-copilot module in the same dev/test stack:
 
@@ -279,7 +279,7 @@ docker compose -f "odooclaw/browser_copilot/docker-compose.browser-copilot.yml" 
 
    Browser support currently documented for:
    - Firefox Add-ons (public listing)
-   - Chrome/Chromium (load unpacked, Chrome Web Store coming soon)
+   - Chrome Web Store (public listing)
    - Firefox local development (load temporary add-on)
 
    See `browser_extension/README.md` for browser-specific install steps.
