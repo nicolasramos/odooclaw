@@ -43,6 +43,7 @@ from odoo_mcp.schemas.business import (
     FindMyTasksSchema,
     FindPartnerSchema,
     FindPendingInvoicesSchema,
+    FindPurchaseOrderSchema,
     FindSaleOrderSchema,
     FindTaskSchema,
     FindUnreconciledBankLinesSchema,
@@ -54,6 +55,9 @@ from odoo_mcp.schemas.business import (
     GetMyTodaySummarySchema,
     GetPartnerSummarySchema,
     GetProductStockSchema,
+    GetPurchaseInvoiceStatusSchema,
+    GetPurchaseOrderSummarySchema,
+    GetPurchaseReceiptStatusSchema,
     GetRecordSummarySchema,
     GetReportTemplateSchema,
     GetSaleOrderSummarySchema,
@@ -65,6 +69,7 @@ from odoo_mcp.schemas.business import (
     LogTaskTimesheetSchema,
     LogTimesheetSchema,
     MarkActivityDoneSchema,
+    MatchVendorBillToPurchaseOrderSchema,
     NotifyPendingActionsSchema,
     POLineSchema,
     PostChatterMessageSchema,
@@ -86,6 +91,7 @@ from odoo_mcp.schemas.business import (
     SuggestBankReconciliationSchema,
     SuggestExpenseAccountAndTaxesSchema,
     SuggestTimesheetFromAttendanceSchema,
+    SuggestVendorProductsSchema,
     TestViewCompilationSchema,
     UpdateTaskSchema,
     UpdateTaskStatusSchema,
@@ -654,12 +660,104 @@ def odoo_create_purchase_order(
 
 
 @mcp.tool()
+def odoo_find_purchase_order(
+    name: str | None = None,
+    partner_id: int | None = None,
+    state: str | None = None,
+    limit: int = DEFAULT_SEARCH_LIMIT,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_find_purchase_order"):
+        client = get_odoo_client()
+        return purchases.odoo_find_purchase_order(
+            client, sender_id or client.odoo_session.uid, name, partner_id, state, limit
+        )
+
+
+@mcp.tool()
+def odoo_get_purchase_order_summary(
+    order_id: int,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_get_purchase_order_summary"):
+        client = get_odoo_client()
+        return purchases.odoo_get_purchase_order_summary(
+            client, sender_id or client.odoo_session.uid, order_id
+        )
+
+
+@mcp.tool()
+def odoo_get_purchase_receipt_status(
+    purchase_order_id: int,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_get_purchase_receipt_status"):
+        client = get_odoo_client()
+        return purchases.odoo_get_purchase_receipt_status(
+            client, sender_id or client.odoo_session.uid, purchase_order_id
+        )
+
+
+@mcp.tool()
+def odoo_get_purchase_invoice_status(
+    purchase_order_id: int,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_get_purchase_invoice_status"):
+        client = get_odoo_client()
+        return purchases.odoo_get_purchase_invoice_status(
+            client, sender_id or client.odoo_session.uid, purchase_order_id
+        )
+
+
+@mcp.tool()
+def odoo_suggest_vendor_products(
+    partner_id: int,
+    query: str | None = None,
+    limit: int = DEFAULT_SEARCH_LIMIT,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_suggest_vendor_products"):
+        client = get_odoo_client()
+        return purchases.odoo_suggest_vendor_products(
+            client, sender_id or client.odoo_session.uid, partner_id, query, limit
+        )
+
+
+@mcp.tool()
+def odoo_match_vendor_bill_to_purchase_order(
+    partner_id: int,
+    vendor_bill_number: str | None = None,
+    purchase_order_id: int | None = None,
+    ocr_payload: dict[str, Any] | None = None,
+    tolerance: float = 0.01,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_match_vendor_bill_to_purchase_order"):
+        client = get_odoo_client()
+        return purchases.odoo_match_vendor_bill_to_purchase_order(
+            client,
+            sender_id or client.odoo_session.uid,
+            partner_id,
+            vendor_bill_number,
+            purchase_order_id,
+            ocr_payload,
+            tolerance,
+        )
+
+
+@mcp.tool()
 def odoo_create_vendor_invoice(
     partner_id: int,
     lines: list[InvoiceLineSchema],
     ref: str | None = None,
+    confirm: bool = False,
+    dry_run: bool = True,
+    total_tolerance: float = 0.01,
+    vendor_create_policy: str = "propose_create",
+    confirm_partner_create: bool = False,
     sender_id: int | None = None,
-) -> int:
+) -> dict:
     with measure_time("odoo_create_vendor_invoice"):
         client = get_odoo_client()
         return accounting.odoo_create_vendor_invoice(
@@ -667,7 +765,12 @@ def odoo_create_vendor_invoice(
             sender_id or client.odoo_session.uid,
             partner_id,
             [line.dict() for line in lines],
-            ref,
+            ref or "",
+            confirm,
+            dry_run,
+            total_tolerance,
+            vendor_create_policy,
+            confirm_partner_create,
         )
 
 
@@ -1499,6 +1602,9 @@ def odoo_create_vendor_bill_from_ocr_validated(
     dry_run: bool = True,
     company_id: int | None = None,
     allowed_company_ids: list[int] | None = None,
+    total_tolerance: float = 0.01,
+    vendor_create_policy: str = "propose_create",
+    confirm_partner_create: bool = False,
     sender_id: int | None = None,
 ) -> dict:
     with measure_time("odoo_create_vendor_bill_from_ocr_validated"):
@@ -1512,6 +1618,9 @@ def odoo_create_vendor_bill_from_ocr_validated(
             dry_run=dry_run,
             company_id=company_id,
             allowed_company_ids=allowed_company_ids,
+            total_tolerance=total_tolerance,
+            vendor_create_policy=vendor_create_policy,
+            confirm_partner_create=confirm_partner_create,
         )
 
 

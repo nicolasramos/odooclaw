@@ -1,6 +1,6 @@
 # Odoo MCP - Accounting Tools
 
-Updated: 2026-04-15
+Updated: 2026-06-05
 
 This document describes the accounting-focused MCP tools added to `odoo-mcp`.
 
@@ -70,13 +70,53 @@ This document describes the accounting-focused MCP tools added to `odoo-mcp`.
   - `dry_run`
   - `company_id?`
   - `allowed_company_ids?`
+  - `total_tolerance?`
+  - `vendor_create_policy?` (`search_only|propose_create|create_with_confirm`)
+  - `confirm_partner_create?`
 - Behavior:
-  - Runs duplicate detection before create.
-  - Returns `duplicate_risk` and requires `confirm=true` for real creation.
+  - Resolves missing `partner_id` by vendor VAT, supplier reference or name.
+  - If the vendor is not found, proposes a `suggested_partner` by default instead of silently creating it.
+  - Creates a missing vendor only when `vendor_create_policy=create_with_confirm`, `confirm_partner_create=true`, `confirm=true` and `dry_run=false`.
+  - Runs duplicate detection before create and blocks high-risk duplicates unless `confirm=true`.
+  - Compares OCR total against calculated OCR line total and returns `total_mismatch` when outside tolerance.
+  - Supports optional payment term, currency, fiscal position, due date and company fields when available in the target Odoo instance.
   - `dry_run=true` returns preview and generated `move_vals` only.
+
+### 13) `odoo_create_vendor_invoice`
+- Purpose: legacy compatibility tool for vendor invoices.
+- Behavior: routed internally through `odoo_create_vendor_bill_from_ocr_validated` so it cannot bypass preview, duplicate checks or total validation.
+
+## Purchase / Vendor Bill Matching Tools
+
+### 14) `odoo_find_purchase_order`
+- Purpose: find purchase orders by name, vendor, state and limit.
+- Output: candidate purchase orders plus detected OCA purchase capabilities.
+
+### 15) `odoo_get_purchase_order_summary`
+- Purpose: summarize purchase order header and order lines.
+- Output: PO metadata, line quantities/prices/taxes and optional OCA capability flags.
+
+### 16) `odoo_get_purchase_receipt_status`
+- Purpose: explain receiving state for a purchase order.
+- Behavior: reads linked stock pickings when available, otherwise falls back to ordered vs received quantities on PO lines.
+
+### 17) `odoo_get_purchase_invoice_status`
+- Purpose: explain billing state for a purchase order.
+- Output: invoice status, linked invoice IDs when available, uninvoiced amount when exposed, and line-level quantities to invoice.
+
+### 18) `odoo_suggest_vendor_products`
+- Purpose: suggest vendor products from `product.supplierinfo`.
+- Compatibility: returns `unsupported` when supplierinfo is not available instead of inventing data.
+
+### 19) `odoo_match_vendor_bill_to_purchase_order`
+- Purpose: match an OCR/vendor bill payload against purchase order lines before draft bill creation.
+- Input: `partner_id`, `vendor_bill_number?`, `purchase_order_id?`, `ocr_payload?`, `tolerance?`.
+- Output: best PO candidate, line matches, quantity/price/tax discrepancies, receipt/invoice status and risk level.
 
 ## Safety and Compatibility Notes
 
-- Sensitive operations (`reconcile`, `post`, OCR bill create) require explicit confirmation.
+- Sensitive operations (`reconcile`, `post`, OCR bill create, missing vendor creation) require explicit confirmation.
+- Purchase matching tools are read/analysis tools; they do not publish, pay or reconcile documents.
 - All operations run under sender user context (`sender_id`) to preserve ACL/record rules.
 - Multi-company context is supported via `company_id` and `allowed_company_ids` where applicable.
+- OCA alignment is capability-first: optional fields/models are detected and reported; missing OCA modules produce `unsupported` or safe fallback behavior.

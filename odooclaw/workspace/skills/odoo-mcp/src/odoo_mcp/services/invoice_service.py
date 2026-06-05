@@ -1,28 +1,37 @@
 from odoo_mcp.core.client import OdooClient
 from odoo_mcp.observability.logging import get_logger
+from odoo_mcp.services.accounting_service import create_vendor_bill_from_ocr_validated
 
 _logger = get_logger("invoice_service")
 
 
-def create_vendor_invoice(client: OdooClient, user_id: int, partner_id: int, lines: list, ref: str = "") -> int:
-    """Creates a vendor invoice (account.move of type in_invoice)."""
-    invoice_vals = {
-        "move_type": "in_invoice",
-        "partner_id": partner_id,
-        "ref": ref,
-        "invoice_line_ids": []
-    }
-
-    for line in lines:
-        invoice_vals["invoice_line_ids"].append((0, 0, {
-            "product_id": line.get("product_id"),
-            "name": line.get("name", "Item"),
-            "quantity": line.get("quantity", 1.0),
-            "price_unit": line.get("price_unit", 0.0)
-        }))
-
-    _logger.info(f"Creating vendor invoice for partner {partner_id} with {len(lines)} lines")
-    return client.call_kw("account.move", "create", args=[invoice_vals], sender_id=user_id)
+def create_vendor_invoice(
+    client: OdooClient,
+    user_id: int,
+    partner_id: int,
+    lines: list,
+    ref: str = "",
+    confirm: bool = False,
+    dry_run: bool = True,
+    total_tolerance: float = 0.01,
+    vendor_create_policy: str = "propose_create",
+    confirm_partner_create: bool = False,
+) -> dict:
+    """Legacy entrypoint routed through validated vendor bill creation."""
+    _logger.info(
+        "Routing legacy vendor invoice creation through validated bill flow "
+        f"for partner {partner_id} with {len(lines)} lines"
+    )
+    return create_vendor_bill_from_ocr_validated(
+        client=client,
+        sender_id=user_id,
+        ocr_payload={"partner_id": partner_id, "ref": ref, "lines": lines},
+        confirm=confirm,
+        dry_run=dry_run,
+        total_tolerance=total_tolerance,
+        vendor_create_policy=vendor_create_policy,
+        confirm_partner_create=confirm_partner_create,
+    )
 
 
 def find_pending_invoices(client: OdooClient, user_id: int, partner_id: int = None,

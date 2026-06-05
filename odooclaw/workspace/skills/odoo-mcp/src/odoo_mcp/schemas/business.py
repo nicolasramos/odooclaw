@@ -31,6 +31,57 @@ class CreateVendorInvoiceSchema(BaseOdooRequest):
     partner_id: int = Field(..., description="ID of the vendor")
     ref: str = Field("", description="Vendor Reference string")
     lines: List[InvoiceLineSchema] = Field(..., description="Invoice lines")
+    confirm: bool = Field(
+        False,
+        description="Legacy tool is routed through validated vendor bill creation; must be true to create.",
+    )
+    dry_run: bool = Field(True, description="Return preview without creation by default")
+    total_tolerance: float = Field(0.01, description="Allowed OCR/line total delta")
+    vendor_create_policy: str = Field(
+        "propose_create",
+        description="Vendor creation policy: search_only, propose_create, create_with_confirm",
+    )
+    confirm_partner_create: bool = Field(
+        False,
+        description="Must be true, together with confirm=true and dry_run=false, to create a missing vendor partner",
+    )
+
+
+class FindPurchaseOrderSchema(BaseOdooRequest):
+    name: Optional[str] = Field(None, description="Purchase order reference/name")
+    partner_id: Optional[int] = Field(None, description="Vendor partner ID")
+    state: Optional[str] = Field(
+        None, description="Filter by state: draft, sent, to approve, purchase, done, cancel"
+    )
+    limit: int = Field(10, description="Max results")
+
+
+class GetPurchaseOrderSummarySchema(BaseOdooRequest):
+    order_id: int = Field(..., description="purchase.order ID")
+
+
+class GetPurchaseReceiptStatusSchema(BaseOdooRequest):
+    purchase_order_id: int = Field(..., description="purchase.order ID")
+
+
+class GetPurchaseInvoiceStatusSchema(BaseOdooRequest):
+    purchase_order_id: int = Field(..., description="purchase.order ID")
+
+
+class SuggestVendorProductsSchema(BaseOdooRequest):
+    partner_id: int = Field(..., description="Vendor partner ID")
+    query: Optional[str] = Field(None, description="Optional product/vendor code search")
+    limit: int = Field(10, description="Max suggestions")
+
+
+class MatchVendorBillToPurchaseOrderSchema(BaseOdooRequest):
+    partner_id: int = Field(..., description="Vendor partner ID")
+    vendor_bill_number: Optional[str] = Field(None, description="Vendor bill reference")
+    purchase_order_id: Optional[int] = Field(None, description="Known purchase.order ID")
+    ocr_payload: Optional[Dict[str, Any]] = Field(
+        None, description="Optional normalized OCR payload with invoice lines"
+    )
+    tolerance: float = Field(0.01, description="Quantity/price matching tolerance")
 
 
 class GetPartnerSummarySchema(BaseOdooRequest):
@@ -441,11 +492,20 @@ class CreateVendorBillFromOCRValidatedSchema(BaseOdooRequest):
         description="Optional ir.attachment ID to link",
     )
     confirm: bool = Field(False, description="Must be true to create vendor bill")
-    dry_run: bool = Field(False, description="Return preview without creation")
+    dry_run: bool = Field(True, description="Return preview without creation")
     company_id: Optional[int] = Field(None, description="Company override")
     allowed_company_ids: Optional[list[int]] = Field(
         None,
         description="Optional allowed_company_ids context",
+    )
+    total_tolerance: float = Field(0.01, description="Allowed OCR/line total delta")
+    vendor_create_policy: str = Field(
+        "propose_create",
+        description="Vendor creation policy: search_only, propose_create, create_with_confirm",
+    )
+    confirm_partner_create: bool = Field(
+        False,
+        description="Must be true, together with confirm=true and dry_run=false, to create a missing vendor partner",
     )
 
 
