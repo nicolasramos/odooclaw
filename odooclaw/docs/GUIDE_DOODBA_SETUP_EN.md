@@ -108,6 +108,19 @@ TZ=Europe/Madrid
 
 Do not commit this file with secrets to the repository.
 
+### 5.1 Optional: Engram strategic memory
+
+OdooClaw includes optional internal Engram MCP integration for durable strategic memory, but it is disabled by default.
+
+Only enable it after the `engram` binary is available inside the OdooClaw image and the MCP server is configured as internal:
+
+```env
+ODOOCLAW_ENGRAM_ENABLED=true
+ODOOCLAW_ENGRAM_MCP_SERVER=engram
+```
+
+See [Engram Internal Memory in Docker/Doodba](ENGRAM_DOCKER_DOODBA.md) for the recommended pinned-binary installation pattern with checksum verification.
+
 ## 6) Prepare `config.json`
 
 First create your local config:
