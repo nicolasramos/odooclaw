@@ -231,6 +231,63 @@ class CreateLeadSchema(BaseOdooRequest):
     )
 
 
+
+
+class FindProductSchema(BaseOdooRequest):
+    name: Optional[str] = Field(None, description="Product name search")
+    default_code: Optional[str] = Field(None, description="Internal reference/SKU")
+    barcode: Optional[str] = Field(None, description="Product barcode")
+    category_id: Optional[int] = Field(None, description="product.category ID")
+    vendor_id: Optional[int] = Field(None, description="Vendor partner ID")
+    limit: int = Field(10, description="Max results")
+
+
+class GetProductSummarySchema(BaseOdooRequest):
+    product_id: int = Field(..., description="product.product ID")
+
+
+class GetProductSupplierInfoSchema(BaseOdooRequest):
+    product_id: int = Field(..., description="product.product ID")
+    partner_id: Optional[int] = Field(None, description="Optional vendor partner ID")
+    limit: int = Field(20, description="Max supplierinfo records")
+
+
+class GetProductStockContextSchema(BaseOdooRequest):
+    product_id: int = Field(..., description="product.product ID")
+    location_id: Optional[int] = Field(None, description="Optional stock.location ID")
+
+
+class GetStockAvailabilitySchema(BaseOdooRequest):
+    product_ids: list[int] = Field(..., description="Product IDs to summarize")
+    location_id: Optional[int] = Field(None, description="Optional stock.location ID")
+
+
+class FindStockLocationsSchema(BaseOdooRequest):
+    name: Optional[str] = Field(None, description="Location name search")
+    usage: Optional[str] = Field(None, description="Location usage: internal, supplier, customer, transit, inventory, production")
+    limit: int = Field(20, description="Max results")
+
+
+class GetLocationStockSummarySchema(BaseOdooRequest):
+    location_id: int = Field(..., description="stock.location ID")
+    product_id: Optional[int] = Field(None, description="Optional product.product ID")
+    limit: int = Field(100, description="Max stock quants")
+
+
+class GetStockMovesSchema(BaseOdooRequest):
+    product_id: Optional[int] = Field(None, description="Optional product.product ID")
+    picking_id: Optional[int] = Field(None, description="Optional stock.picking ID")
+    state: Optional[str] = Field(None, description="Optional stock.move state")
+    date_from: Optional[str] = Field(None, description="Start date YYYY-MM-DD")
+    date_to: Optional[str] = Field(None, description="End date YYYY-MM-DD")
+    limit: int = Field(50, description="Max moves")
+
+
+class ExplainStockForecastSchema(BaseOdooRequest):
+    product_id: int = Field(..., description="product.product ID")
+    limit: int = Field(20, description="Max incoming/outgoing moves")
+
+
 class GetProductStockSchema(BaseOdooRequest):
     product_id: int = Field(..., description="The ID of the product.product record")
     location_id: Optional[int] = Field(

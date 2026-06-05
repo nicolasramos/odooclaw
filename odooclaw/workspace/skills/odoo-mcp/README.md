@@ -36,7 +36,20 @@ Las operaciones Odoo se ejecutan bajo el contexto de seguridad nativo del identi
   - resolves existing vendors, proposes missing vendor creation, and only creates a vendor with explicit partner + bill confirmation
 - `odoo_create_vendor_invoice` (legacy, routed through the validated vendor bill flow)
 
-### 3) Purchases + Vendor Bills
+### 3) Products + Inventory
+- `odoo_find_product`
+- `odoo_get_product_summary`
+- `odoo_get_product_supplier_info`
+- `odoo_get_product_stock_context`
+- `odoo_get_stock_availability`
+- `odoo_find_stock_locations`
+- `odoo_get_location_stock_summary`
+- `odoo_get_stock_moves`
+- `odoo_explain_stock_forecast`
+
+This first slice is read-only/advisory. Stock validations, transfers and inventory adjustments must be implemented later with preview and explicit confirmation.
+
+### 4) Purchases + Vendor Bills
 - `odoo_find_purchase_order`
 - `odoo_get_purchase_order_summary`
 - `odoo_get_purchase_receipt_status`
@@ -46,11 +59,11 @@ Las operaciones Odoo se ejecutan bajo el contexto de seguridad nativo del identi
 
 These tools are capability-first for Odoo/OCA: optional purchase workflow fields and models are detected at runtime and missing capabilities return `unsupported` or a safe fallback instead of assuming a module is installed.
 
-### 4) Integración de identidad de chat Odoo
+### 5) Integración de identidad de chat Odoo
 - Se corrigió la inyección automática de contexto para el alias de servidor `odoo-mcp` (además de `odoo-manager`).
 - Esto garantiza que `sender_id`, `company_id` y `allowed_company_ids` se propaguen correctamente en llamadas MCP desde Odoo Discuss.
 
-### 5) Endurecimiento de acceso para Workforce
+### 6) Endurecimiento de acceso para Workforce
 - Se amplió la allowlist de modelos para cubrir flujos de RRHH y gastos:
   - `hr.employee`
   - `hr.attendance`
@@ -74,6 +87,7 @@ Requires environment variables:
 ## Documentación relacionada
 - `docs/odoo-workforce-tools.md`
 - `docs/odoo-accounting-tools.md`
+- `docs/odoo-inventory-tools.md`
 - `docs/odoo-view-report-migration-tools.md`
 - `docs/ocr-vendor-bill-skill.md`
 - `docs/odoo-private-reply-routing.md`

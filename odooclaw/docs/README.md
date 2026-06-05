@@ -24,6 +24,7 @@ OdooClaw is a specialized version of PicoClaw, tailored for integration with **O
 ### 3. Business Operations Guides
 - [Odoo Workforce Tools](odoo-workforce-tools.md): Attendance, check-in/out, task updates, timesheet assistance, expense reports, and pending-action notifications.
 - [Odoo Accounting Tools](odoo-accounting-tools.md): Bank reconciliation, AR/AP aging, period close checks, journal entries, tax summary, duplicate vendor-bill checks, and OCR-validated bill creation.
+- [Odoo Inventory Tools](odoo-inventory-tools.md): Product search, product summaries, stock availability, locations, quants, stock moves, and forecast context.
 - [OCR Vendor Bill & Expense Flows](ocr-vendor-bill-skill.md): Vendor bill creation plus employee expense and mileage expense extraction/creation from attachments.
 - [Odoo Private Reply Routing](odoo-private-reply-routing.md): DM-only mode, optional group mention mode, private reply targets, and user-scoped session isolation.
 
