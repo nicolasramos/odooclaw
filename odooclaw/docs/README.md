@@ -8,6 +8,7 @@ OdooClaw is a specialized version of PicoClaw, tailored for integration with **O
   - [General Configuration (JSON)](CONFIGURATION.md): Detailed structure of the `config.json` file.
   - [Guia completa Doodba (ES)](GUIA_DOODBA_PUESTA_EN_MARCHA_ES.md): Instalacion, configuracion, uso y cambios de `config.json` paso a paso.
   - [Complete Doodba Guide (EN)](GUIDE_DOODBA_SETUP_EN.md): Installation, configuration, usage and `config.json` changes step by step.
+  - [Engram Internal Memory in Docker/Doodba](ENGRAM_DOCKER_DOODBA.md): Install and enable Engram as an internal strategic-memory MCP server in Docker/Doodba.
   - [Official Update Script](ODOOCLAW_OFFICIAL_UPDATE.md): Safe repository update flow that preserves `workspace/**`, `config/**`, and `.env*` files.
   - [Tools Configuration](tools_configuration.md): How to configure web search, cron jobs, etc.
 

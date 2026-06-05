@@ -133,6 +133,8 @@ Environment overrides:
 - `ODOOCLAW_ENGRAM_ENABLED=true`
 - `ODOOCLAW_ENGRAM_MCP_SERVER=engram`
 
+Docker/Doodba deployments must also make the `engram` binary available inside the OdooClaw container. See [Engram Internal Memory in Docker/Doodba](ENGRAM_DOCKER_DOODBA.md) for a pinned release-binary installation pattern with checksum verification.
+
 ## 6. Advanced: Model Routing
 
 You can override the model for specific agents or purposes by adding more specific configurations in the `agents` section (see `config.example.json` for details).
