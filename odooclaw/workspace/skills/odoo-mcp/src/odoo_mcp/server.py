@@ -43,8 +43,10 @@ from odoo_mcp.schemas.business import (
     FindMyTasksSchema,
     FindPartnerSchema,
     FindPendingInvoicesSchema,
+    FindProductSchema,
     FindPurchaseOrderSchema,
     FindSaleOrderSchema,
+    FindStockLocationsSchema,
     FindTaskSchema,
     FindUnreconciledBankLinesSchema,
     FindViewsByModelSchema,
@@ -53,14 +55,20 @@ from odoo_mcp.schemas.business import (
     GetInvoiceSummarySchema,
     GetModelSchemaSchema,
     GetMyTodaySummarySchema,
+    GetLocationStockSummarySchema,
     GetPartnerSummarySchema,
+    GetProductStockContextSchema,
     GetProductStockSchema,
+    GetProductSummarySchema,
+    GetProductSupplierInfoSchema,
     GetPurchaseInvoiceStatusSchema,
     GetPurchaseOrderSummarySchema,
     GetPurchaseReceiptStatusSchema,
     GetRecordSummarySchema,
     GetReportTemplateSchema,
     GetSaleOrderSummarySchema,
+    GetStockAvailabilitySchema,
+    GetStockMovesSchema,
     GetTaxSummarySchema,
     GetViewByXmlIdSchema,
     InvoiceLineSchema,
@@ -89,6 +97,7 @@ from odoo_mcp.schemas.business import (
     ScanViewMigrationIssuesSchema,
     SubmitExpenseReportSchema,
     SuggestBankReconciliationSchema,
+    ExplainStockForecastSchema,
     SuggestExpenseAccountAndTaxesSchema,
     SuggestTimesheetFromAttendanceSchema,
     SuggestVendorProductsSchema,
@@ -128,7 +137,18 @@ from odoo_mcp.services.hr_service import (
     log_task_timesheet,
     log_timesheet,
 )
-from odoo_mcp.services.inventory_service import get_product_stock
+from odoo_mcp.services.inventory_service import (
+    explain_stock_forecast,
+    find_product,
+    find_stock_locations,
+    get_location_stock_summary,
+    get_product_stock,
+    get_product_stock_context,
+    get_product_summary,
+    get_product_supplier_info,
+    get_stock_availability,
+    get_stock_moves,
+)
 from odoo_mcp.services.invoice_service import (
     find_pending_invoices,
     get_invoice_summary,
@@ -1098,6 +1118,170 @@ def odoo_create_lead(
             expected_revenue=expected_revenue,
             probability=probability,
             description=description,
+        )
+
+
+@mcp.tool()
+def odoo_find_product(
+    name: str | None = None,
+    default_code: str | None = None,
+    barcode: str | None = None,
+    category_id: int | None = None,
+    vendor_id: int | None = None,
+    limit: int = DEFAULT_SEARCH_LIMIT,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_find_product"):
+        client = get_odoo_client()
+        return find_product(
+            client=client,
+            sender_id=sender_id or client.odoo_session.uid,
+            name=name,
+            default_code=default_code,
+            barcode=barcode,
+            category_id=category_id,
+            vendor_id=vendor_id,
+            limit=limit,
+        )
+
+
+@mcp.tool()
+def odoo_get_product_summary(
+    product_id: int,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_get_product_summary"):
+        client = get_odoo_client()
+        return get_product_summary(
+            client=client,
+            sender_id=sender_id or client.odoo_session.uid,
+            product_id=product_id,
+        )
+
+
+@mcp.tool()
+def odoo_get_product_supplier_info(
+    product_id: int,
+    partner_id: int | None = None,
+    limit: int = DEFAULT_SEARCH_LIMIT,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_get_product_supplier_info"):
+        client = get_odoo_client()
+        return get_product_supplier_info(
+            client=client,
+            sender_id=sender_id or client.odoo_session.uid,
+            product_id=product_id,
+            partner_id=partner_id,
+            limit=limit,
+        )
+
+
+@mcp.tool()
+def odoo_get_product_stock_context(
+    product_id: int,
+    location_id: int | None = None,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_get_product_stock_context"):
+        client = get_odoo_client()
+        return get_product_stock_context(
+            client=client,
+            sender_id=sender_id or client.odoo_session.uid,
+            product_id=product_id,
+            location_id=location_id,
+        )
+
+
+@mcp.tool()
+def odoo_get_stock_availability(
+    product_ids: list[int],
+    location_id: int | None = None,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_get_stock_availability"):
+        client = get_odoo_client()
+        return get_stock_availability(
+            client=client,
+            sender_id=sender_id or client.odoo_session.uid,
+            product_ids=product_ids,
+            location_id=location_id,
+        )
+
+
+@mcp.tool()
+def odoo_find_stock_locations(
+    name: str | None = None,
+    usage: str | None = None,
+    limit: int = DEFAULT_SEARCH_LIMIT,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_find_stock_locations"):
+        client = get_odoo_client()
+        return find_stock_locations(
+            client=client,
+            sender_id=sender_id or client.odoo_session.uid,
+            name=name,
+            usage=usage,
+            limit=limit,
+        )
+
+
+@mcp.tool()
+def odoo_get_location_stock_summary(
+    location_id: int,
+    product_id: int | None = None,
+    limit: int = 100,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_get_location_stock_summary"):
+        client = get_odoo_client()
+        return get_location_stock_summary(
+            client=client,
+            sender_id=sender_id or client.odoo_session.uid,
+            location_id=location_id,
+            product_id=product_id,
+            limit=limit,
+        )
+
+
+@mcp.tool()
+def odoo_get_stock_moves(
+    product_id: int | None = None,
+    picking_id: int | None = None,
+    state: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    limit: int = DEFAULT_SEARCH_LIMIT,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_get_stock_moves"):
+        client = get_odoo_client()
+        return get_stock_moves(
+            client=client,
+            sender_id=sender_id or client.odoo_session.uid,
+            product_id=product_id,
+            picking_id=picking_id,
+            state=state,
+            date_from=date_from,
+            date_to=date_to,
+            limit=limit,
+        )
+
+
+@mcp.tool()
+def odoo_explain_stock_forecast(
+    product_id: int,
+    limit: int = 20,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_explain_stock_forecast"):
+        client = get_odoo_client()
+        return explain_stock_forecast(
+            client=client,
+            sender_id=sender_id or client.odoo_session.uid,
+            product_id=product_id,
+            limit=limit,
         )
 
 
