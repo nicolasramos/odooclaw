@@ -203,6 +203,8 @@ Expected behavior:
 - Raw Engram tools such as `mem_save` are not exposed directly to the model.
 - OdooClaw exposes `memory_save_strategic` for high-value memories only: decisions, bug fixes, discoveries, patterns, config, architecture, and stable preferences.
 
+For Docker/Doodba deployments, install the `engram` binary in the OdooClaw image before enabling this server. See [Engram Internal Memory in Docker/Doodba](ENGRAM_DOCKER_DOODBA.md).
+
 ## Skills Tool
 
 The skills tool configures skill discovery and installation via registries like ClawHub.

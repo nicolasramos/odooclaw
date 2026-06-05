@@ -19,3 +19,9 @@ STT_OPENAI_MODEL=whisper-1
 BROWSER_COPILOT_TOKEN=replace-with-a-long-random-token
 BROWSER_COPILOT_ALLOWED_DOMAINS=*.odoo.com,localhost,127.0.0.1
 BROWSER_COPILOT_READ_ONLY=true
+
+# Optional Engram strategic memory
+# Requires the `engram` binary in the OdooClaw image and an internal MCP server
+# configured with exclude_from_auto_register=true.
+ODOOCLAW_ENGRAM_ENABLED=false
+ODOOCLAW_ENGRAM_MCP_SERVER=engram

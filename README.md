@@ -426,6 +426,8 @@ Engram should be configured as an **internal MCP server**: connected through `en
 
 See `odooclaw/docs/tools_configuration.md` for the full configuration example.
 
+For Docker/Doodba deployments, install a pinned Engram release binary inside the OdooClaw image and enable it explicitly with `ODOOCLAW_ENGRAM_ENABLED=true`. See [Engram Internal Memory in Docker/Doodba](odooclaw/docs/ENGRAM_DOCKER_DOODBA.md).
+
 ---
 
 ## 🛠️ MCP Server and Skills
