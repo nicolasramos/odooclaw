@@ -1,7 +1,6 @@
 from typing import Any, Optional
 
 from odoo_mcp.core.client import OdooClient
-from odoo_mcp.services.invoice_service import create_vendor_invoice
 from odoo_mcp.security.audit import audit_action
 from odoo_mcp.security.guards import guard_model_access
 from odoo_mcp.services.accounting_service import (
@@ -21,17 +20,35 @@ from odoo_mcp.services.accounting_service import (
 
 
 def odoo_create_vendor_invoice(
-    client: OdooClient, user_id: int, partner_id: int, lines: list, ref: str = ""
-) -> int:
-    """Wrapper for odoo_create_vendor_invoice tool."""
+    client: OdooClient,
+    user_id: int,
+    partner_id: int,
+    lines: list,
+    ref: str = "",
+    confirm: bool = False,
+    dry_run: bool = True,
+    total_tolerance: float = 0.01,
+    vendor_create_policy: str = "propose_create",
+    confirm_partner_create: bool = False,
+) -> dict:
+    """Legacy wrapper routed through the validated vendor bill flow."""
     audit_action(
-        "CREATE_INVOICE",
+        "CREATE_INVOICE_LEGACY_VALIDATED",
         user_id,
         "account.move",
         [],
-        {"partner_id": partner_id, "ref": ref},
+        {"partner_id": partner_id, "ref": ref, "confirm": confirm, "dry_run": dry_run},
     )
-    return create_vendor_invoice(client, user_id, partner_id, lines, ref)
+    return create_vendor_bill_from_ocr_validated(
+        client=client,
+        sender_id=user_id,
+        ocr_payload={"partner_id": partner_id, "ref": ref, "lines": lines},
+        confirm=confirm,
+        dry_run=dry_run,
+        total_tolerance=total_tolerance,
+        vendor_create_policy=vendor_create_policy,
+        confirm_partner_create=confirm_partner_create,
+    )
 
 
 def odoo_find_unreconciled_bank_lines(
@@ -285,13 +302,21 @@ def odoo_create_vendor_bill_from_ocr_validated(
     dry_run: bool = False,
     company_id: Optional[int] = None,
     allowed_company_ids: Optional[list[int]] = None,
+    total_tolerance: float = 0.01,
+    vendor_create_policy: str = "propose_create",
+    confirm_partner_create: bool = False,
 ) -> dict:
     audit_action(
         "CREATE_VENDOR_BILL_FROM_OCR_VALIDATED",
         user_id,
         "account.move",
         [],
-        {"confirm": confirm, "dry_run": dry_run},
+        {
+            "confirm": confirm,
+            "dry_run": dry_run,
+            "vendor_create_policy": vendor_create_policy,
+            "confirm_partner_create": confirm_partner_create,
+        },
     )
     return create_vendor_bill_from_ocr_validated(
         client=client,
@@ -302,4 +327,7 @@ def odoo_create_vendor_bill_from_ocr_validated(
         dry_run=dry_run,
         company_id=company_id,
         allowed_company_ids=allowed_company_ids,
+        total_tolerance=total_tolerance,
+        vendor_create_policy=vendor_create_policy,
+        confirm_partner_create=confirm_partner_create,
     )

@@ -219,3 +219,215 @@ def test_create_vendor_bill_from_ocr_validated_returns_preview_in_dry_run(mock_c
     assert result["ok"] is True
     assert result["dry_run"] is True
     assert result["preview"]["partner_id"] == 12
+
+
+def test_create_vendor_bill_from_ocr_validated_blocks_total_mismatch(mock_client):
+    mock_client.model_exists.return_value = True
+
+    result = create_vendor_bill_from_ocr_validated(
+        mock_client,
+        sender_id=7,
+        ocr_payload={
+            "partner_id": 12,
+            "invoice_date": "2026-04-15",
+            "ref": "F-124",
+            "amount_total": 90.0,
+            "lines": [{"name": "Service", "quantity": 1.0, "price_unit": 100.0}],
+        },
+        dry_run=True,
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "total_mismatch"
+    assert result["total_check"]["difference"] == 10.0
+    mock_client.call_kw.assert_not_called()
+
+
+def test_create_vendor_bill_from_ocr_validated_resolves_vendor_by_vat(mock_client):
+    def model_exists(model, sender_id=None):
+        return model in {"account.move", "res.partner", "account.move.line"}
+
+    def field_exists(model, field, sender_id=None):
+        return model == "res.partner" and field == "supplier_rank"
+
+    mock_client.model_exists.side_effect = model_exists
+    mock_client.field_exists.side_effect = field_exists
+    mock_client.call_kw.side_effect = [
+        [{"id": 12, "name": "Vendor", "vat": "ES123", "ref": "V-1", "supplier_rank": 1}],
+        [],
+        [],
+    ]
+
+    result = create_vendor_bill_from_ocr_validated(
+        mock_client,
+        sender_id=7,
+        ocr_payload={
+            "vendor_vat": "ES123",
+            "invoice_date": "2026-04-15",
+            "ref": "F-125",
+            "amount_total": 100.0,
+            "lines": [{"name": "Service", "quantity": 1.0, "price_unit": 100.0}],
+        },
+        dry_run=True,
+    )
+
+    assert result["ok"] is True
+    assert result["preview"]["partner_id"] == 12
+    assert result["preview"]["vendor_resolution"]["matched_by"] == "vat"
+
+
+def test_create_vendor_bill_from_ocr_validated_duplicate_high_risk_requires_confirm(mock_client):
+    mock_client.model_exists.return_value = True
+    mock_client.call_kw.return_value = [
+        {
+            "id": 90,
+            "name": "BILL/90",
+            "ref": "SUP-001",
+            "invoice_date": "2026-04-10",
+            "amount_total": 250.0,
+            "currency_id": [1, "EUR"],
+            "state": "posted",
+            "payment_state": "not_paid",
+        }
+    ]
+
+    result = create_vendor_bill_from_ocr_validated(
+        mock_client,
+        sender_id=7,
+        ocr_payload={
+            "partner_id": 4,
+            "invoice_date": "2026-04-10",
+            "ref": "SUP-001",
+            "amount_total": 250.0,
+            "lines": [{"name": "Service", "quantity": 1.0, "price_unit": 250.0}],
+        },
+        dry_run=False,
+        confirm=False,
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "duplicate_risk"
+    assert result["duplicate_candidates"][0]["duplicate_score"] >= 70
+
+
+def test_create_vendor_bill_from_ocr_validated_proposes_missing_vendor(mock_client):
+    def model_exists(model, sender_id=None):
+        return model in {"account.move", "res.partner"}
+
+    def field_exists(model, field, sender_id=None):
+        return model == "res.partner" and field in {
+            "vat",
+            "email",
+            "supplier_rank",
+            "company_type",
+            "is_company",
+        }
+
+    mock_client.model_exists.side_effect = model_exists
+    mock_client.field_exists.side_effect = field_exists
+    mock_client.call_kw.side_effect = [[], []]
+
+    result = create_vendor_bill_from_ocr_validated(
+        mock_client,
+        sender_id=7,
+        ocr_payload={
+            "vendor_name": "New Supplier SL",
+            "vendor_vat": "ESB12345678",
+            "vendor_email": "admin@example.test",
+            "invoice_date": "2026-04-15",
+            "ref": "F-126",
+            "amount_total": 100.0,
+            "lines": [{"name": "Service", "quantity": 1.0, "price_unit": 100.0}],
+        },
+        dry_run=True,
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "vendor_create_proposed"
+    assert result["suggested_partner"]["name"] == "New Supplier SL"
+    assert result["suggested_partner"]["vat"] == "ESB12345678"
+    assert result["required_confirmations"]["confirm_partner_create"] is True
+    assert result["required_confirmations"]["confirm"] is True
+    assert len(mock_client.call_kw.call_args_list) == 2
+
+
+def test_create_vendor_bill_from_ocr_validated_creates_vendor_only_with_double_confirm(mock_client):
+    def model_exists(model, sender_id=None):
+        return model in {"account.move", "res.partner"}
+
+    def field_exists(model, field, sender_id=None):
+        if model == "res.partner":
+            return field in {"vat", "supplier_rank", "company_type", "is_company"}
+        if model == "account.move":
+            return False
+        return False
+
+    mock_client.model_exists.side_effect = model_exists
+    mock_client.field_exists.side_effect = field_exists
+    mock_client.call_kw.side_effect = [
+        [],
+        [],
+        44,
+        [],
+        700,
+    ]
+
+    result = create_vendor_bill_from_ocr_validated(
+        mock_client,
+        sender_id=7,
+        ocr_payload={
+            "vendor_name": "New Supplier SL",
+            "vendor_vat": "ESB12345678",
+            "invoice_date": "2026-04-15",
+            "ref": "F-127",
+            "amount_total": 100.0,
+            "lines": [
+                {
+                    "name": "Service",
+                    "quantity": 1.0,
+                    "price_unit": 100.0,
+                    "account_id": 501,
+                    "tax_ids": [7],
+                }
+            ],
+        },
+        dry_run=False,
+        confirm=True,
+        vendor_create_policy="create_with_confirm",
+        confirm_partner_create=True,
+    )
+
+    assert result["ok"] is True
+    assert result["move_id"] == 700
+    assert result["partner_created"] is True
+    assert result["vendor_resolution"]["status"] == "created"
+    assert result["vendor_resolution"]["partner_id"] == 44
+    create_partner_call = mock_client.call_kw.call_args_list[2]
+    assert create_partner_call.args[:2] == ("res.partner", "create")
+    create_bill_call = mock_client.call_kw.call_args_list[4]
+    assert create_bill_call.args[:2] == ("account.move", "create")
+
+
+def test_create_vendor_bill_from_ocr_validated_search_only_does_not_propose_vendor(mock_client):
+    def model_exists(model, sender_id=None):
+        return model in {"account.move", "res.partner"}
+
+    mock_client.model_exists.side_effect = model_exists
+    mock_client.field_exists.return_value = False
+    mock_client.call_kw.side_effect = [[], []]
+
+    result = create_vendor_bill_from_ocr_validated(
+        mock_client,
+        sender_id=7,
+        ocr_payload={
+            "vendor_name": "Unknown Supplier",
+            "vendor_vat": "ES000",
+            "amount_total": 100.0,
+            "lines": [{"name": "Service", "quantity": 1.0, "price_unit": 100.0}],
+        },
+        dry_run=True,
+        vendor_create_policy="search_only",
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "vendor_resolution_failed"

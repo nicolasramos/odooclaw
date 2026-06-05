@@ -28,6 +28,232 @@ def _safe_float(value: Any) -> float:
         return 0.0
 
 
+
+
+def _safe_int(value: Any) -> Optional[int]:
+    if value in (None, False, ""):
+        return None
+    if isinstance(value, (list, tuple)) and value:
+        value = value[0]
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _first_text(payload: dict[str, Any], keys: list[str]) -> str:
+    for key in keys:
+        value = payload.get(key)
+        if value not in (None, False, ""):
+            return str(value).strip()
+    return ""
+
+
+def _safe_field_exists(
+    client: OdooClient, model: str, field_name: str, sender_id: int
+) -> bool:
+    try:
+        return bool(client.field_exists(model, field_name, sender_id=sender_id))
+    except Exception:
+        return False
+
+
+def _line_amount(line: dict[str, Any]) -> float:
+    for key in ("line_total", "price_total", "amount_total", "subtotal", "price_subtotal"):
+        if line.get(key) not in (None, False, ""):
+            return _safe_float(line.get(key))
+    return _safe_float(line.get("quantity") or 1.0) * _safe_float(line.get("price_unit"))
+
+
+def _validate_ocr_total(
+    payload: dict[str, Any], lines: list[dict[str, Any]], tolerance: float
+) -> dict[str, Any]:
+    expected = payload.get("amount_total")
+    if expected in (None, False, ""):
+        return {
+            "status": "not_provided",
+            "within_tolerance": True,
+            "message": "OCR total was not provided; total guard was not applied.",
+        }
+
+    expected_total = _safe_float(expected)
+    calculated_total = round(sum(_line_amount(line) for line in lines), 2)
+    difference = round(calculated_total - expected_total, 2)
+    within_tolerance = abs(difference) <= max(float(tolerance), 0.0)
+    return {
+        "status": "ok" if within_tolerance else "mismatch",
+        "within_tolerance": within_tolerance,
+        "ocr_total": round(expected_total, 2),
+        "calculated_total": calculated_total,
+        "difference": difference,
+        "tolerance": tolerance,
+    }
+
+
+def _resolve_vendor_from_ocr(
+    client: OdooClient, sender_id: int, payload: dict[str, Any]
+) -> tuple[Optional[int], dict[str, Any]]:
+    explicit_partner_id = _safe_int(payload.get("partner_id"))
+    if explicit_partner_id:
+        return explicit_partner_id, {
+            "status": "explicit",
+            "partner_id": explicit_partner_id,
+            "risk_level": "low",
+            "candidates": [],
+        }
+
+    if not client.model_exists("res.partner", sender_id=sender_id):
+        return None, {
+            "status": "unsupported",
+            "risk_level": "high",
+            "message": "res.partner model is not available to resolve the vendor.",
+            "candidates": [],
+        }
+
+    attempts: list[tuple[str, str, list[list[Any]]]] = []
+    vat = _first_text(payload, ["vat", "vendor_vat", "supplier_vat", "tax_id"])
+    if vat:
+        attempts.append(("vat", vat, [["vat", "=", vat]]))
+    ref = _first_text(payload, ["partner_ref", "supplier_ref", "vendor_ref", "ref_supplier"])
+    if ref:
+        attempts.append(("ref", ref, [["ref", "=", ref]]))
+    name = _first_text(payload, ["vendor_name", "partner_name", "supplier_name", "commercial_name"])
+    if name:
+        domain = [["name", "ilike", name]]
+        if _safe_field_exists(client, "res.partner", "supplier_rank", sender_id):
+            domain.append(["supplier_rank", ">", 0])
+        attempts.append(("name", name, domain))
+
+    all_candidates: list[dict[str, Any]] = []
+    fields = ["id", "name", "vat", "ref"]
+    has_supplier_rank = _safe_field_exists(
+        client, "res.partner", "supplier_rank", sender_id
+    )
+    if has_supplier_rank:
+        fields.append("supplier_rank")
+    if _safe_field_exists(client, "res.partner", "commercial_partner_id", sender_id):
+        fields.append("commercial_partner_id")
+
+    for method, value, domain in attempts:
+        candidates = client.call_kw(
+            "res.partner",
+            "search_read",
+            args=[domain],
+            kwargs={
+                "fields": fields,
+                "limit": 5,
+                "order": "supplier_rank desc, id asc" if has_supplier_rank else "id asc",
+            },
+            sender_id=sender_id,
+        )
+        for candidate in candidates:
+            all_candidates.append({**candidate, "matched_by": method, "matched_value": value})
+        if len(candidates) == 1:
+            return _safe_int(candidates[0].get("id")), {
+                "status": "resolved",
+                "partner_id": _safe_int(candidates[0].get("id")),
+                "matched_by": method,
+                "risk_level": "low",
+                "candidates": candidates,
+            }
+        if len(candidates) > 1:
+            return None, {
+                "status": "ambiguous",
+                "matched_by": method,
+                "risk_level": "high",
+                "message": "Multiple possible vendor partners were found; pass partner_id explicitly.",
+                "candidates": candidates,
+            }
+
+    return None, {
+        "status": "not_found",
+        "risk_level": "high",
+        "message": "Could not resolve vendor by partner_id, VAT, supplier reference or name.",
+        "candidates": all_candidates,
+    }
+
+
+
+def _prepare_vendor_create_vals_from_ocr(
+    client: OdooClient, sender_id: int, payload: dict[str, Any]
+) -> tuple[dict[str, Any], list[str]]:
+    missing: list[str] = []
+    name = _first_text(
+        payload,
+        [
+            "vendor_name",
+            "partner_name",
+            "supplier_name",
+            "commercial_name",
+            "name",
+        ],
+    )
+    if not name:
+        missing.append("name")
+
+    vals: dict[str, Any] = {}
+    if name:
+        vals["name"] = name
+
+    field_candidates = {
+        "vat": _first_text(payload, ["vat", "vendor_vat", "supplier_vat", "tax_id"]),
+        "ref": _first_text(
+            payload, ["partner_ref", "supplier_ref", "vendor_ref", "ref_supplier"]
+        ),
+        "email": _first_text(payload, ["email", "vendor_email", "supplier_email"]),
+        "phone": _first_text(payload, ["phone", "vendor_phone", "supplier_phone"]),
+        "mobile": _first_text(payload, ["mobile", "vendor_mobile", "supplier_mobile"]),
+        "website": _first_text(payload, ["website", "vendor_website"]),
+        "street": _first_text(payload, ["street", "vendor_street", "supplier_street"]),
+        "street2": _first_text(payload, ["street2", "vendor_street2", "supplier_street2"]),
+        "zip": _first_text(payload, ["zip", "postal_code", "vendor_zip"]),
+        "city": _first_text(payload, ["city", "vendor_city", "supplier_city"]),
+    }
+    for field_name, value in field_candidates.items():
+        if value and _safe_field_exists(client, "res.partner", field_name, sender_id):
+            vals[field_name] = value
+
+    country_id = _safe_int(payload.get("country_id"))
+    if country_id and _safe_field_exists(client, "res.partner", "country_id", sender_id):
+        vals["country_id"] = country_id
+
+    if _safe_field_exists(client, "res.partner", "supplier_rank", sender_id):
+        vals["supplier_rank"] = 1
+    if _safe_field_exists(client, "res.partner", "company_type", sender_id):
+        vals["company_type"] = "company"
+    if _safe_field_exists(client, "res.partner", "is_company", sender_id):
+        vals["is_company"] = True
+
+    return vals, missing
+
+
+def _vendor_create_proposal_response(
+    vendor_resolution: dict[str, Any],
+    suggested_partner: dict[str, Any],
+    missing_required: list[str],
+    total_check: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "status": "vendor_create_proposed",
+        "capability": "accounting.create_vendor_bill_from_ocr_validated",
+        "message": "Vendor was not found. Review and confirm suggested partner creation before creating the vendor bill.",
+        "vendor_resolution": {
+            **vendor_resolution,
+            "suggested_partner": suggested_partner,
+            "missing_required_fields": missing_required,
+        },
+        "suggested_partner": suggested_partner,
+        "missing_required_fields": missing_required,
+        "required_confirmations": {
+            "confirm_partner_create": True,
+            "confirm": True,
+            "dry_run": False,
+            "vendor_create_policy": "create_with_confirm",
+        },
+        **({"total_check": total_check} if total_check else {}),
+    }
+
 def _date_domain(
     field_name: str, date_from: Optional[str], date_to: Optional[str]
 ) -> list:
@@ -946,6 +1172,11 @@ def _normalize_ocr_lines(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 "product_id": raw.get("product_id"),
                 "account_id": raw.get("account_id"),
                 "tax_ids": raw.get("tax_ids") or [],
+                "line_total": raw.get("line_total")
+                or raw.get("price_total")
+                or raw.get("amount_total")
+                or raw.get("subtotal")
+                or raw.get("price_subtotal"),
             }
         )
     return normalized
@@ -960,6 +1191,9 @@ def create_vendor_bill_from_ocr_validated(
     dry_run: bool = False,
     company_id: Optional[int] = None,
     allowed_company_ids: Optional[list[int]] = None,
+    total_tolerance: float = 0.01,
+    vendor_create_policy: str = "propose_create",
+    confirm_partner_create: bool = False,
 ) -> dict:
     if not client.model_exists("account.move", sender_id=sender_id):
         return build_unsupported_response(
@@ -968,13 +1202,67 @@ def create_vendor_bill_from_ocr_validated(
             ["account.move"],
         )
 
-    partner_id = ocr_payload.get("partner_id")
-    if not partner_id:
-        raise ValueError("OCR payload must include partner_id to create vendor bill.")
-
     lines = _normalize_ocr_lines(ocr_payload)
     if not lines:
         raise ValueError("OCR payload must include at least one invoice line.")
+
+    total_check = _validate_ocr_total(ocr_payload, lines, total_tolerance)
+    if not total_check.get("within_tolerance", True):
+        return {
+            "ok": False,
+            "status": "total_mismatch",
+            "capability": "accounting.create_vendor_bill_from_ocr_validated",
+            "message": "OCR total does not match the calculated invoice lines total.",
+            "total_check": total_check,
+        }
+
+    partner_created = False
+    partner_id, vendor_resolution = _resolve_vendor_from_ocr(
+        client, sender_id, ocr_payload
+    )
+    if not partner_id:
+        if vendor_resolution.get("status") != "not_found" or vendor_create_policy == "search_only":
+            return {
+                "ok": False,
+                "status": "vendor_resolution_failed",
+                "capability": "accounting.create_vendor_bill_from_ocr_validated",
+                "message": vendor_resolution.get("message")
+                or "Could not resolve vendor from OCR payload.",
+                "vendor_resolution": vendor_resolution,
+                "total_check": total_check,
+            }
+
+        suggested_partner, missing_required = _prepare_vendor_create_vals_from_ocr(
+            client, sender_id, ocr_payload
+        )
+        if missing_required:
+            return _vendor_create_proposal_response(
+                vendor_resolution, suggested_partner, missing_required, total_check
+            )
+        if (
+            vendor_create_policy != "create_with_confirm"
+            or not confirm_partner_create
+            or not confirm
+            or dry_run
+        ):
+            return _vendor_create_proposal_response(
+                vendor_resolution, suggested_partner, missing_required, total_check
+            )
+
+        partner_id = client.call_kw(
+            "res.partner",
+            "create",
+            args=[suggested_partner],
+            sender_id=sender_id,
+        )
+        partner_created = True
+        vendor_resolution = {
+            **vendor_resolution,
+            "status": "created",
+            "partner_id": int(partner_id),
+            "created_partner_vals": suggested_partner,
+            "risk_level": "low",
+        }
 
     duplicate_check = validate_vendor_bill_duplicate(
         client=client,
@@ -994,6 +1282,8 @@ def create_vendor_bill_from_ocr_validated(
             "capability": "accounting.create_vendor_bill_from_ocr_validated",
             "message": "High duplicate risk detected. Confirm the operation to proceed.",
             "duplicate_candidates": duplicate_check.get("candidates", []),
+            "vendor_resolution": vendor_resolution,
+            "total_check": total_check,
         }
 
     line_commands: list[tuple[int, int, dict[str, Any]]] = []
@@ -1035,8 +1325,20 @@ def create_vendor_bill_from_ocr_validated(
         "invoice_line_ids": line_commands,
         "ref": ocr_payload.get("ref") or ocr_payload.get("vendor_bill_number") or "",
     }
-    if company_id:
-        move_vals["company_id"] = company_id
+    optional_move_fields = {
+        "invoice_payment_term_id": ocr_payload.get("payment_term_id")
+        or ocr_payload.get("invoice_payment_term_id"),
+        "currency_id": ocr_payload.get("currency_id"),
+        "fiscal_position_id": ocr_payload.get("fiscal_position_id"),
+        "invoice_date_due": ocr_payload.get("invoice_date_due")
+        or ocr_payload.get("date_due"),
+        "company_id": company_id or ocr_payload.get("company_id"),
+    }
+    for field_name, value in optional_move_fields.items():
+        if value not in (None, False, "") and _safe_field_exists(
+            client, "account.move", field_name, sender_id
+        ):
+            move_vals[field_name] = value
 
     preview = {
         "partner_id": move_vals["partner_id"],
@@ -1044,6 +1346,9 @@ def create_vendor_bill_from_ocr_validated(
         "ref": move_vals.get("ref"),
         "line_count": len(line_commands),
         "duplicate_risk": risk_level,
+        "vendor_resolution": vendor_resolution,
+        "total_check": total_check,
+        "partner_created": partner_created,
     }
     if dry_run:
         return build_success_response(
@@ -1086,5 +1391,8 @@ def create_vendor_bill_from_ocr_validated(
         move_id=move_id,
         duplicate_risk=risk_level,
         duplicate_candidates=duplicate_check.get("candidates", []),
+        vendor_resolution=vendor_resolution,
+        total_check=total_check,
+        partner_created=partner_created,
         attachment_linked=bool(attachment_id),
     )
