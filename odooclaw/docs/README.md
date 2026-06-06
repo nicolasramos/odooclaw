@@ -27,6 +27,7 @@ OdooClaw is a specialized version of PicoClaw, tailored for integration with **O
 - [Odoo Inventory Tools](odoo-inventory-tools.md): Product search, product summaries, stock availability, locations, quants, stock moves, and forecast context.
 - [OCR Vendor Bill & Expense Flows](ocr-vendor-bill-skill.md): Vendor bill creation plus employee expense and mileage expense extraction/creation from attachments.
 - [Odoo Private Reply Routing](odoo-private-reply-routing.md): DM-only mode, optional group mention mode, private reply targets, and user-scoped session isolation.
+- [Odoo Technical User](ODOO_TECHNICAL_USER.md): Least-privilege technical account for delegated MCP access.
 
 ### 4. The Odoo MCP Server (`odoo-mcp`)
 

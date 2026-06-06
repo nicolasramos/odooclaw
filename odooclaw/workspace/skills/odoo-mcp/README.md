@@ -46,8 +46,21 @@ Las operaciones Odoo se ejecutan bajo el contexto de seguridad nativo del identi
 - `odoo_get_location_stock_summary`
 - `odoo_get_stock_moves`
 - `odoo_explain_stock_forecast`
+- `odoo_find_purchase_receipts`
+- `odoo_get_receipt_summary`
+- `odoo_match_receipt_to_purchase_order`
+- `odoo_prepare_receipt_validation`
+- `odoo_validate_receipt`
+- `odoo_find_sale_deliveries`
+- `odoo_get_delivery_summary`
+- `odoo_prepare_delivery_validation`
+- `odoo_validate_delivery`
+- `odoo_find_internal_transfers`
+- `odoo_get_transfer_summary`
+- `odoo_prepare_transfer_validation`
+- `odoo_validate_transfer`
 
-This first slice is read-only/advisory. Stock validations, transfers and inventory adjustments must be implemented later with preview and explicit confirmation.
+Product/stock visibility tools are read-only/advisory. Receipt, delivery and internal-transfer validation require preview and explicit confirmation, and additional Odoo backorder/immediate-transfer wizards are never processed automatically.
 
 ### 4) Purchases + Vendor Bills
 - `odoo_find_purchase_order`
@@ -62,6 +75,10 @@ These tools are capability-first for Odoo/OCA: optional purchase workflow fields
 ### 5) Integración de identidad de chat Odoo
 - Se corrigió la inyección automática de contexto para el alias de servidor `odoo-mcp` (además de `odoo-manager`).
 - Esto garantiza que `sender_id`, `company_id` y `allowed_company_ids` se propaguen correctamente en llamadas MCP desde Odoo Discuss.
+- El contexto confiable de Odoo sobrescribe cualquier identidad propuesta por el modelo.
+- Los canales externos no pueden inyectar un `sender_id` de Odoo. Hasta disponer de un mapeo explícito de identidades, ejecutan con la cuenta técnica configurada.
+- La cuenta técnica usada por canales externos debe aplicar mínimo privilegio; no se recomienda utilizar una cuenta administradora en producción.
+- Todas las llamadas ORM internas propagan `sender_id`; una prueba estructural impide incorporar nuevas tools que omitan esta delegación.
 
 ### 6) Endurecimiento de acceso para Workforce
 - Se amplió la allowlist de modelos para cubrir flujos de RRHH y gastos:
