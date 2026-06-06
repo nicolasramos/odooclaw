@@ -4,11 +4,24 @@ import pytest
 
 from odoo_mcp.core.client import OdooClient
 from odoo_mcp.services.inventory_service import (
+    find_internal_transfers,
     find_product,
+    find_purchase_receipts,
+    find_sale_deliveries,
     find_stock_locations,
     get_location_stock_summary,
     get_product_stock_context,
+    get_receipt_summary,
+    get_transfer_summary,
+    get_delivery_summary,
     get_stock_moves,
+    match_receipt_to_purchase_order,
+    prepare_receipt_validation,
+    prepare_transfer_validation,
+    prepare_delivery_validation,
+    validate_delivery,
+    validate_receipt,
+    validate_transfer,
 )
 
 
@@ -173,3 +186,228 @@ def test_get_stock_moves_returns_unsupported_without_model(mock_client):
 
     assert result["ok"] is False
     assert result["status"] == "unsupported"
+
+
+def _receipt_capabilities(mock_client):
+    _configure_capabilities(
+        mock_client,
+        models={
+            "stock.picking",
+            "stock.move",
+            "stock.move.line",
+            "product.product",
+            "purchase.order",
+            "purchase.order.line",
+        },
+        fields_by_model={
+            "stock.picking": {
+                "id",
+                "name",
+                "state",
+                "partner_id",
+                "origin",
+                "picking_type_code",
+                "purchase_id",
+                "sale_id",
+                "location_id",
+                "location_dest_id",
+                "scheduled_date",
+            },
+            "stock.move": {
+                "id",
+                "picking_id",
+                "purchase_line_id",
+                "sale_line_id",
+                "product_id",
+                "product_uom_qty",
+                "quantity",
+                "state",
+            },
+            "stock.move.line": {
+                "id",
+                "picking_id",
+                "move_id",
+                "product_id",
+                "quantity",
+                "lot_id",
+                "lot_name",
+            },
+            "product.product": {"id", "tracking"},
+            "purchase.order.line": {
+                "id",
+                "product_id",
+                "product_qty",
+                "qty_received",
+            },
+        },
+    )
+
+
+def test_find_purchase_receipts_filters_incoming_and_purchase_order(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.return_value = [
+        {"id": 30, "name": "WH/IN/0001", "state": "assigned", "picking_type_code": "incoming", "purchase_id": [20, "P00020"]}
+    ]
+
+    result = find_purchase_receipts(mock_client, sender_id=7, purchase_order_id=20)
+
+    assert result["ok"] is True
+    domain = mock_client.call_kw.call_args.kwargs["args"][0]
+    assert ["picking_type_code", "=", "incoming"] in domain
+    assert ["purchase_id", "=", 20] in domain
+
+
+def test_get_receipt_summary_flags_missing_serial_and_over_receipt(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.side_effect = [
+        [{"id": 30, "name": "WH/IN/0001", "state": "assigned", "picking_type_code": "incoming", "purchase_id": [20, "P00020"]}],
+        [{"id": 1, "product_id": [10, "Tracked"], "purchase_line_id": [100, "Line"], "product_uom_qty": 1.0, "quantity": 2.0, "state": "assigned"}],
+        [{"id": 11, "move_id": [1, "Move"], "product_id": [10, "Tracked"], "quantity": 2.0, "lot_id": False, "lot_name": False}],
+        [{"id": 10, "tracking": "serial"}],
+    ]
+
+    result = get_receipt_summary(mock_client, sender_id=7, picking_id=30)
+
+    assert result["ok"] is True
+    types = {item["type"] for item in result["discrepancies"]}
+    assert {"missing_lot_serial", "over_receipt"}.issubset(types)
+    assert result["lines"][0]["missing_tracking"] is True
+
+
+def test_match_receipt_to_purchase_order_matches_purchase_line(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.side_effect = [
+        [{"id": 30, "name": "WH/IN/0001", "state": "assigned", "picking_type_code": "incoming", "purchase_id": [20, "P00020"]}],
+        [{"id": 1, "product_id": [10, "Cable"], "purchase_line_id": [100, "Line"], "product_uom_qty": 5.0, "quantity": 5.0, "state": "assigned"}],
+        [],
+        [{"id": 10, "tracking": "none"}],
+        [{"id": 100, "product_id": [10, "Cable"], "product_qty": 5.0, "qty_received": 5.0}],
+    ]
+
+    result = match_receipt_to_purchase_order(mock_client, sender_id=7, picking_id=30)
+
+    assert result["ok"] is True
+    assert result["purchase_order_id"] == 20
+    assert result["risk_level"] == "low"
+    assert result["matches"][0]["purchase_order_line"]["id"] == 100
+
+
+def test_prepare_receipt_validation_blocks_done_receipt(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.side_effect = [
+        [{"id": 30, "name": "WH/IN/0001", "state": "done", "picking_type_code": "incoming"}],
+        [{"id": 1, "product_id": [10, "Cable"], "product_uom_qty": 5.0, "quantity": 5.0, "state": "done"}],
+        [],
+        [{"id": 10, "tracking": "none"}],
+    ]
+
+    result = prepare_receipt_validation(mock_client, sender_id=7, picking_id=30)
+
+    assert result["ok"] is True
+    assert result["can_validate"] is False
+    assert any(item["type"] == "invalid_state" for item in result["critical"])
+
+
+def test_validate_receipt_returns_action_required_for_backorder_wizard(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.side_effect = [
+        [{"id": 30, "name": "WH/IN/0001", "state": "assigned", "picking_type_code": "incoming"}],
+        [{"id": 1, "product_id": [10, "Cable"], "product_uom_qty": 5.0, "quantity": 3.0, "state": "assigned"}],
+        [],
+        [{"id": 10, "tracking": "none"}],
+        {"type": "ir.actions.act_window", "res_model": "stock.backorder.confirmation"},
+    ]
+
+    result = validate_receipt(
+        mock_client, sender_id=7, picking_id=30, confirm=True, dry_run=False
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "action_required"
+    assert result["action"]["res_model"] == "stock.backorder.confirmation"
+
+
+def test_find_sale_deliveries_filters_outgoing_and_sale_order(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.return_value = [{"id": 40, "picking_type_code": "outgoing"}]
+
+    result = find_sale_deliveries(mock_client, sender_id=7, sale_order_id=22)
+
+    assert result["ok"] is True
+    domain = mock_client.call_kw.call_args.kwargs["args"][0]
+    assert ["picking_type_code", "=", "outgoing"] in domain
+    assert ["sale_id", "=", 22] in domain
+
+
+def test_get_delivery_summary_flags_over_delivery(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.side_effect = [
+        [{"id": 40, "state": "assigned", "picking_type_code": "outgoing"}],
+        [{"id": 2, "product_id": [10, "Cable"], "product_uom_qty": 2.0, "quantity": 3.0}],
+        [],
+        [{"id": 10, "tracking": "none"}],
+    ]
+
+    result = get_delivery_summary(mock_client, sender_id=7, picking_id=40)
+
+    assert result["ok"] is True
+    assert any(item["type"] == "over_delivery" for item in result["discrepancies"])
+
+
+def test_validate_delivery_returns_action_required_for_wizard(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.side_effect = [
+        [{"id": 40, "state": "assigned", "picking_type_code": "outgoing"}],
+        [{"id": 2, "product_id": [10, "Cable"], "product_uom_qty": 5.0, "quantity": 3.0}],
+        [],
+        [{"id": 10, "tracking": "none"}],
+        {"type": "ir.actions.act_window", "res_model": "stock.backorder.confirmation"},
+    ]
+
+    result = validate_delivery(
+        mock_client, sender_id=7, picking_id=40, confirm=True, dry_run=False
+    )
+
+    assert result["status"] == "action_required"
+
+
+def test_find_internal_transfers_filters_internal(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.return_value = [{"id": 50, "picking_type_code": "internal"}]
+
+    result = find_internal_transfers(mock_client, sender_id=7)
+
+    assert result["ok"] is True
+    domain = mock_client.call_kw.call_args.kwargs["args"][0]
+    assert ["picking_type_code", "=", "internal"] in domain
+
+
+def test_prepare_transfer_validation_blocks_same_location(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.side_effect = [
+        [{"id": 50, "state": "assigned", "picking_type_code": "internal", "location_id": [8, "Stock"], "location_dest_id": [8, "Stock"]}],
+        [{"id": 3, "product_id": [10, "Cable"], "product_uom_qty": 2.0, "quantity": 2.0}],
+        [],
+        [{"id": 10, "tracking": "none"}],
+    ]
+
+    result = prepare_transfer_validation(mock_client, sender_id=7, picking_id=50)
+
+    assert result["can_validate"] is False
+    assert any(item["type"] == "same_source_destination" for item in result["critical"])
+
+
+def test_validate_transfer_requires_confirmation(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.side_effect = [
+        [{"id": 50, "state": "assigned", "picking_type_code": "internal", "location_id": [8, "Stock"], "location_dest_id": [9, "Shelf"]}],
+        [{"id": 3, "product_id": [10, "Cable"], "product_uom_qty": 2.0, "quantity": 2.0}],
+        [],
+        [{"id": 10, "tracking": "none"}],
+    ]
+
+    result = validate_transfer(
+        mock_client, sender_id=7, picking_id=50, confirm=False, dry_run=False
+    )
+
+    assert result["status"] == "confirmation_required"

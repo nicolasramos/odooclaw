@@ -109,3 +109,71 @@ The implementation is capability-first:
 - optional models return `unsupported`,
 - optional fields are included only when they exist,
 - Odoo version/module differences are represented in `stock_capabilities`.
+
+## Purchase Receipt Tools
+
+### `odoo_find_purchase_receipts`
+
+Find incoming `stock.picking` receipts by purchase order, vendor, state or scheduled date.
+
+## Sale Delivery Tools
+
+- `odoo_find_sale_deliveries`
+- `odoo_get_delivery_summary`
+- `odoo_prepare_delivery_validation`
+- `odoo_validate_delivery`
+
+Delivery summaries detect over-delivery and missing lot/serial tracking. Validation
+requires `confirm=true` and `dry_run=false`. Backorder and immediate-transfer
+wizards return `action_required` and are never processed automatically.
+
+## Internal Transfer Tools
+
+- `odoo_find_internal_transfers`
+- `odoo_get_transfer_summary`
+- `odoo_prepare_transfer_validation`
+- `odoo_validate_transfer`
+
+Internal-transfer validation blocks identical source/destination locations,
+over-transfers, missing tracking and invalid states. It uses the same explicit
+preview and confirmation guardrails as receipts and deliveries.
+
+### `odoo_get_receipt_summary`
+
+Returns:
+
+- incoming picking metadata,
+- demanded, received and remaining quantities,
+- move lines,
+- product tracking requirements,
+- missing lot/serial discrepancies,
+- over-receipt discrepancies.
+
+### `odoo_match_receipt_to_purchase_order`
+
+Matches receipt moves to purchase order lines and reports products that cannot be linked to the purchase order.
+
+### `odoo_prepare_receipt_validation`
+
+Builds a read-only validation plan with:
+
+- `can_validate`,
+- critical blockers,
+- warnings,
+- line/totals preview,
+- required confirmation flags.
+
+It blocks receipts that are already done/cancelled, over-received or missing required lot/serial information.
+
+### `odoo_validate_receipt`
+
+Validates an incoming receipt only when:
+
+```json
+{
+  "confirm": true,
+  "dry_run": false
+}
+```
+
+If Odoo returns an additional wizard/action, such as a backorder confirmation, the tool returns `status=action_required`. It does not process that wizard automatically.

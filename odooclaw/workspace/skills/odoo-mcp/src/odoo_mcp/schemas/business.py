@@ -262,6 +262,80 @@ class GetStockAvailabilitySchema(BaseOdooRequest):
     location_id: Optional[int] = Field(None, description="Optional stock.location ID")
 
 
+
+
+class FindPurchaseReceiptsSchema(BaseOdooRequest):
+    purchase_order_id: Optional[int] = Field(None, description="Optional purchase.order ID")
+    partner_id: Optional[int] = Field(None, description="Optional vendor partner ID")
+    state: Optional[str] = Field(None, description="Optional stock.picking state")
+    date_from: Optional[str] = Field(None, description="Scheduled date from YYYY-MM-DD")
+    date_to: Optional[str] = Field(None, description="Scheduled date to YYYY-MM-DD")
+    limit: int = Field(20, description="Max receipts")
+
+
+class GetReceiptSummarySchema(BaseOdooRequest):
+    picking_id: int = Field(..., description="Incoming stock.picking ID")
+
+
+class MatchReceiptToPurchaseOrderSchema(BaseOdooRequest):
+    picking_id: int = Field(..., description="Incoming stock.picking ID")
+    purchase_order_id: Optional[int] = Field(None, description="Optional purchase.order ID override")
+
+
+class PrepareReceiptValidationSchema(BaseOdooRequest):
+    picking_id: int = Field(..., description="Incoming stock.picking ID")
+
+
+class ValidateReceiptSchema(BaseOdooRequest):
+    picking_id: int = Field(..., description="Incoming stock.picking ID")
+    confirm: bool = Field(False, description="Must be true to validate receipt")
+    dry_run: bool = Field(True, description="Return validation plan without executing")
+
+
+class FindSaleDeliveriesSchema(BaseOdooRequest):
+    sale_order_id: Optional[int] = Field(None, description="Optional sale.order ID")
+    partner_id: Optional[int] = Field(None, description="Optional customer partner ID")
+    state: Optional[str] = Field(None, description="Optional stock.picking state")
+    date_from: Optional[str] = Field(None, description="Scheduled date from YYYY-MM-DD")
+    date_to: Optional[str] = Field(None, description="Scheduled date to YYYY-MM-DD")
+    limit: int = Field(20, description="Max deliveries")
+
+
+class FindInternalTransfersSchema(BaseOdooRequest):
+    state: Optional[str] = Field(None, description="Optional stock.picking state")
+    date_from: Optional[str] = Field(None, description="Scheduled date from YYYY-MM-DD")
+    date_to: Optional[str] = Field(None, description="Scheduled date to YYYY-MM-DD")
+    limit: int = Field(20, description="Max internal transfers")
+
+
+class GetDeliverySummarySchema(BaseOdooRequest):
+    picking_id: int = Field(..., description="Outgoing stock.picking ID")
+
+
+class GetTransferSummarySchema(BaseOdooRequest):
+    picking_id: int = Field(..., description="Internal stock.picking ID")
+
+
+class PrepareDeliveryValidationSchema(BaseOdooRequest):
+    picking_id: int = Field(..., description="Outgoing stock.picking ID")
+
+
+class PrepareTransferValidationSchema(BaseOdooRequest):
+    picking_id: int = Field(..., description="Internal stock.picking ID")
+
+
+class ValidateDeliverySchema(BaseOdooRequest):
+    picking_id: int = Field(..., description="Outgoing stock.picking ID")
+    confirm: bool = Field(False, description="Must be true to validate delivery")
+    dry_run: bool = Field(True, description="Return validation plan without executing")
+
+
+class ValidateTransferSchema(BaseOdooRequest):
+    picking_id: int = Field(..., description="Internal stock.picking ID")
+    confirm: bool = Field(False, description="Must be true to validate transfer")
+    dry_run: bool = Field(True, description="Return validation plan without executing")
+
+
 class FindStockLocationsSchema(BaseOdooRequest):
     name: Optional[str] = Field(None, description="Location name search")
     usage: Optional[str] = Field(None, description="Location usage: internal, supplier, customer, transit, inventory, production")
