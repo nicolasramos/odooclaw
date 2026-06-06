@@ -92,6 +92,8 @@ from odoo_mcp.schemas.business import (
     PrepareReceiptValidationSchema,
     PrepareDeliveryValidationSchema,
     PrepareTransferValidationSchema,
+    PrepareInternalTransferSchema,
+    CreateInternalTransferSchema,
     PreviewReportPatchSchema,
     PreviewViewPatchSchema,
     ProposeReportPatchSchema,
@@ -171,6 +173,8 @@ from odoo_mcp.services.inventory_service import (
     prepare_receipt_validation,
     prepare_delivery_validation,
     prepare_transfer_validation,
+    prepare_internal_transfer,
+    create_internal_transfer,
     validate_delivery,
     validate_receipt,
     validate_transfer,
@@ -1407,6 +1411,54 @@ def odoo_validate_transfer(
         client = get_odoo_client()
         return validate_transfer(
             client, sender_id or client.odoo_session.uid, picking_id, confirm, dry_run
+        )
+
+
+@mcp.tool()
+def odoo_prepare_internal_transfer(
+    location_id: int,
+    location_dest_id: int,
+    lines: list[dict[str, Any]],
+    picking_type_id: int | None = None,
+    origin: str | None = None,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_prepare_internal_transfer"):
+        client = get_odoo_client()
+        return prepare_internal_transfer(
+            client,
+            sender_id or client.odoo_session.uid,
+            location_id,
+            location_dest_id,
+            lines,
+            picking_type_id,
+            origin,
+        )
+
+
+@mcp.tool()
+def odoo_create_internal_transfer(
+    location_id: int,
+    location_dest_id: int,
+    lines: list[dict[str, Any]],
+    picking_type_id: int | None = None,
+    origin: str | None = None,
+    confirm: bool = False,
+    dry_run: bool = True,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_create_internal_transfer"):
+        client = get_odoo_client()
+        return create_internal_transfer(
+            client,
+            sender_id or client.odoo_session.uid,
+            location_id,
+            location_dest_id,
+            lines,
+            picking_type_id,
+            origin,
+            confirm,
+            dry_run,
         )
 
 
