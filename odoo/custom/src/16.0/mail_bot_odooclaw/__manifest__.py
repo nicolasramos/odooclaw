@@ -15,6 +15,7 @@ Features:
     "license": "AGPL-3",
     "depends": ["mail"],
     "data": [
+        "security/odooclaw_security.xml",
         "data/odooclaw_bot_data.xml",
     ],
     "installable": True,

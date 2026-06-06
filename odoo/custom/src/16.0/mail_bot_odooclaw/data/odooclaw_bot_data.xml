@@ -6,7 +6,7 @@
             <field name="login">odooclaw_bot</field>
             <field name="active" eval="True"/>
             <field name="share" eval="False"/>
-            <field name="groups_id" eval="[(4, ref('base.group_user'))]"/>
+            <field name="groups_id" eval="[(4, ref('base.group_user')), (4, ref('mail_bot_odooclaw.group_odooclaw_delegator'))]"/>
             <field name="image_1920" type="base64" file="mail_bot_odooclaw/static/description/icon.png"/>
         </record>
 

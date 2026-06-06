@@ -433,6 +433,94 @@ func TestMCPTool_Execute_InjectsOdooContextForManagerAliases(t *testing.T) {
 	}
 }
 
+func TestMCPTool_Execute_OverridesUntrustedOdooIdentityContext(t *testing.T) {
+	manager := &MockMCPManager{
+		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]any) (*mcp.CallToolResult, error) {
+			if arguments["sender_id"] != 42 {
+				t.Fatalf("expected trusted sender_id=42, got %#v", arguments["sender_id"])
+			}
+			if arguments["company_id"] != 7 {
+				t.Fatalf("expected trusted company_id=7, got %#v", arguments["company_id"])
+			}
+			allowed, ok := arguments["allowed_company_ids"].([]int)
+			if !ok || len(allowed) != 2 || allowed[0] != 7 || allowed[1] != 8 {
+				t.Fatalf("expected trusted allowed_company_ids=[7 8], got %#v", arguments["allowed_company_ids"])
+			}
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: "ok"}},
+				IsError: false,
+			}, nil
+		},
+	}
+
+	tool := &mcp.Tool{Name: "odoo_validate_receipt"}
+	mcpTool := NewMCPTool(manager, "odoo-mcp", tool)
+	mcpTool.SetMessageContext(
+		"odoo",
+		"discuss.channel_10",
+		"42",
+		map[string]string{
+			"company_id":          "7",
+			"allowed_company_ids": "[7,8]",
+		},
+	)
+
+	result := mcpTool.Execute(context.Background(), map[string]any{
+		"sender_id":           1,
+		"company_id":          1,
+		"allowed_company_ids": []int{1},
+	})
+	if result == nil || result.IsError {
+		t.Fatalf("expected successful result, got %#v", result)
+	}
+}
+
+func TestMCPTool_Execute_RemovesUntrustedOdooIdentityOutsideOdooChannel(t *testing.T) {
+	manager := &MockMCPManager{
+		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]any) (*mcp.CallToolResult, error) {
+			if _, exists := arguments["sender_id"]; exists {
+				t.Fatalf("expected untrusted sender_id to be removed, got %#v", arguments["sender_id"])
+			}
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: "ok"}},
+				IsError: false,
+			}, nil
+		},
+	}
+
+	tool := &mcp.Tool{Name: "odoo_validate_receipt"}
+	mcpTool := NewMCPTool(manager, "odoo-mcp", tool)
+	mcpTool.SetMessageContext("slack", "channel-10", "external-user", nil)
+
+	result := mcpTool.Execute(context.Background(), map[string]any{"sender_id": 1})
+	if result == nil || result.IsError {
+		t.Fatalf("expected successful result, got %#v", result)
+	}
+}
+
+func TestMCPTool_Execute_RemovesModelIdentityWhenOdooSenderIsInvalid(t *testing.T) {
+	manager := &MockMCPManager{
+		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]any) (*mcp.CallToolResult, error) {
+			if _, exists := arguments["sender_id"]; exists {
+				t.Fatalf("expected model sender_id to be removed, got %#v", arguments["sender_id"])
+			}
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: "ok"}},
+				IsError: false,
+			}, nil
+		},
+	}
+
+	tool := &mcp.Tool{Name: "odoo_validate_receipt"}
+	mcpTool := NewMCPTool(manager, "odoo-mcp", tool)
+	mcpTool.SetMessageContext("odoo", "discuss.channel_10", "invalid", nil)
+
+	result := mcpTool.Execute(context.Background(), map[string]any{"sender_id": 1})
+	if result == nil || result.IsError {
+		t.Fatalf("expected successful result, got %#v", result)
+	}
+}
+
 // TestExtractContentText_TextContent tests text content extraction
 func TestExtractContentText_TextContent(t *testing.T) {
 	content := []mcp.Content{
