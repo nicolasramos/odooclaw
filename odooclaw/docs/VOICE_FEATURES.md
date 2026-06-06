@@ -139,12 +139,12 @@ The LLM automatically uses `edge-tts-synthesize` when:
 ```yaml
 services:
   odooclaw:
+    env_file:
+      - .docker/odooclaw.env
     environment:
       # Odoo Connection
       - ODOO_URL=http://odoo:8069
       - ODOO_DB=${POSTGRES_DB:-devel}
-      - ODOO_USERNAME=${ODOO_USERNAME:-admin}
-      - ODOO_PASSWORD=${ODOO_PASSWORD:-admin}
       
       # LLM Configuration
       - ODOOCLAW_AGENTS_DEFAULTS_PROVIDER=openai

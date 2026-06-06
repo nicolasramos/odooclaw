@@ -64,11 +64,11 @@ odooclaw:
   build:
     context: ./odooclaw
     dockerfile: docker/Dockerfile
+  env_file:
+    - .docker/odooclaw.env
   environment:
     - ODOO_URL=http://odoo:8069
     - ODOO_DB=devel
-    - ODOO_USERNAME=admin
-    - ODOO_PASSWORD=${ODOO_PASSWORD:-admin}
     - ODOOCLAW_AGENTS_DEFAULTS_PROVIDER=openai
     - ODOOCLAW_AGENTS_DEFAULTS_MODEL=gpt4
     - ODOOCLAW_PROVIDERS_OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -89,14 +89,15 @@ odooclaw:
 Important notes:
 - Use uppercase prefix `ODOOCLAW_...` for environment variables.
 - Do not hardcode API keys in `devel.yaml`.
-- In production, use an Odoo API key instead of the admin password.
+- Use a dedicated internal user with only the **OdooClaw Delegated RPC** group; never use a general-purpose administrator.
 
 ## 5) Variables in `.docker/odoo.env`
 
 Manage secrets in `.docker/odoo.env` (or your central `.env`):
 
 ```env
-ODOO_PASSWORD=your_odoo_api_key
+ODOO_USERNAME=odooclaw_service
+ODOO_PASSWORD=your_strong_password_or_odoo_api_key
 OPENAI_API_KEY=sk-xxxx
 OPENAI_API_BASE=https://api.openai.com/v1
 STT_PROVIDER=auto
@@ -284,7 +285,7 @@ docker compose logs --since=5m odooclaw
 - Validate MCP and skills configuration
 
 ## 13) Production recommendations
-- Use an Odoo API key, not admin password
+- Use a dedicated least-privilege Odoo technical user and a strong password or API key
 - Do not expose secrets in YAML or repo
 - Pin stable models for tool-calling
 - Monitor logs and response latency
