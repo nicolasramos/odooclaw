@@ -1490,3 +1490,200 @@ def validate_transfer(
     return _validate_picking(
         client, sender_id, picking_id, confirm, dry_run, "inventory.validate_transfer", prepare_transfer_validation
     )
+
+
+def prepare_internal_transfer(
+    client: OdooClient,
+    sender_id: int,
+    location_id: int,
+    location_dest_id: int,
+    lines: list[dict[str, Any]],
+    picking_type_id: Optional[int] = None,
+    origin: Optional[str] = None,
+) -> dict:
+    critical: list[dict[str, Any]] = []
+    if location_id == location_dest_id:
+        critical.append({"type": "same_source_destination", "severity": "critical"})
+    if not lines:
+        critical.append({"type": "missing_lines", "severity": "critical"})
+    normalized_lines: list[dict[str, Any]] = []
+    product_ids: list[int] = []
+    for index, line in enumerate(lines):
+        product_id = _safe_int(line.get("product_id"))
+        quantity = _safe_float(line.get("quantity"))
+        if not product_id or quantity <= 0:
+            critical.append(
+                {"type": "invalid_line", "severity": "critical", "line_index": index}
+            )
+            continue
+        product_ids.append(product_id)
+        normalized_lines.append({"product_id": product_id, "quantity": quantity})
+    if critical:
+        return build_success_response(
+            "inventory.prepare_internal_transfer",
+            can_create=False,
+            critical=critical,
+            warnings=[],
+            preview=None,
+            required_confirmation={"confirm": True, "dry_run": False},
+        )
+    if not picking_type_id:
+        picking_types = client.call_kw(
+            "stock.picking.type",
+            "search_read",
+            args=[[["code", "=", "internal"]]],
+            kwargs={
+                "fields": _available_fields(
+                    client,
+                    "stock.picking.type",
+                    sender_id,
+                    [
+                        "id",
+                        "name",
+                        "code",
+                        "default_location_src_id",
+                        "default_location_dest_id",
+                    ],
+                ),
+                "limit": 2,
+                "order": "id asc",
+            },
+            sender_id=sender_id,
+        )
+        if len(picking_types) != 1:
+            return build_success_response(
+                "inventory.prepare_internal_transfer",
+                can_create=False,
+                critical=[
+                    {
+                        "type": "internal_picking_type_not_resolved",
+                        "severity": "critical",
+                        "candidate_count": len(picking_types),
+                    }
+                ],
+                warnings=[],
+                preview=None,
+                required_confirmation={"confirm": True, "dry_run": False},
+            )
+        picking_type_id = int(picking_types[0]["id"])
+    locations = client.call_kw(
+        "stock.location",
+        "read",
+        args=[[location_id, location_dest_id]],
+        kwargs={"fields": _available_fields(client, "stock.location", sender_id, ["id", "display_name", "usage"])},
+        sender_id=sender_id,
+    )
+    location_by_id = {int(location["id"]): location for location in locations}
+    if location_id not in location_by_id or location_dest_id not in location_by_id:
+        critical.append({"type": "location_not_found", "severity": "critical"})
+    for location in locations:
+        if location.get("usage") and location.get("usage") != "internal":
+            critical.append(
+                {
+                    "type": "non_internal_location",
+                    "severity": "critical",
+                    "location_id": location["id"],
+                    "usage": location["usage"],
+                }
+            )
+    products = client.call_kw(
+        "product.product",
+        "read",
+        args=[sorted(set(product_ids))],
+        kwargs={"fields": _available_fields(client, "product.product", sender_id, ["id", "display_name", "uom_id"])},
+        sender_id=sender_id,
+    )
+    product_by_id = {int(product["id"]): product for product in products}
+    missing_products = sorted(set(product_ids) - set(product_by_id))
+    if missing_products:
+        critical.append(
+            {"type": "product_not_found", "severity": "critical", "product_ids": missing_products}
+        )
+    move_commands = []
+    for line in normalized_lines:
+        product = product_by_id.get(line["product_id"])
+        if not product:
+            continue
+        uom_id = _safe_int(product.get("uom_id"))
+        move_commands.append(
+            (
+                0,
+                0,
+                {
+                    "name": product.get("display_name") or f"Product {line['product_id']}",
+                    "product_id": line["product_id"],
+                    "product_uom_qty": line["quantity"],
+                    "product_uom": uom_id,
+                    "location_id": location_id,
+                    "location_dest_id": location_dest_id,
+                },
+            )
+        )
+    picking_vals = {
+        "picking_type_id": picking_type_id,
+        "location_id": location_id,
+        "location_dest_id": location_dest_id,
+        "move_ids": move_commands,
+    }
+    if origin:
+        picking_vals["origin"] = origin
+    return build_success_response(
+        "inventory.prepare_internal_transfer",
+        can_create=not critical,
+        critical=critical,
+        warnings=[],
+        preview={
+            "picking_vals": picking_vals,
+            "locations": locations,
+            "products": products,
+            "lines": normalized_lines,
+        },
+        required_confirmation={"confirm": True, "dry_run": False},
+    )
+
+
+def create_internal_transfer(
+    client: OdooClient,
+    sender_id: int,
+    location_id: int,
+    location_dest_id: int,
+    lines: list[dict[str, Any]],
+    picking_type_id: Optional[int] = None,
+    origin: Optional[str] = None,
+    confirm: bool = False,
+    dry_run: bool = True,
+) -> dict:
+    plan = prepare_internal_transfer(
+        client, sender_id, location_id, location_dest_id, lines, picking_type_id, origin
+    )
+    if dry_run:
+        return build_success_response(
+            "inventory.create_internal_transfer", dry_run=True, creation_plan=plan
+        )
+    if not confirm:
+        return {
+            "ok": False,
+            "status": "confirmation_required",
+            "capability": "inventory.create_internal_transfer",
+            "message": "Set confirm=true and dry_run=false to create the internal transfer.",
+            "creation_plan": plan,
+        }
+    if not plan.get("can_create"):
+        return {
+            "ok": False,
+            "status": "creation_blocked",
+            "capability": "inventory.create_internal_transfer",
+            "creation_plan": plan,
+        }
+    picking_id = client.call_kw(
+        "stock.picking",
+        "create",
+        args=[plan["preview"]["picking_vals"]],
+        sender_id=sender_id,
+    )
+    return build_success_response(
+        "inventory.create_internal_transfer",
+        picking_id=picking_id,
+        created=True,
+        creation_plan=plan,
+    )

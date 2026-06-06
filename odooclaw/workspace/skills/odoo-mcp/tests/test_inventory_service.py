@@ -18,6 +18,8 @@ from odoo_mcp.services.inventory_service import (
     match_receipt_to_purchase_order,
     prepare_receipt_validation,
     prepare_transfer_validation,
+    prepare_internal_transfer,
+    create_internal_transfer,
     prepare_delivery_validation,
     validate_delivery,
     validate_receipt,
@@ -411,3 +413,85 @@ def test_validate_transfer_requires_confirmation(mock_client):
     )
 
     assert result["status"] == "confirmation_required"
+
+
+def test_prepare_internal_transfer_returns_atomic_preview(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.side_effect = [
+        [{"id": 4, "name": "Internal Transfers", "code": "internal", "default_location_src_id": [8, "Stock"], "default_location_dest_id": [9, "Shelf"]}],
+        [{"id": 8, "display_name": "WH/Stock", "usage": "internal"}, {"id": 9, "display_name": "WH/Shelf", "usage": "internal"}],
+        [{"id": 10, "display_name": "Cable", "uom_id": [1, "Units"]}],
+    ]
+
+    result = prepare_internal_transfer(
+        mock_client,
+        sender_id=7,
+        location_id=8,
+        location_dest_id=9,
+        lines=[{"product_id": 10, "quantity": 2.0}],
+    )
+
+    assert result["ok"] is True
+    assert result["can_create"] is True
+    assert result["preview"]["picking_vals"]["picking_type_id"] == 4
+    assert result["preview"]["picking_vals"]["move_ids"][0][2]["product_uom_qty"] == 2.0
+
+
+def test_prepare_internal_transfer_blocks_same_location(mock_client):
+    result = prepare_internal_transfer(
+        mock_client,
+        sender_id=7,
+        location_id=8,
+        location_dest_id=8,
+        lines=[{"product_id": 10, "quantity": 2.0}],
+    )
+
+    assert result["can_create"] is False
+    assert any(item["type"] == "same_source_destination" for item in result["critical"])
+
+
+def test_create_internal_transfer_requires_confirmation(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.side_effect = [
+        [{"id": 4, "code": "internal"}],
+        [{"id": 8, "usage": "internal"}, {"id": 9, "usage": "internal"}],
+        [{"id": 10, "display_name": "Cable", "uom_id": [1, "Units"]}],
+    ]
+
+    result = create_internal_transfer(
+        mock_client,
+        sender_id=7,
+        location_id=8,
+        location_dest_id=9,
+        lines=[{"product_id": 10, "quantity": 2.0}],
+        confirm=False,
+        dry_run=False,
+    )
+
+    assert result["status"] == "confirmation_required"
+
+
+def test_create_internal_transfer_creates_picking_atomically(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.side_effect = [
+        [{"id": 4, "code": "internal"}],
+        [{"id": 8, "usage": "internal"}, {"id": 9, "usage": "internal"}],
+        [{"id": 10, "display_name": "Cable", "uom_id": [1, "Units"]}],
+        55,
+    ]
+
+    result = create_internal_transfer(
+        mock_client,
+        sender_id=7,
+        location_id=8,
+        location_dest_id=9,
+        lines=[{"product_id": 10, "quantity": 2.0}],
+        confirm=True,
+        dry_run=False,
+    )
+
+    assert result["ok"] is True
+    assert result["picking_id"] == 55
+    create_call = mock_client.call_kw.call_args_list[-1]
+    assert create_call.args[:2] == ("stock.picking", "create")
+    assert create_call.kwargs["args"][0]["move_ids"][0][0] == 0

@@ -1,5 +1,5 @@
 from typing import Optional, List, Dict, Any
-from pydantic import Field
+from pydantic import BaseModel, Field
 from .common import BaseOdooRequest
 
 
@@ -334,6 +334,24 @@ class ValidateTransferSchema(BaseOdooRequest):
     picking_id: int = Field(..., description="Internal stock.picking ID")
     confirm: bool = Field(False, description="Must be true to validate transfer")
     dry_run: bool = Field(True, description="Return validation plan without executing")
+
+
+class InternalTransferLineSchema(BaseModel):
+    product_id: int = Field(..., description="product.product ID")
+    quantity: float = Field(..., gt=0, description="Quantity to transfer")
+
+
+class PrepareInternalTransferSchema(BaseOdooRequest):
+    location_id: int = Field(..., description="Source stock.location ID")
+    location_dest_id: int = Field(..., description="Destination stock.location ID")
+    lines: list[InternalTransferLineSchema] = Field(..., description="Transfer lines")
+    picking_type_id: Optional[int] = Field(None, description="Optional internal stock.picking.type ID")
+    origin: Optional[str] = Field(None, description="Optional transfer origin/reference")
+
+
+class CreateInternalTransferSchema(PrepareInternalTransferSchema):
+    confirm: bool = Field(False, description="Must be true to create transfer")
+    dry_run: bool = Field(True, description="Return creation plan without executing")
 
 
 class FindStockLocationsSchema(BaseOdooRequest):

@@ -133,10 +133,17 @@ wizards return `action_required` and are never processed automatically.
 - `odoo_get_transfer_summary`
 - `odoo_prepare_transfer_validation`
 - `odoo_validate_transfer`
+- `odoo_prepare_internal_transfer`
+- `odoo_create_internal_transfer`
 
 Internal-transfer validation blocks identical source/destination locations,
 over-transfers, missing tracking and invalid states. It uses the same explicit
 preview and confirmation guardrails as receipts and deliveries.
+
+Internal-transfer creation is prepared as one atomic `stock.picking.create`
+payload containing its move lines. Creation requires `confirm=true` and
+`dry_run=false`; invalid locations, products, quantities or unresolved internal
+operation types block creation.
 
 ### `odoo_get_receipt_summary`
 
