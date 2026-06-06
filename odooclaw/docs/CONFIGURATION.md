@@ -90,8 +90,10 @@ In your `devel.yaml` or `prod.yaml`, make sure the following environment variabl
 
 - `ODOO_URL`: The URL of your Odoo instance (e.g., `http://odoo:8069`).
 - `ODOO_DB`: The name of the database.
-- `ODOO_USERNAME`: The Odoo user (use an API Key for production).
-- `ODOO_PASSWORD`: The password or API Key.
+- `ODOO_USERNAME`: Dedicated internal user with only the **OdooClaw Delegated RPC** group.
+- `ODOO_PASSWORD`: Strong password or API Key for that dedicated user.
+
+Do not use a general-purpose administrator. See [Odoo Technical User for Delegated MCP Access](ODOO_TECHNICAL_USER.md).
 
 ## 5. Engram Internal Memory Configuration
 

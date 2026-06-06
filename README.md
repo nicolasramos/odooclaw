@@ -174,13 +174,13 @@ services:
     build:
       context: ./odooclaw # Path to OdooClaw source code
       dockerfile: docker/Dockerfile # Required for Doodba integration
+    env_file:
+      - .docker/odooclaw.env # Dedicated least-privilege Odoo technical user
     restart: unless-stopped
     environment:
       # Credentials for Odoo XML-RPC connection
       - ODOO_URL=http://odoo:8069
       - ODOO_DB=${POSTGRES_DB:-devel}
-      - ODOO_USERNAME=${ODOO_USERNAME:-admin}
-      - ODOO_PASSWORD=${ODOO_PASSWORD:-admin} # IMPORTANT: Use an Odoo API Key in PROD
       
       # LLM Configuration
       - ODOOCLAW_AGENTS_DEFAULTS_PROVIDER=openai
@@ -216,9 +216,13 @@ OPENAI_API_KEY="sk-your-api-key"
 # Optional, if using LMStudio, vLLM or other OpenAI-compatible APIs:
 # OPENAI_API_BASE="http://your-local-llm:1234/v1"
 
-# In production, use an Odoo API Key, not the admin password:
-ODOO_PASSWORD="your-odoo-api-key"
+# Dedicated internal user with only the OdooClaw Delegated RPC group:
+ODOO_USERNAME="odooclaw_service"
+ODOO_PASSWORD="your-strong-password-or-odoo-api-key"
 ```
+
+Never configure OdooClaw with a general-purpose administrator. See
+[Odoo Technical User for Delegated MCP Access](odooclaw/docs/ODOO_TECHNICAL_USER.md).
 
 ### Doodba 18 Dev/Test (Practical Local Flow)
 
