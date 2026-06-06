@@ -191,3 +191,20 @@ The module automatically creates a bot user:
 - **Name**: OdooClaw
 
 This user is used to post messages on behalf of the AI assistant.
+
+## Delegated Odoo Permissions
+
+MCP operations received from Odoo Discuss execute with the native ACLs, record
+rules, and company access of the requesting Odoo user.
+
+- The trusted Discuss message context always overrides model-generated
+  `sender_id`, `company_id`, and `allowed_company_ids` values.
+- Only the generated `odooclaw_bot`, users in **OdooClaw Delegated RPC**, or
+  **Administration / Settings** users may call `/odooclaw/call_kw_as_user`.
+- The delegated target must be an active Odoo user and cannot be the Odoo
+  superuser.
+- The generated `odooclaw_bot` user remains authorized on existing and new
+  installations.
+
+For production, configure `ODOO_USERNAME` with a dedicated technical user in
+the **OdooClaw Delegated RPC** group instead of a general-purpose administrator.
