@@ -258,7 +258,7 @@ func (t *MCPTool) SetMessageContext(channel, chatID, senderID string, metadata m
 }
 
 func (t *MCPTool) injectOdooContext(args map[string]any) {
-	if args == nil || t.channel != "odoo" {
+	if args == nil {
 		return
 	}
 
@@ -266,11 +266,20 @@ func (t *MCPTool) injectOdooContext(args map[string]any) {
 		return
 	}
 
+	if t.channel != "odoo" {
+		// External channel identities are not Odoo user IDs. Until an explicit
+		// trusted identity mapping exists, remove model-generated impersonation.
+		delete(args, "sender_id")
+		return
+	}
+
 	senderID, ok := parseInt(t.senderID)
 	if ok {
-		if _, exists := args["sender_id"]; !exists {
-			args["sender_id"] = senderID
-		}
+		// Identity comes from the trusted inbound Odoo message context. Never
+		// preserve a model-generated sender_id that could escalate privileges.
+		args["sender_id"] = senderID
+	} else {
+		delete(args, "sender_id")
 	}
 
 	companyID, hasCompany := parseInt(t.metadata["company_id"])
@@ -291,40 +300,28 @@ func (t *MCPTool) injectOdooContext(args map[string]any) {
 			}
 
 			if hasCompany {
-				if _, exists := ctxMap["company_id"]; !exists {
-					ctxMap["company_id"] = companyID
-				}
+				ctxMap["company_id"] = companyID
 			}
 			if len(allowedCompanyIDs) > 0 {
-				if _, exists := ctxMap["allowed_company_ids"]; !exists {
-					ctxMap["allowed_company_ids"] = allowedCompanyIDs
-				}
+				ctxMap["allowed_company_ids"] = allowedCompanyIDs
 			}
 			return
 		}
 
 		if hasCompany {
-			if _, exists := args["company_id"]; !exists {
-				args["company_id"] = companyID
-			}
+			args["company_id"] = companyID
 		}
 		if len(allowedCompanyIDs) > 0 {
-			if _, exists := args["allowed_company_ids"]; !exists {
-				args["allowed_company_ids"] = allowedCompanyIDs
-			}
+			args["allowed_company_ids"] = allowedCompanyIDs
 		}
 		return
 	}
 
 	if hasCompany {
-		if _, exists := args["company_id"]; !exists {
-			args["company_id"] = companyID
-		}
+		args["company_id"] = companyID
 	}
 	if len(allowedCompanyIDs) > 0 {
-		if _, exists := args["allowed_company_ids"]; !exists {
-			args["allowed_company_ids"] = allowedCompanyIDs
-		}
+		args["allowed_company_ids"] = allowedCompanyIDs
 	}
 }
 

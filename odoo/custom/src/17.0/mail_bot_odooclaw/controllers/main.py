@@ -139,6 +139,35 @@ class OdooClawController(http.Controller):
                     }
                 )
 
+            caller = request.env.user
+            odooclaw_bot = request.env.ref(
+                "mail_bot_odooclaw.odooclaw_bot", raise_if_not_found=False
+            )
+            if not (
+                (odooclaw_bot and caller.id == odooclaw_bot.id)
+                or caller.has_group("mail_bot_odooclaw.group_odooclaw_delegator")
+                or caller.has_group("base.group_system")
+            ):
+                return request.make_json_response(
+                    {
+                        "status": "error",
+                        "reason": "Unauthorized. Delegated RPC permission required.",
+                    }
+                )
+
+            try:
+                user_id = int(user_id)
+            except (TypeError, ValueError):
+                return request.make_json_response(
+                    {"status": "error", "reason": "Invalid user_id"}
+                )
+
+            target_user = request.env["res.users"].sudo().browse(user_id)
+            if user_id == SUPERUSER_ID or not target_user.exists() or not target_user.active:
+                return request.make_json_response(
+                    {"status": "error", "reason": "Invalid delegated user"}
+                )
+
             # Merge explicit context from caller if provided
             if not isinstance(kwargs_dict, dict):
                 kwargs_dict = {}

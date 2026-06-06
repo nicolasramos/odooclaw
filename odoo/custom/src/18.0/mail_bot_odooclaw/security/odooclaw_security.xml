@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="group_odooclaw_delegator" model="res.groups">
+        <field name="name">OdooClaw Delegated RPC</field>
+        <field name="comment">Allows the OdooClaw technical user to execute ORM calls under the permissions of the requesting Odoo user.</field>
+    </record>
+</odoo>
