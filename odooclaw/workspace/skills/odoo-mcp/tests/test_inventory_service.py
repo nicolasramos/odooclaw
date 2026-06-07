@@ -15,6 +15,7 @@ from odoo_mcp.services.inventory_service import (
     get_transfer_summary,
     get_delivery_summary,
     get_stock_moves,
+    match_delivery_to_sale_order,
     match_receipt_to_purchase_order,
     prepare_receipt_validation,
     prepare_transfer_validation,
@@ -200,6 +201,8 @@ def _receipt_capabilities(mock_client):
             "product.product",
             "purchase.order",
             "purchase.order.line",
+            "sale.order",
+            "sale.order.line",
         },
         fields_by_model={
             "stock.picking": {
@@ -240,6 +243,14 @@ def _receipt_capabilities(mock_client):
                 "product_id",
                 "product_qty",
                 "qty_received",
+            },
+            "sale.order.line": {
+                "id",
+                "product_id",
+                "product_uom_qty",
+                "qty_delivered",
+                "price_unit",
+                "state",
             },
         },
     )
@@ -354,6 +365,61 @@ def test_get_delivery_summary_flags_over_delivery(mock_client):
 
     assert result["ok"] is True
     assert any(item["type"] == "over_delivery" for item in result["discrepancies"])
+
+
+def test_match_delivery_to_sale_order_matches_sale_line_and_flags_backorder(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.side_effect = [
+        [{"id": 40, "name": "WH/OUT/0001", "state": "assigned", "picking_type_code": "outgoing", "sale_id": [22, "S00022"]}],
+        [{"id": 2, "product_id": [10, "Cable"], "sale_line_id": [200, "Line"], "product_uom_qty": 5.0, "quantity": 3.0, "state": "assigned"}],
+        [],
+        [{"id": 10, "tracking": "none"}],
+        [{"id": 200, "product_id": [10, "Cable"], "product_uom_qty": 5.0, "qty_delivered": 3.0}],
+    ]
+
+    result = match_delivery_to_sale_order(mock_client, sender_id=7, picking_id=40)
+
+    assert result["ok"] is True
+    assert result["sale_order_id"] == 22
+    assert result["risk_level"] == "medium"
+    assert result["matches"][0]["sale_order_line"]["id"] == 200
+    assert result["matches"][0]["delivery_remaining_quantity"] == 2.0
+    assert any(item["type"] == "backorder_risk" for item in result["discrepancies"])
+
+
+def test_match_delivery_to_sale_order_flags_product_not_in_order(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.side_effect = [
+        [{"id": 40, "name": "WH/OUT/0001", "state": "assigned", "picking_type_code": "outgoing", "sale_id": [22, "S00022"]}],
+        [{"id": 2, "product_id": [10, "Cable"], "product_uom_qty": 2.0, "quantity": 2.0, "state": "assigned"}],
+        [],
+        [{"id": 10, "tracking": "none"}],
+        [{"id": 201, "product_id": [11, "Other"], "product_uom_qty": 2.0, "qty_delivered": 0.0}],
+    ]
+
+    result = match_delivery_to_sale_order(mock_client, sender_id=7, picking_id=40)
+
+    assert result["ok"] is True
+    assert result["risk_level"] == "high"
+    assert result["matches"] == []
+    assert any(item["type"] == "product_not_in_sale_order" for item in result["discrepancies"])
+
+
+def test_match_delivery_to_sale_order_returns_unsupported_without_sale_lines(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.model_exists.side_effect = lambda model, sender_id=None: model != "sale.order.line"
+    mock_client.call_kw.side_effect = [
+        [{"id": 40, "name": "WH/OUT/0001", "state": "assigned", "picking_type_code": "outgoing", "sale_id": [22, "S00022"]}],
+        [{"id": 2, "product_id": [10, "Cable"], "sale_line_id": [200, "Line"], "product_uom_qty": 5.0, "quantity": 3.0, "state": "assigned"}],
+        [],
+        [{"id": 10, "tracking": "none"}],
+    ]
+
+    result = match_delivery_to_sale_order(mock_client, sender_id=7, picking_id=40)
+
+    assert result["ok"] is False
+    assert result["status"] == "unsupported"
+    assert result["missing"] == ["sale.order.line"]
 
 
 def test_validate_delivery_returns_action_required_for_wizard(mock_client):
