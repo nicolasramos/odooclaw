@@ -62,6 +62,9 @@ Las operaciones Odoo se ejecutan bajo el contexto de seguridad nativo del identi
 - `odoo_validate_transfer`
 - `odoo_prepare_internal_transfer`
 - `odoo_create_internal_transfer`
+- `odoo_find_lot_serial`
+- `odoo_get_lot_traceability`
+- `odoo_check_lot_requirements`
 
 Product/stock visibility tools are read-only/advisory. Receipt, delivery and internal-transfer validation require preview and explicit confirmation, and additional Odoo backorder/immediate-transfer wizards are never processed automatically.
 
