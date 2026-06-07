@@ -74,6 +74,83 @@ def _stock_capabilities(client: OdooClient, sender_id: int) -> dict[str, bool]:
     }
 
 
+def get_logistics_capabilities(client: OdooClient, sender_id: int) -> dict:
+    def optional_capability(
+        repository: str,
+        module: str,
+        signals: list[tuple[str, str]],
+    ) -> dict[str, Any]:
+        detected = [
+            {"model": model, "field": field}
+            for model, field in signals
+            if _field_available(client, model, field, sender_id)
+        ]
+        return {
+            "available": bool(detected),
+            "repository": repository,
+            "module": module,
+            "detected_signals": detected,
+        }
+
+    return build_success_response(
+        "inventory.get_logistics_capabilities",
+        core={
+            "stock_picking": _model_available(client, "stock.picking", sender_id),
+            "stock_move": _model_available(client, "stock.move", sender_id),
+            "stock_move_line": _model_available(client, "stock.move.line", sender_id),
+            "stock_quant": _model_available(client, "stock.quant", sender_id),
+            "stock_lot": bool(_lot_model(client, sender_id)),
+            "stock_orderpoint": _model_available(
+                client, "stock.warehouse.orderpoint", sender_id
+            ),
+        },
+        oca={
+            "purchase_reception_status": optional_capability(
+                "OCA/purchase-workflow",
+                "purchase_reception_status",
+                [("purchase.order", "reception_status")],
+            ),
+            "purchase_reception_status_line": optional_capability(
+                "OCA/purchase-workflow",
+                "purchase_reception_status_line",
+                [("purchase.order.line", "reception_status")],
+            ),
+            "purchase_invoice_status_line": optional_capability(
+                "OCA/purchase-workflow",
+                "purchase_invoice_status_line",
+                [("purchase.order.line", "invoice_status")],
+            ),
+            "purchase_stock_picking_invoice_link": optional_capability(
+                "OCA/stock-logistics-workflow",
+                "purchase_stock_picking_invoice_link",
+                [("stock.picking", "invoice_ids"), ("account.move", "picking_ids")],
+            ),
+            "sale_stock_delivery_state": optional_capability(
+                "OCA/sale-workflow",
+                "sale_stock_delivery_state",
+                [("sale.order", "delivery_state")],
+            ),
+            "stock_picking_backorder_strategy": optional_capability(
+                "OCA/stock-logistics-workflow",
+                "stock_picking_backorder_strategy",
+                [
+                    ("stock.picking", "backorder_strategy"),
+                    ("stock.picking.type", "backorder_strategy"),
+                ],
+            ),
+            "stock_picking_auto_create_lot": optional_capability(
+                "OCA/stock-logistics-workflow",
+                "stock_picking_auto_create_lot",
+                [
+                    ("stock.picking.type", "auto_create_lot"),
+                    ("stock.picking.type", "auto_create_lots"),
+                ],
+            ),
+        },
+        behavior="Optional OCA capabilities are detected by model/field signals; no module is required.",
+    )
+
+
 def _product_fields(client: OdooClient, sender_id: int) -> list[str]:
     return _available_fields(
         client,
