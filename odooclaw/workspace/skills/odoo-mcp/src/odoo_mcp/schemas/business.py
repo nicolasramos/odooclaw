@@ -262,6 +262,38 @@ class GetStockAvailabilitySchema(BaseOdooRequest):
     location_id: Optional[int] = Field(None, description="Optional stock.location ID")
 
 
+class FindReorderingRulesSchema(BaseOdooRequest):
+    product_id: Optional[int] = Field(None, description="Optional product.product ID")
+    location_id: Optional[int] = Field(None, description="Optional stock.location ID")
+    company_id: Optional[int] = Field(None, description="Optional company ID")
+    low_stock_only: bool = Field(False, description="Only rules currently requiring replenishment")
+    limit: int = Field(50, description="Max reordering rules")
+
+
+class GetReplenishmentSuggestionsSchema(BaseOdooRequest):
+    product_id: Optional[int] = Field(None, description="Optional product.product ID")
+    location_id: Optional[int] = Field(None, description="Optional stock.location ID")
+    company_id: Optional[int] = Field(None, description="Optional company ID")
+    limit: int = Field(50, description="Max suggestion rows")
+
+
+class FindInventoryDiscrepanciesSchema(BaseOdooRequest):
+    product_id: Optional[int] = Field(None, description="Optional product.product ID")
+    location_id: Optional[int] = Field(None, description="Optional stock.location ID")
+    company_id: Optional[int] = Field(None, description="Optional company ID")
+    limit: int = Field(100, description="Max discrepancy rows")
+
+
+class PrepareInventoryAdjustmentSchema(BaseOdooRequest):
+    quant_id: int = Field(..., description="stock.quant ID")
+    counted_quantity: float = Field(..., description="Physical counted quantity")
+
+
+class ApplyInventoryAdjustmentSchema(PrepareInventoryAdjustmentSchema):
+    confirm: bool = Field(False, description="Must be true to apply inventory adjustment")
+    dry_run: bool = Field(True, description="Return adjustment plan without executing")
+
+
 
 
 class FindPurchaseReceiptsSchema(BaseOdooRequest):

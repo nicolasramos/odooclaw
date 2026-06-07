@@ -411,6 +411,333 @@ def get_stock_availability(
     )
 
 
+def _orderpoint_fields(client: OdooClient, sender_id: int) -> list[str]:
+    return _available_fields(
+        client,
+        "stock.warehouse.orderpoint",
+        sender_id,
+        [
+            "id",
+            "name",
+            "product_id",
+            "location_id",
+            "warehouse_id",
+            "product_min_qty",
+            "product_max_qty",
+            "qty_forecast",
+            "qty_to_order",
+            "trigger",
+            "route_id",
+            "company_id",
+        ],
+    )
+
+
+def find_reordering_rules(
+    client: OdooClient,
+    sender_id: int,
+    product_id: Optional[int] = None,
+    location_id: Optional[int] = None,
+    company_id: Optional[int] = None,
+    low_stock_only: bool = False,
+    limit: int = 50,
+) -> dict:
+    model = "stock.warehouse.orderpoint"
+    if not _model_available(client, model, sender_id):
+        return build_unsupported_response(
+            "inventory.find_reordering_rules",
+            "stock.warehouse.orderpoint model is not available in this Odoo instance.",
+            [model],
+        )
+    domain: list[Any] = []
+    if product_id:
+        domain.append(["product_id", "=", product_id])
+    if location_id:
+        domain.append(["location_id", "=", location_id])
+    if company_id and _field_available(client, model, "company_id", sender_id):
+        domain.append(["company_id", "=", company_id])
+    if low_stock_only and _field_available(client, model, "qty_to_order", sender_id):
+        domain.append(["qty_to_order", ">", 0])
+    rules = client.call_kw(
+        model,
+        "search_read",
+        args=[domain],
+        kwargs={"fields": _orderpoint_fields(client, sender_id), "limit": limit, "order": "id asc"},
+        sender_id=sender_id,
+    )
+    return build_success_response(
+        "inventory.find_reordering_rules",
+        count=len(rules),
+        rules=rules,
+        low_stock_only=low_stock_only,
+    )
+
+
+def get_replenishment_suggestions(
+    client: OdooClient,
+    sender_id: int,
+    product_id: Optional[int] = None,
+    location_id: Optional[int] = None,
+    company_id: Optional[int] = None,
+    limit: int = 50,
+) -> dict:
+    rules_result = find_reordering_rules(
+        client,
+        sender_id,
+        product_id=product_id,
+        location_id=location_id,
+        company_id=company_id,
+        low_stock_only=False,
+        limit=limit,
+    )
+    if not rules_result.get("ok"):
+        rules_result["capability"] = "inventory.get_replenishment_suggestions"
+        return rules_result
+
+    suggestions: list[dict[str, Any]] = []
+    for rule in rules_result["rules"]:
+        forecast = _safe_float(rule.get("qty_forecast"))
+        minimum = _safe_float(rule.get("product_min_qty"))
+        maximum = _safe_float(rule.get("product_max_qty"))
+        if rule.get("qty_to_order") not in (None, False, ""):
+            suggested = max(_safe_float(rule.get("qty_to_order")), 0.0)
+        else:
+            suggested = max(maximum - forecast, 0.0)
+        if suggested <= 0 and forecast >= minimum:
+            continue
+        risk_level = "critical" if forecast < 0 else "warning" if forecast < minimum else "low"
+        suggestions.append(
+            {
+                "rule_id": rule["id"],
+                "product_id": rule.get("product_id"),
+                "location_id": rule.get("location_id"),
+                "warehouse_id": rule.get("warehouse_id"),
+                "forecast_quantity": forecast,
+                "minimum_quantity": minimum,
+                "maximum_quantity": maximum,
+                "suggested_quantity": round(suggested, 4),
+                "risk_level": risk_level,
+                "trigger": rule.get("trigger"),
+                "route_id": rule.get("route_id"),
+                "company_id": rule.get("company_id"),
+            }
+        )
+    suggestions.sort(
+        key=lambda item: (
+            {"critical": 0, "warning": 1, "low": 2}[item["risk_level"]],
+            -item["suggested_quantity"],
+        )
+    )
+    return build_success_response(
+        "inventory.get_replenishment_suggestions",
+        count=len(suggestions),
+        suggestions=suggestions,
+        advisory_only=True,
+    )
+
+
+def _inventory_adjustment_fields(client: OdooClient, sender_id: int) -> list[str]:
+    return _available_fields(
+        client,
+        "stock.quant",
+        sender_id,
+        [
+            "id",
+            "product_id",
+            "location_id",
+            "lot_id",
+            "company_id",
+            "quantity",
+            "reserved_quantity",
+            "inventory_quantity",
+            "inventory_diff_quantity",
+            "inventory_quantity_set",
+            "inventory_date",
+            "user_id",
+        ],
+    )
+
+
+def find_inventory_discrepancies(
+    client: OdooClient,
+    sender_id: int,
+    product_id: Optional[int] = None,
+    location_id: Optional[int] = None,
+    company_id: Optional[int] = None,
+    limit: int = 100,
+) -> dict:
+    model = "stock.quant"
+    required_fields = ("inventory_quantity_set", "inventory_diff_quantity")
+    if not _model_available(client, model, sender_id) or not all(
+        _field_available(client, model, field, sender_id) for field in required_fields
+    ):
+        return build_unsupported_response(
+            "inventory.find_inventory_discrepancies",
+            "Inventory adjustment fields are not available in this Odoo instance.",
+            [model, *required_fields],
+        )
+    domain: list[Any] = [
+        ["inventory_quantity_set", "=", True],
+        ["inventory_diff_quantity", "!=", 0],
+    ]
+    if product_id:
+        domain.append(["product_id", "=", product_id])
+    if location_id:
+        domain.append(["location_id", "=", location_id])
+    if company_id and _field_available(client, model, "company_id", sender_id):
+        domain.append(["company_id", "=", company_id])
+    discrepancies = client.call_kw(
+        model,
+        "search_read",
+        args=[domain],
+        kwargs={
+            "fields": _inventory_adjustment_fields(client, sender_id),
+            "limit": limit,
+            "order": "id asc",
+        },
+        sender_id=sender_id,
+    )
+    differences = [_safe_float(row.get("inventory_diff_quantity")) for row in discrepancies]
+    return build_success_response(
+        "inventory.find_inventory_discrepancies",
+        count=len(discrepancies),
+        discrepancies=discrepancies,
+        totals={
+            "difference_quantity": round(sum(differences), 4),
+            "absolute_difference": round(sum(abs(value) for value in differences), 4),
+        },
+    )
+
+
+def prepare_inventory_adjustment(
+    client: OdooClient,
+    sender_id: int,
+    quant_id: int,
+    counted_quantity: float,
+) -> dict:
+    critical: list[dict[str, Any]] = []
+    if counted_quantity < 0:
+        critical.append(
+            {
+                "type": "negative_counted_quantity",
+                "severity": "critical",
+                "counted_quantity": counted_quantity,
+            }
+        )
+        return build_success_response(
+            "inventory.prepare_inventory_adjustment",
+            quant_id=quant_id,
+            can_apply=False,
+            critical=critical,
+            warnings=[],
+            preview=None,
+            required_confirmation={"confirm": True, "dry_run": False},
+        )
+    model = "stock.quant"
+    if not _model_available(client, model, sender_id) or not _field_available(
+        client, model, "inventory_quantity", sender_id
+    ):
+        return build_unsupported_response(
+            "inventory.prepare_inventory_adjustment",
+            "Inventory counted quantity is not available in this Odoo instance.",
+            [model, "inventory_quantity"],
+        )
+    rows = client.call_kw(
+        model,
+        "read",
+        args=[[quant_id]],
+        kwargs={"fields": _inventory_adjustment_fields(client, sender_id)},
+        sender_id=sender_id,
+    )
+    if not rows:
+        return {
+            "ok": False,
+            "status": "not_found",
+            "capability": "inventory.prepare_inventory_adjustment",
+            "message": f"Stock quant {quant_id} was not found.",
+        }
+    quant = rows[0]
+    current = _safe_float(quant.get("quantity"))
+    difference = round(counted_quantity - current, 4)
+    warnings: list[dict[str, Any]] = []
+    if difference == 0:
+        warnings.append({"type": "no_quantity_change", "severity": "warning"})
+    if _safe_float(quant.get("reserved_quantity")) > 0:
+        warnings.append(
+            {
+                "type": "reserved_quantity_present",
+                "severity": "warning",
+                "reserved_quantity": _safe_float(quant.get("reserved_quantity")),
+            }
+        )
+    return build_success_response(
+        "inventory.prepare_inventory_adjustment",
+        quant_id=quant_id,
+        can_apply=not critical,
+        critical=critical,
+        warnings=warnings,
+        preview={
+            "quant": quant,
+            "current_quantity": current,
+            "counted_quantity": counted_quantity,
+            "difference_quantity": difference,
+            "write_values": {
+                "inventory_quantity": counted_quantity,
+                "inventory_quantity_set": True,
+            },
+        },
+        required_confirmation={"confirm": True, "dry_run": False},
+    )
+
+
+def apply_inventory_adjustment(
+    client: OdooClient,
+    sender_id: int,
+    quant_id: int,
+    counted_quantity: float,
+    confirm: bool = False,
+    dry_run: bool = True,
+) -> dict:
+    plan = prepare_inventory_adjustment(client, sender_id, quant_id, counted_quantity)
+    if not plan.get("ok"):
+        plan["capability"] = "inventory.apply_inventory_adjustment"
+        return plan
+    if dry_run:
+        return build_success_response(
+            "inventory.apply_inventory_adjustment",
+            dry_run=True,
+            adjustment_plan=plan,
+        )
+    if not confirm:
+        return {
+            "ok": False,
+            "status": "confirmation_required",
+            "capability": "inventory.apply_inventory_adjustment",
+            "message": "Set confirm=true and dry_run=false to apply this inventory adjustment.",
+            "adjustment_plan": plan,
+        }
+    if not plan.get("can_apply"):
+        return {
+            "ok": False,
+            "status": "adjustment_blocked",
+            "capability": "inventory.apply_inventory_adjustment",
+            "adjustment_plan": plan,
+        }
+    values = plan["preview"]["write_values"]
+    client.call_kw("stock.quant", "write", args=[[quant_id], values], sender_id=sender_id)
+    result = client.call_kw(
+        "stock.quant", "action_apply_inventory", args=[[quant_id]], sender_id=sender_id
+    )
+    return build_success_response(
+        "inventory.apply_inventory_adjustment",
+        applied=True,
+        quant_id=quant_id,
+        counted_quantity=counted_quantity,
+        result=result,
+        adjustment_plan=plan,
+    )
+
+
 def find_stock_locations(
     client: OdooClient,
     sender_id: int,

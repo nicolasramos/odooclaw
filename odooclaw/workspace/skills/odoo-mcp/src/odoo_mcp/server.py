@@ -11,6 +11,7 @@ from odoo_mcp.observability.logging import get_logger
 from odoo_mcp.observability.metrics import measure_time
 from odoo_mcp.schemas.actions import OdooInvokeActionSchema
 from odoo_mcp.schemas.business import (
+    ApplyInventoryAdjustmentSchema,
     ApplyReportPatchSafeSchema,
     ApplyViewPatchSafeSchema,
     ApproveExpenseSchema,
@@ -47,8 +48,10 @@ from odoo_mcp.schemas.business import (
     FindProductSchema,
     FindPurchaseOrderSchema,
     FindPurchaseReceiptsSchema,
+    FindReorderingRulesSchema,
     FindSaleDeliveriesSchema,
     FindInternalTransfersSchema,
+    FindInventoryDiscrepanciesSchema,
     FindLotSerialSchema,
     FindSaleOrderSchema,
     FindStockLocationsSchema,
@@ -73,6 +76,7 @@ from odoo_mcp.schemas.business import (
     GetTransferSummarySchema,
     GetPurchaseOrderSummarySchema,
     GetPurchaseReceiptStatusSchema,
+    GetReplenishmentSuggestionsSchema,
     GetRecordSummarySchema,
     GetReportTemplateSchema,
     GetSaleOrderSummarySchema,
@@ -97,6 +101,7 @@ from odoo_mcp.schemas.business import (
     PrepareDeliveryValidationSchema,
     PrepareTransferValidationSchema,
     PrepareInternalTransferSchema,
+    PrepareInventoryAdjustmentSchema,
     CreateInternalTransferSchema,
     PreviewReportPatchSchema,
     PreviewViewPatchSchema,
@@ -157,12 +162,15 @@ from odoo_mcp.services.hr_service import (
     log_timesheet,
 )
 from odoo_mcp.services.inventory_service import (
+    apply_inventory_adjustment,
     check_lot_requirements,
     explain_stock_forecast,
     find_product,
     find_purchase_receipts,
+    find_reordering_rules,
     find_sale_deliveries,
     find_internal_transfers,
+    find_inventory_discrepancies,
     find_lot_serial,
     find_stock_locations,
     get_location_stock_summary,
@@ -171,6 +179,7 @@ from odoo_mcp.services.inventory_service import (
     get_product_stock_context,
     get_product_summary,
     get_product_supplier_info,
+    get_replenishment_suggestions,
     get_receipt_summary,
     get_delivery_summary,
     get_transfer_summary,
@@ -182,6 +191,7 @@ from odoo_mcp.services.inventory_service import (
     prepare_delivery_validation,
     prepare_transfer_validation,
     prepare_internal_transfer,
+    prepare_inventory_adjustment,
     create_internal_transfer,
     validate_delivery,
     validate_receipt,
@@ -1244,6 +1254,104 @@ def odoo_get_stock_availability(
             sender_id=sender_id or client.odoo_session.uid,
             product_ids=product_ids,
             location_id=location_id,
+        )
+
+
+@mcp.tool()
+def odoo_find_reordering_rules(
+    product_id: int | None = None,
+    location_id: int | None = None,
+    company_id: int | None = None,
+    low_stock_only: bool = False,
+    limit: int = 50,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_find_reordering_rules"):
+        client = get_odoo_client()
+        return find_reordering_rules(
+            client,
+            sender_id or client.odoo_session.uid,
+            product_id,
+            location_id,
+            company_id,
+            low_stock_only,
+            limit,
+        )
+
+
+@mcp.tool()
+def odoo_get_replenishment_suggestions(
+    product_id: int | None = None,
+    location_id: int | None = None,
+    company_id: int | None = None,
+    limit: int = 50,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_get_replenishment_suggestions"):
+        client = get_odoo_client()
+        return get_replenishment_suggestions(
+            client,
+            sender_id or client.odoo_session.uid,
+            product_id,
+            location_id,
+            company_id,
+            limit,
+        )
+
+
+@mcp.tool()
+def odoo_find_inventory_discrepancies(
+    product_id: int | None = None,
+    location_id: int | None = None,
+    company_id: int | None = None,
+    limit: int = 100,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_find_inventory_discrepancies"):
+        client = get_odoo_client()
+        return find_inventory_discrepancies(
+            client,
+            sender_id or client.odoo_session.uid,
+            product_id,
+            location_id,
+            company_id,
+            limit,
+        )
+
+
+@mcp.tool()
+def odoo_prepare_inventory_adjustment(
+    quant_id: int,
+    counted_quantity: float,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_prepare_inventory_adjustment"):
+        client = get_odoo_client()
+        return prepare_inventory_adjustment(
+            client,
+            sender_id or client.odoo_session.uid,
+            quant_id,
+            counted_quantity,
+        )
+
+
+@mcp.tool()
+def odoo_apply_inventory_adjustment(
+    quant_id: int,
+    counted_quantity: float,
+    confirm: bool = False,
+    dry_run: bool = True,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_apply_inventory_adjustment"):
+        client = get_odoo_client()
+        return apply_inventory_adjustment(
+            client,
+            sender_id or client.odoo_session.uid,
+            quant_id,
+            counted_quantity,
+            confirm,
+            dry_run,
         )
 
 
