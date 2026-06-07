@@ -23,8 +23,9 @@ def create_activity(
         "res_id": res_id,
         "summary": summary,
         "note": note,
-        "date_deadline": date_deadline,
     }
+    if date_deadline:
+        values["date_deadline"] = date_deadline
 
     # Resolving res_model_id which is required by mail.activity
     model_ids = client.call_kw(
