@@ -53,6 +53,7 @@ Las operaciones Odoo se ejecutan bajo el contexto de seguridad nativo del identi
 - `odoo_validate_receipt`
 - `odoo_find_sale_deliveries`
 - `odoo_get_delivery_summary`
+- `odoo_match_delivery_to_sale_order`
 - `odoo_prepare_delivery_validation`
 - `odoo_validate_delivery`
 - `odoo_find_internal_transfers`
