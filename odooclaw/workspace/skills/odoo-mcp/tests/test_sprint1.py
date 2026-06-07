@@ -50,6 +50,23 @@ def test_create_activity(mock_client):
     )
 
 
+def test_create_activity_includes_deadline_when_provided(mock_client):
+    mock_client.call_kw.side_effect = [[17], 42]
+
+    create_activity(
+        mock_client,
+        1,
+        "res.partner",
+        1,
+        "Call",
+        "Need to call them",
+        date_deadline="2026-06-30",
+    )
+
+    values = mock_client.call_kw.call_args.kwargs["args"][0]
+    assert values["date_deadline"] == "2026-06-30"
+
+
 def test_list_pending_activities(mock_client):
     mock_client.call_kw.return_value = [{"id": 1, "summary": "Call"}]
     acts = list_pending_activities(mock_client, 1, assign_to=1)
