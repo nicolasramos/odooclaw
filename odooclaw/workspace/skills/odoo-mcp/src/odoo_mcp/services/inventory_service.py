@@ -770,6 +770,159 @@ def _product_tracking_map(
     return {int(row["id"]): str(row.get("tracking") or "none") for row in rows}
 
 
+def _lot_model(client: OdooClient, sender_id: int) -> Optional[str]:
+    for model in ("stock.lot", "stock.production.lot"):
+        if _model_available(client, model, sender_id):
+            return model
+    return None
+
+
+def find_lot_serial(
+    client: OdooClient,
+    sender_id: int,
+    name: Optional[str] = None,
+    product_id: Optional[int] = None,
+    company_id: Optional[int] = None,
+    limit: int = 20,
+) -> dict:
+    model = _lot_model(client, sender_id)
+    if not model:
+        return build_unsupported_response(
+            "inventory.find_lot_serial",
+            "No lot/serial model is available in this Odoo instance.",
+            ["stock.lot"],
+        )
+    domain: list[Any] = []
+    if name:
+        domain.append(["name", "ilike", name])
+    if product_id:
+        domain.append(["product_id", "=", product_id])
+    if company_id and _field_available(client, model, "company_id", sender_id):
+        domain.append(["company_id", "=", company_id])
+    lots = client.call_kw(
+        model,
+        "search_read",
+        args=[domain],
+        kwargs={
+            "fields": _available_fields(
+                client, model, sender_id, ["id", "name", "product_id", "company_id", "create_date"]
+            ),
+            "limit": limit,
+            "order": "id desc",
+        },
+        sender_id=sender_id,
+    )
+    return build_success_response(
+        "inventory.find_lot_serial", count=len(lots), lots=lots, lot_model=model
+    )
+
+
+def get_lot_traceability(client: OdooClient, sender_id: int, lot_id: int) -> dict:
+    model = _lot_model(client, sender_id)
+    if not model:
+        return build_unsupported_response(
+            "inventory.get_lot_traceability",
+            "No lot/serial model is available in this Odoo instance.",
+            ["stock.lot"],
+        )
+    lots = client.call_kw(
+        model,
+        "read",
+        args=[[lot_id]],
+        kwargs={"fields": _available_fields(client, model, sender_id, ["id", "name", "product_id", "company_id"])},
+        sender_id=sender_id,
+    )
+    if not lots:
+        return {
+            "ok": False,
+            "status": "not_found",
+            "capability": "inventory.get_lot_traceability",
+            "message": f"Lot/serial {lot_id} was not found.",
+        }
+    quants = []
+    if _model_available(client, "stock.quant", sender_id):
+        quants = client.call_kw(
+            "stock.quant",
+            "search_read",
+            args=[[["lot_id", "=", lot_id]]],
+            kwargs={"fields": _available_fields(client, "stock.quant", sender_id, ["id", "lot_id", "product_id", "location_id", "quantity", "reserved_quantity"])},
+            sender_id=sender_id,
+        )
+    move_lines = client.call_kw(
+        "stock.move.line",
+        "search_read",
+        args=[[["lot_id", "=", lot_id]]],
+        kwargs={
+            "fields": _available_fields(client, "stock.move.line", sender_id, ["id", "lot_id", "product_id", "location_id", "location_dest_id", "quantity", "qty_done", "picking_id", "move_id", "date"]),
+            "order": "id asc",
+        },
+        sender_id=sender_id,
+    )
+    on_hand = sum(_safe_float(row.get("quantity")) for row in quants)
+    reserved = sum(_safe_float(row.get("reserved_quantity")) for row in quants)
+    return build_success_response(
+        "inventory.get_lot_traceability",
+        lot=lots[0],
+        quants=quants,
+        move_lines=move_lines,
+        totals={
+            "on_hand_quantity": round(on_hand, 4),
+            "reserved_quantity": round(reserved, 4),
+            "available_quantity": round(on_hand - reserved, 4),
+        },
+        lot_model=model,
+    )
+
+
+def check_lot_requirements(client: OdooClient, sender_id: int, picking_id: int) -> dict:
+    if not _model_available(client, "stock.picking", sender_id):
+        return build_unsupported_response(
+            "inventory.check_lot_requirements",
+            "stock.picking model is not available in this Odoo instance.",
+            ["stock.picking"],
+        )
+    picking = _read_receipt(client, sender_id, picking_id)
+    if not picking:
+        return {
+            "ok": False,
+            "status": "not_found",
+            "capability": "inventory.check_lot_requirements",
+            "message": f"Picking {picking_id} was not found.",
+        }
+    moves = _read_receipt_moves(client, sender_id, picking_id)
+    move_lines = _read_receipt_move_lines(client, sender_id, picking_id)
+    tracking = _product_tracking_map(
+        client,
+        sender_id,
+        [product_id for product_id in (_safe_int(move.get("product_id")) for move in moves) if product_id],
+    )
+    lines_by_move: dict[int, list[dict[str, Any]]] = {}
+    for line in move_lines:
+        move_id = _safe_int(line.get("move_id"))
+        if move_id:
+            lines_by_move.setdefault(move_id, []).append(line)
+    issues: list[dict[str, Any]] = []
+    for move in moves:
+        move_id = int(move["id"])
+        product_id = _safe_int(move.get("product_id"))
+        tracking_type = tracking.get(product_id or 0, "none")
+        done = _move_done_quantity(move)
+        related = lines_by_move.get(move_id, [])
+        tracked = sum(_move_line_done_quantity(line) for line in related if line.get("lot_id") or line.get("lot_name"))
+        if tracking_type in {"lot", "serial"} and done > tracked + 0.0001:
+            issues.append({"type": "missing_lot_serial", "severity": "critical", "move_id": move_id, "product_id": product_id, "missing_quantity": round(done - tracked, 4)})
+        if tracking_type == "serial":
+            for line in related:
+                if (line.get("lot_id") or line.get("lot_name")) and _move_line_done_quantity(line) > 1.0001:
+                    issues.append({"type": "serial_quantity_exceeds_one", "severity": "critical", "move_id": move_id, "move_line_id": line["id"], "quantity": _move_line_done_quantity(line)})
+    return build_success_response(
+        "inventory.check_lot_requirements",
+        picking=picking,
+        requirements_met=not issues,
+        issues=issues,
+    )
+
+
 def find_purchase_receipts(
     client: OdooClient,
     sender_id: int,

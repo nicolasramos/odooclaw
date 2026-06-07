@@ -19,6 +19,7 @@ from odoo_mcp.schemas.business import (
     BatchAssistReportMigrationSchema,
     BatchAssistViewMigrationSchema,
     CheckInSchema,
+    CheckLotRequirementsSchema,
     CheckOutSchema,
     CloseActivityWithReasonSchema,
     CloseContractLineSchema,
@@ -48,6 +49,7 @@ from odoo_mcp.schemas.business import (
     FindPurchaseReceiptsSchema,
     FindSaleDeliveriesSchema,
     FindInternalTransfersSchema,
+    FindLotSerialSchema,
     FindSaleOrderSchema,
     FindStockLocationsSchema,
     FindTaskSchema,
@@ -59,6 +61,7 @@ from odoo_mcp.schemas.business import (
     GetModelSchemaSchema,
     GetMyTodaySummarySchema,
     GetLocationStockSummarySchema,
+    GetLotTraceabilitySchema,
     GetPartnerSummarySchema,
     GetProductStockContextSchema,
     GetProductStockSchema,
@@ -154,13 +157,16 @@ from odoo_mcp.services.hr_service import (
     log_timesheet,
 )
 from odoo_mcp.services.inventory_service import (
+    check_lot_requirements,
     explain_stock_forecast,
     find_product,
     find_purchase_receipts,
     find_sale_deliveries,
     find_internal_transfers,
+    find_lot_serial,
     find_stock_locations,
     get_location_stock_summary,
+    get_lot_traceability,
     get_product_stock,
     get_product_stock_context,
     get_product_summary,
@@ -1402,6 +1408,35 @@ def odoo_find_internal_transfers(
         return find_internal_transfers(
             client, sender_id or client.odoo_session.uid, state, date_from, date_to, limit
         )
+
+
+@mcp.tool()
+def odoo_find_lot_serial(
+    name: str | None = None,
+    product_id: int | None = None,
+    company_id: int | None = None,
+    limit: int = DEFAULT_SEARCH_LIMIT,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_find_lot_serial"):
+        client = get_odoo_client()
+        return find_lot_serial(
+            client, sender_id or client.odoo_session.uid, name, product_id, company_id, limit
+        )
+
+
+@mcp.tool()
+def odoo_get_lot_traceability(lot_id: int, sender_id: int | None = None) -> dict:
+    with measure_time("odoo_get_lot_traceability"):
+        client = get_odoo_client()
+        return get_lot_traceability(client, sender_id or client.odoo_session.uid, lot_id)
+
+
+@mcp.tool()
+def odoo_check_lot_requirements(picking_id: int, sender_id: int | None = None) -> dict:
+    with measure_time("odoo_check_lot_requirements"):
+        client = get_odoo_client()
+        return check_lot_requirements(client, sender_id or client.odoo_session.uid, picking_id)
 
 
 @mcp.tool()
