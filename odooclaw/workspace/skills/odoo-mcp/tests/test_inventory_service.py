@@ -15,6 +15,7 @@ from odoo_mcp.services.inventory_service import (
     find_sale_deliveries,
     find_stock_locations,
     get_location_stock_summary,
+    get_logistics_capabilities,
     get_lot_traceability,
     get_product_stock_context,
     get_receipt_summary,
@@ -63,6 +64,37 @@ def test_find_product_returns_unsupported_without_product_model(mock_client):
     assert result["ok"] is False
     assert result["status"] == "unsupported"
     assert result["missing"] == ["product.product"]
+
+
+def test_get_logistics_capabilities_detects_optional_oca_fields(mock_client):
+    _configure_capabilities(
+        mock_client,
+        models={"stock.picking", "purchase.order", "purchase.order.line", "sale.order"},
+        fields_by_model={
+            "stock.picking": {"invoice_ids"},
+            "purchase.order": {"reception_status"},
+            "purchase.order.line": {"reception_status", "invoice_status"},
+            "sale.order": {"delivery_state"},
+        },
+    )
+
+    result = get_logistics_capabilities(mock_client, sender_id=7)
+
+    assert result["ok"] is True
+    assert result["oca"]["purchase_reception_status"]["available"] is True
+    assert result["oca"]["purchase_invoice_status_line"]["available"] is True
+    assert result["oca"]["purchase_stock_picking_invoice_link"]["available"] is True
+    assert result["oca"]["sale_stock_delivery_state"]["available"] is True
+
+
+def test_get_logistics_capabilities_reports_missing_optional_oca_cleanly(mock_client):
+    _configure_capabilities(mock_client, models={"stock.picking"}, fields_by_model={})
+
+    result = get_logistics_capabilities(mock_client, sender_id=7)
+
+    assert result["ok"] is True
+    assert result["core"]["stock_picking"] is True
+    assert all(capability["available"] is False for capability in result["oca"].values())
 
 
 def test_find_product_filters_by_vendor_supplierinfo(mock_client):

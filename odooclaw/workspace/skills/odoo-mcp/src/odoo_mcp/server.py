@@ -64,6 +64,7 @@ from odoo_mcp.schemas.business import (
     GetModelSchemaSchema,
     GetMyTodaySummarySchema,
     GetLocationStockSummarySchema,
+    GetLogisticsCapabilitiesSchema,
     GetLotTraceabilitySchema,
     GetPartnerSummarySchema,
     GetProductStockContextSchema,
@@ -174,6 +175,7 @@ from odoo_mcp.services.inventory_service import (
     find_lot_serial,
     find_stock_locations,
     get_location_stock_summary,
+    get_logistics_capabilities,
     get_lot_traceability,
     get_product_stock,
     get_product_stock_context,
@@ -1254,6 +1256,16 @@ def odoo_get_stock_availability(
             sender_id=sender_id or client.odoo_session.uid,
             product_ids=product_ids,
             location_id=location_id,
+        )
+
+
+@mcp.tool()
+def odoo_get_logistics_capabilities(sender_id: int | None = None) -> dict:
+    with measure_time("odoo_get_logistics_capabilities"):
+        client = get_odoo_client()
+        return get_logistics_capabilities(
+            client,
+            sender_id or client.odoo_session.uid,
         )
 
 
