@@ -262,6 +262,10 @@ class GetStockAvailabilitySchema(BaseOdooRequest):
     location_id: Optional[int] = Field(None, description="Optional stock.location ID")
 
 
+class GetLogisticsCapabilitiesSchema(BaseOdooRequest):
+    pass
+
+
 class FindReorderingRulesSchema(BaseOdooRequest):
     product_id: Optional[int] = Field(None, description="Optional product.product ID")
     location_id: Optional[int] = Field(None, description="Optional stock.location ID")
