@@ -83,6 +83,7 @@ from odoo_mcp.schemas.business import (
     LogTaskTimesheetSchema,
     LogTimesheetSchema,
     MarkActivityDoneSchema,
+    MatchDeliveryToSaleOrderSchema,
     MatchReceiptToPurchaseOrderSchema,
     MatchVendorBillToPurchaseOrderSchema,
     NotifyPendingActionsSchema,
@@ -169,6 +170,7 @@ from odoo_mcp.services.inventory_service import (
     get_transfer_summary,
     get_stock_availability,
     get_stock_moves,
+    match_delivery_to_sale_order,
     match_receipt_to_purchase_order,
     prepare_receipt_validation,
     prepare_delivery_validation,
@@ -1348,6 +1350,22 @@ def odoo_get_delivery_summary(picking_id: int, sender_id: int | None = None) -> 
     with measure_time("odoo_get_delivery_summary"):
         client = get_odoo_client()
         return get_delivery_summary(client, sender_id or client.odoo_session.uid, picking_id)
+
+
+@mcp.tool()
+def odoo_match_delivery_to_sale_order(
+    picking_id: int,
+    sale_order_id: int | None = None,
+    sender_id: int | None = None,
+) -> dict:
+    with measure_time("odoo_match_delivery_to_sale_order"):
+        client = get_odoo_client()
+        return match_delivery_to_sale_order(
+            client,
+            sender_id or client.odoo_session.uid,
+            picking_id,
+            sale_order_id,
+        )
 
 
 @mcp.tool()

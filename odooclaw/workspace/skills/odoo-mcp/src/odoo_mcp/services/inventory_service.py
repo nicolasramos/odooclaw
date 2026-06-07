@@ -1371,6 +1371,126 @@ def get_delivery_summary(client: OdooClient, sender_id: int, picking_id: int) ->
     )
 
 
+def match_delivery_to_sale_order(
+    client: OdooClient,
+    sender_id: int,
+    picking_id: int,
+    sale_order_id: Optional[int] = None,
+) -> dict:
+    summary = get_delivery_summary(client, sender_id, picking_id)
+    if not summary.get("ok"):
+        summary["capability"] = "inventory.match_delivery_to_sale_order"
+        return summary
+
+    delivery = summary["picking"]
+    resolved_so_id = sale_order_id or _safe_int(delivery.get("sale_id"))
+    if not resolved_so_id and delivery.get("origin") and _model_available(
+        client, "sale.order", sender_id
+    ):
+        order_rows = client.call_kw(
+            "sale.order",
+            "search_read",
+            args=[[["name", "=", delivery["origin"]]]],
+            kwargs={"fields": ["id", "name"], "limit": 2},
+            sender_id=sender_id,
+        )
+        if len(order_rows) == 1:
+            resolved_so_id = int(order_rows[0]["id"])
+
+    if not resolved_so_id:
+        return {
+            "ok": False,
+            "status": "sale_order_not_resolved",
+            "capability": "inventory.match_delivery_to_sale_order",
+            "message": "Could not resolve a unique sale order for this delivery.",
+            "delivery_summary": summary,
+        }
+
+    if not _model_available(client, "sale.order.line", sender_id):
+        return build_unsupported_response(
+            "inventory.match_delivery_to_sale_order",
+            "sale.order.line model is not available in this Odoo instance.",
+            ["sale.order.line"],
+        )
+
+    order_line_fields = _available_fields(
+        client,
+        "sale.order.line",
+        sender_id,
+        ["id", "product_id", "product_uom_qty", "qty_delivered", "price_unit", "state"],
+    )
+    order_lines = client.call_kw(
+        "sale.order.line",
+        "search_read",
+        args=[[["order_id", "=", resolved_so_id]]],
+        kwargs={"fields": order_line_fields, "order": "id asc"},
+        sender_id=sender_id,
+    )
+    order_lines_by_product: dict[int, list[dict[str, Any]]] = {}
+    for order_line in order_lines:
+        product_id = _safe_int(order_line.get("product_id"))
+        if product_id:
+            order_lines_by_product.setdefault(product_id, []).append(order_line)
+
+    discrepancies = list(summary.get("discrepancies", []))
+    matches: list[dict[str, Any]] = []
+    for delivery_line in summary["lines"]:
+        product_id = _safe_int(delivery_line.get("product_id"))
+        candidates = order_lines_by_product.get(product_id or 0, [])
+        sale_line_id = _safe_int(delivery_line.get("sale_line_id"))
+        matched = next(
+            (line for line in candidates if int(line["id"]) == sale_line_id),
+            candidates[0] if len(candidates) == 1 else None,
+        )
+        if not matched:
+            discrepancies.append(
+                {
+                    "type": "product_not_in_sale_order",
+                    "severity": "critical",
+                    "move_id": delivery_line["move_id"],
+                    "product_id": product_id,
+                }
+            )
+            continue
+
+        remaining = delivery_line["remaining_quantity"]
+        if remaining > 0:
+            discrepancies.append(
+                {
+                    "type": "backorder_risk",
+                    "severity": "warning",
+                    "move_id": delivery_line["move_id"],
+                    "sale_order_line_id": matched["id"],
+                    "product_id": product_id,
+                    "remaining_quantity": remaining,
+                }
+            )
+        matches.append(
+            {
+                "delivery_line": delivery_line,
+                "sale_order_line": matched,
+                "delivery_remaining_quantity": remaining,
+                "ordered_quantity": _safe_float(matched.get("product_uom_qty")),
+                "order_delivered_quantity": _safe_float(matched.get("qty_delivered")),
+            }
+        )
+
+    risk_level = "low"
+    if any(item.get("severity") == "critical" for item in discrepancies):
+        risk_level = "high"
+    elif discrepancies:
+        risk_level = "medium"
+    return build_success_response(
+        "inventory.match_delivery_to_sale_order",
+        picking_id=picking_id,
+        sale_order_id=resolved_so_id,
+        matches=matches,
+        discrepancies=discrepancies,
+        risk_level=risk_level,
+        delivery_summary=summary,
+    )
+
+
 def get_transfer_summary(client: OdooClient, sender_id: int, picking_id: int) -> dict:
     return _get_picking_summary(
         client, sender_id, picking_id, "internal", "inventory.get_transfer_summary", "over_transfer"

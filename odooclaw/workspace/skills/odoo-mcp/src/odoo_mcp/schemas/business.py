@@ -312,6 +312,11 @@ class GetDeliverySummarySchema(BaseOdooRequest):
     picking_id: int = Field(..., description="Outgoing stock.picking ID")
 
 
+class MatchDeliveryToSaleOrderSchema(BaseOdooRequest):
+    picking_id: int = Field(..., description="Outgoing stock.picking ID")
+    sale_order_id: Optional[int] = Field(None, description="Optional sale.order ID override")
+
+
 class GetTransferSummarySchema(BaseOdooRequest):
     picking_id: int = Field(..., description="Internal stock.picking ID")
 
