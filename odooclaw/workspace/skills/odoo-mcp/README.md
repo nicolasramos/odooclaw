@@ -42,6 +42,11 @@ Las operaciones Odoo se ejecutan bajo el contexto de seguridad nativo del identi
 - `odoo_get_product_supplier_info`
 - `odoo_get_product_stock_context`
 - `odoo_get_stock_availability`
+- `odoo_find_reordering_rules`
+- `odoo_get_replenishment_suggestions`
+- `odoo_find_inventory_discrepancies`
+- `odoo_prepare_inventory_adjustment`
+- `odoo_apply_inventory_adjustment`
 - `odoo_find_stock_locations`
 - `odoo_get_location_stock_summary`
 - `odoo_get_stock_moves`

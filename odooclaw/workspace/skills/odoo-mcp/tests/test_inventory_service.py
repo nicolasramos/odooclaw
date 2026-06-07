@@ -4,11 +4,14 @@ import pytest
 
 from odoo_mcp.core.client import OdooClient
 from odoo_mcp.services.inventory_service import (
+    apply_inventory_adjustment,
     check_lot_requirements,
     find_internal_transfers,
+    find_inventory_discrepancies,
     find_lot_serial,
     find_product,
     find_purchase_receipts,
+    find_reordering_rules,
     find_sale_deliveries,
     find_stock_locations,
     get_location_stock_summary,
@@ -21,8 +24,10 @@ from odoo_mcp.services.inventory_service import (
     match_delivery_to_sale_order,
     match_receipt_to_purchase_order,
     prepare_receipt_validation,
+    get_replenishment_suggestions,
     prepare_transfer_validation,
     prepare_internal_transfer,
+    prepare_inventory_adjustment,
     create_internal_transfer,
     prepare_delivery_validation,
     validate_delivery,
@@ -241,6 +246,175 @@ def test_check_lot_requirements_flags_serial_quantity_over_one(mock_client):
     assert any(item["type"] == "serial_quantity_exceeds_one" for item in result["issues"])
 
 
+def test_find_reordering_rules_filters_low_stock_rules(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.return_value = [
+        {
+            "id": 80,
+            "product_id": [10, "Cable"],
+            "product_min_qty": 5.0,
+            "product_max_qty": 12.0,
+            "qty_forecast": 3.0,
+            "qty_to_order": 9.0,
+        }
+    ]
+
+    result = find_reordering_rules(
+        mock_client, sender_id=7, product_id=10, low_stock_only=True
+    )
+
+    assert result["ok"] is True
+    assert result["rules"][0]["id"] == 80
+    domain = mock_client.call_kw.call_args.kwargs["args"][0]
+    assert ["product_id", "=", 10] in domain
+    assert ["qty_to_order", ">", 0] in domain
+
+
+def test_find_reordering_rules_returns_unsupported_without_orderpoint_model(mock_client):
+    mock_client.model_exists.return_value = False
+
+    result = find_reordering_rules(mock_client, sender_id=7)
+
+    assert result["ok"] is False
+    assert result["status"] == "unsupported"
+    assert result["missing"] == ["stock.warehouse.orderpoint"]
+
+
+def test_get_replenishment_suggestions_calculates_fallback_and_risk(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.return_value = [
+        {
+            "id": 80,
+            "product_id": [10, "Cable"],
+            "location_id": [8, "Stock"],
+            "product_min_qty": 5.0,
+            "product_max_qty": 12.0,
+            "qty_forecast": 3.0,
+        },
+        {
+            "id": 81,
+            "product_id": [11, "Adapter"],
+            "location_id": [8, "Stock"],
+            "product_min_qty": 0.0,
+            "product_max_qty": 4.0,
+            "qty_forecast": -2.0,
+        },
+    ]
+
+    result = get_replenishment_suggestions(mock_client, sender_id=7)
+
+    assert result["ok"] is True
+    assert result["count"] == 2
+    assert result["suggestions"][0]["suggested_quantity"] == 6.0
+    assert result["suggestions"][0]["risk_level"] == "critical"
+    assert result["suggestions"][1]["suggested_quantity"] == 9.0
+
+
+def test_find_inventory_discrepancies_returns_only_counted_differences(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.return_value = [
+        {
+            "id": 90,
+            "product_id": [10, "Cable"],
+            "location_id": [8, "Stock"],
+            "quantity": 5.0,
+            "inventory_quantity": 3.0,
+            "inventory_diff_quantity": -2.0,
+            "inventory_quantity_set": True,
+        }
+    ]
+
+    result = find_inventory_discrepancies(mock_client, sender_id=7, location_id=8)
+
+    assert result["ok"] is True
+    assert result["count"] == 1
+    assert result["totals"]["absolute_difference"] == 2.0
+    domain = mock_client.call_kw.call_args.kwargs["args"][0]
+    assert ["inventory_quantity_set", "=", True] in domain
+    assert ["inventory_diff_quantity", "!=", 0] in domain
+
+
+def test_prepare_inventory_adjustment_builds_preview_without_writing(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.return_value = [
+        {
+            "id": 90,
+            "product_id": [10, "Cable"],
+            "location_id": [8, "Stock"],
+            "quantity": 5.0,
+            "inventory_quantity": 5.0,
+            "inventory_diff_quantity": 0.0,
+        }
+    ]
+
+    result = prepare_inventory_adjustment(
+        mock_client, sender_id=7, quant_id=90, counted_quantity=3.0
+    )
+
+    assert result["ok"] is True
+    assert result["can_apply"] is True
+    assert result["preview"]["current_quantity"] == 5.0
+    assert result["preview"]["counted_quantity"] == 3.0
+    assert result["preview"]["difference_quantity"] == -2.0
+    assert result["required_confirmation"] == {"confirm": True, "dry_run": False}
+    assert mock_client.call_kw.call_count == 1
+
+
+def test_prepare_inventory_adjustment_blocks_negative_count(mock_client):
+    result = prepare_inventory_adjustment(
+        mock_client, sender_id=7, quant_id=90, counted_quantity=-1.0
+    )
+
+    assert result["ok"] is True
+    assert result["can_apply"] is False
+    assert result["critical"][0]["type"] == "negative_counted_quantity"
+
+
+def test_apply_inventory_adjustment_requires_confirmation(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.return_value = [
+        {"id": 90, "quantity": 5.0, "inventory_quantity": 5.0}
+    ]
+
+    result = apply_inventory_adjustment(
+        mock_client,
+        sender_id=7,
+        quant_id=90,
+        counted_quantity=3.0,
+        confirm=False,
+        dry_run=False,
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "confirmation_required"
+    assert mock_client.call_kw.call_count == 1
+
+
+def test_apply_inventory_adjustment_writes_and_applies_when_confirmed(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.side_effect = [
+        [{"id": 90, "quantity": 5.0, "inventory_quantity": 5.0}],
+        True,
+        True,
+    ]
+
+    result = apply_inventory_adjustment(
+        mock_client,
+        sender_id=7,
+        quant_id=90,
+        counted_quantity=3.0,
+        confirm=True,
+        dry_run=False,
+    )
+
+    assert result["ok"] is True
+    assert result["applied"] is True
+    write_call = mock_client.call_kw.call_args_list[1]
+    assert write_call.args[:2] == ("stock.quant", "write")
+    apply_call = mock_client.call_kw.call_args_list[2]
+    assert apply_call.args[:2] == ("stock.quant", "action_apply_inventory")
+
+
 def _receipt_capabilities(mock_client):
     _configure_capabilities(
         mock_client,
@@ -255,6 +429,7 @@ def _receipt_capabilities(mock_client):
             "sale.order.line",
             "stock.lot",
             "stock.quant",
+            "stock.warehouse.orderpoint",
         },
         fields_by_model={
             "stock.picking": {
@@ -312,6 +487,25 @@ def _receipt_capabilities(mock_client):
                 "location_id",
                 "quantity",
                 "reserved_quantity",
+                "inventory_quantity",
+                "inventory_diff_quantity",
+                "inventory_quantity_set",
+                "inventory_date",
+                "user_id",
+            },
+            "stock.warehouse.orderpoint": {
+                "id",
+                "name",
+                "product_id",
+                "location_id",
+                "warehouse_id",
+                "product_min_qty",
+                "product_max_qty",
+                "qty_forecast",
+                "qty_to_order",
+                "trigger",
+                "route_id",
+                "company_id",
             },
         },
     )
