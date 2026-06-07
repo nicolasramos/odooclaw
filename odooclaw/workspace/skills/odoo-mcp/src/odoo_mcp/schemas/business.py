@@ -308,6 +308,21 @@ class FindInternalTransfersSchema(BaseOdooRequest):
     limit: int = Field(20, description="Max internal transfers")
 
 
+class FindLotSerialSchema(BaseOdooRequest):
+    name: Optional[str] = Field(None, description="Lot/serial name search")
+    product_id: Optional[int] = Field(None, description="Optional product.product ID")
+    company_id: Optional[int] = Field(None, description="Optional company ID")
+    limit: int = Field(20, description="Max lots/serials")
+
+
+class GetLotTraceabilitySchema(BaseOdooRequest):
+    lot_id: int = Field(..., description="stock.lot or stock.production.lot ID")
+
+
+class CheckLotRequirementsSchema(BaseOdooRequest):
+    picking_id: int = Field(..., description="stock.picking ID")
+
+
 class GetDeliverySummarySchema(BaseOdooRequest):
     picking_id: int = Field(..., description="Outgoing stock.picking ID")
 

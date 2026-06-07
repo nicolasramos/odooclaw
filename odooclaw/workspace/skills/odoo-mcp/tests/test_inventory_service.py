@@ -4,12 +4,15 @@ import pytest
 
 from odoo_mcp.core.client import OdooClient
 from odoo_mcp.services.inventory_service import (
+    check_lot_requirements,
     find_internal_transfers,
+    find_lot_serial,
     find_product,
     find_purchase_receipts,
     find_sale_deliveries,
     find_stock_locations,
     get_location_stock_summary,
+    get_lot_traceability,
     get_product_stock_context,
     get_receipt_summary,
     get_transfer_summary,
@@ -191,6 +194,53 @@ def test_get_stock_moves_returns_unsupported_without_model(mock_client):
     assert result["status"] == "unsupported"
 
 
+def test_find_lot_serial_filters_by_name_and_product(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.return_value = [
+        {"id": 70, "name": "LOT-001", "product_id": [10, "Cable"]}
+    ]
+
+    result = find_lot_serial(mock_client, sender_id=7, name="LOT-001", product_id=10)
+
+    assert result["ok"] is True
+    assert result["lots"][0]["id"] == 70
+    domain = mock_client.call_kw.call_args.kwargs["args"][0]
+    assert ["name", "ilike", "LOT-001"] in domain
+    assert ["product_id", "=", 10] in domain
+
+
+def test_get_lot_traceability_returns_stock_and_move_history(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.side_effect = [
+        [{"id": 70, "name": "LOT-001", "product_id": [10, "Cable"]}],
+        [{"id": 1, "lot_id": [70, "LOT-001"], "product_id": [10, "Cable"], "location_id": [8, "Stock"], "quantity": 4.0, "reserved_quantity": 1.0}],
+        [{"id": 11, "lot_id": [70, "LOT-001"], "product_id": [10, "Cable"], "location_id": [4, "Vendors"], "location_dest_id": [8, "Stock"], "quantity": 5.0, "picking_id": [30, "WH/IN/1"]}],
+    ]
+
+    result = get_lot_traceability(mock_client, sender_id=7, lot_id=70)
+
+    assert result["ok"] is True
+    assert result["totals"]["on_hand_quantity"] == 4.0
+    assert result["totals"]["available_quantity"] == 3.0
+    assert result["move_lines"][0]["picking_id"][1] == "WH/IN/1"
+
+
+def test_check_lot_requirements_flags_serial_quantity_over_one(mock_client):
+    _receipt_capabilities(mock_client)
+    mock_client.call_kw.side_effect = [
+        [{"id": 40, "state": "assigned", "picking_type_code": "outgoing"}],
+        [{"id": 2, "product_id": [10, "Serial"], "product_uom_qty": 2.0, "quantity": 2.0}],
+        [{"id": 21, "move_id": [2, "Move"], "product_id": [10, "Serial"], "quantity": 2.0, "lot_id": [70, "SER-001"]}],
+        [{"id": 10, "tracking": "serial"}],
+    ]
+
+    result = check_lot_requirements(mock_client, sender_id=7, picking_id=40)
+
+    assert result["ok"] is True
+    assert result["requirements_met"] is False
+    assert any(item["type"] == "serial_quantity_exceeds_one" for item in result["issues"])
+
+
 def _receipt_capabilities(mock_client):
     _configure_capabilities(
         mock_client,
@@ -203,6 +253,8 @@ def _receipt_capabilities(mock_client):
             "purchase.order.line",
             "sale.order",
             "sale.order.line",
+            "stock.lot",
+            "stock.quant",
         },
         fields_by_model={
             "stock.picking": {
@@ -251,6 +303,15 @@ def _receipt_capabilities(mock_client):
                 "qty_delivered",
                 "price_unit",
                 "state",
+            },
+            "stock.lot": {"id", "name", "product_id", "company_id"},
+            "stock.quant": {
+                "id",
+                "lot_id",
+                "product_id",
+                "location_id",
+                "quantity",
+                "reserved_quantity",
             },
         },
     )
