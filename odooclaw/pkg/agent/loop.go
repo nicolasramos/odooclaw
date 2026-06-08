@@ -17,7 +17,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
 
 	"github.com/nicolasramos/odooclaw/pkg/browsercopilot"
 	"github.com/nicolasramos/odooclaw/pkg/bus"
@@ -1332,47 +1331,13 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 	}
 }
 
-// forceCompression aggressively reduces context when the limit is hit.
-// It drops the oldest 50% of messages (keeping system prompt and last user message).
+// forceCompression aggressively reduces context at complete-turn boundaries.
 func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 	history := agent.Sessions.GetHistory(sessionKey)
-	if len(history) <= 4 {
+	newHistory, droppedCount, compressed := compressedHistory(history)
+	if !compressed {
 		return
 	}
-
-	// Keep system prompt (usually [0]) and the very last message (user's trigger)
-	// We want to drop the oldest half of the *conversation*
-	// Assuming [0] is system, [1:] is conversation
-	conversation := history[1 : len(history)-1]
-	if len(conversation) == 0 {
-		return
-	}
-
-	// Helper to find the mid-point of the conversation
-	mid := len(conversation) / 2
-
-	// New history structure:
-	// 1. System Prompt (with compression note appended)
-	// 2. Second half of conversation
-	// 3. Last message
-
-	droppedCount := mid
-	keptConversation := conversation[mid:]
-
-	newHistory := make([]providers.Message, 0, 1+len(keptConversation)+1)
-
-	// Append compression note to the original system prompt instead of adding a new system message
-	// This avoids having two consecutive system messages which some APIs (like Zhipu) reject
-	compressionNote := fmt.Sprintf(
-		"\n\n[System Note: Emergency compression dropped %d oldest messages due to context limit]",
-		droppedCount,
-	)
-	enhancedSystemPrompt := history[0]
-	enhancedSystemPrompt.Content = enhancedSystemPrompt.Content + compressionNote
-	newHistory = append(newHistory, enhancedSystemPrompt)
-
-	newHistory = append(newHistory, keptConversation...)
-	newHistory = append(newHistory, history[len(history)-1]) // Last message
 
 	// Update session
 	agent.Sessions.SetHistory(sessionKey, newHistory)
@@ -1597,12 +1562,7 @@ func (al *AgentLoop) summarizeBatch(
 // Uses a safe heuristic of 2.5 characters per token to account for CJK and other
 // overheads better than the previous 3 chars/token.
 func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
-	totalChars := 0
-	for _, m := range messages {
-		totalChars += utf8.RuneCountInString(m.Content)
-	}
-	// 2.5 chars per token = totalChars * 2 / 5
-	return totalChars * 2 / 5
+	return estimateMessageTokens(messages)
 }
 
 func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) (string, bool) {
