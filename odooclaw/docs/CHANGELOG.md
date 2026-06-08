@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-08
+
+### Added
+- Safe purchase and vendor-bill workflows with OCR validation, duplicate checks, missing-vendor proposals, PO/receipt matching, total validation, and capability-first OCA support.
+- Product and inventory visibility tools for products, suppliers, stock availability, locations, moves, and stock forecast explanations.
+- Safe warehouse operations for receipts, deliveries, internal transfers, lot/serial traceability, reordering rules, replenishment suggestions, inventory discrepancies, and controlled inventory adjustments.
+- Optional OCA logistics capability detection without mandatory OCA dependencies.
+- Browser extension distribution links for Firefox Add-ons and Chrome Web Store.
+- Engram Docker/Doodba deployment documentation.
+
+### Security
+- Hardened delegated Odoo execution so MCP operations inherit the authenticated user's ACLs, record rules, company context, and active status.
+- Added a documented least-privilege technical-user pattern.
+- Persistent stock operations require preview, dry-run, and explicit confirmation.
+
+### Fixed
+- Omitted empty activity deadlines from Odoo activity creation payloads.
+
 ### Added
 - **Native Security & Permission Inheritance**: OdooClaw now dynamically assumes the Odoo permissions of the user interacting with the bot. All database (ORM) operations pass through a custom endpoint (`/odooclaw/call_kw_as_user`) enforcing Odoo's native Access Rights and Record Rules securely.
 - **Smart Document Processing (OCR)**: Added capabilities to scan and understand invoices/purchase orders using specialized OCR MCP skills.
