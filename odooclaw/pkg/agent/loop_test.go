@@ -567,16 +567,19 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	if defaultAgent == nil {
 		t.Fatal("No default agent found")
 	}
+	defaultAgent.Sessions.GetOrCreate(sessionKey)
 	defaultAgent.Sessions.SetHistory(sessionKey, history)
 
-	// Call ProcessDirectWithChannel
-	// Note: ProcessDirectWithChannel calls processMessage which will execute runLLMIteration
-	response, err := al.ProcessDirectWithChannel(
+	response, err := al.runAgentLoop(
 		context.Background(),
-		"Trigger message",
-		sessionKey,
-		"test",
-		"test-chat",
+		defaultAgent,
+		processOptions{
+			SessionKey:      sessionKey,
+			Channel:         "test",
+			ChatID:          "test-chat",
+			UserMessage:     "Trigger message",
+			DefaultResponse: defaultResponse,
+		},
 	)
 	if err != nil {
 		t.Fatalf("Expected success after retry, got error: %v", err)
@@ -600,6 +603,55 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 	// Without compression: 6 + 1 (new user msg) + 1 (assistant msg) = 8
 	if len(finalHistory) >= 8 {
 		t.Errorf("Expected history to be compressed (len < 8), got %d", len(finalHistory))
+	}
+}
+
+func TestAgentLoop_ContextExhaustionDoesNotRetryAfterCompressionNoOp(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	contextErr := fmt.Errorf("context_length_exceeded")
+	provider := &failFirstMockProvider{
+		failures:  3,
+		failError: contextErr,
+	}
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), provider)
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("No default agent found")
+	}
+
+	sessionKey := "single-oversized-turn"
+	oversizedMessage := strings.Repeat("界🦞", 10_000)
+
+	_, err := al.runAgentLoop(
+		context.Background(),
+		defaultAgent,
+		processOptions{
+			SessionKey:      sessionKey,
+			Channel:         "test",
+			ChatID:          "test-chat",
+			UserMessage:     oversizedMessage,
+			DefaultResponse: defaultResponse,
+		},
+	)
+	if err == nil {
+		t.Fatal("expected context error")
+	}
+	if provider.currentCall != 1 {
+		t.Fatalf("provider calls = %d, want 1 because compression was a no-op", provider.currentCall)
+	}
+	history := defaultAgent.Sessions.GetHistory(sessionKey)
+	if len(history) != 1 || history[0].Role != "user" || history[0].Content != oversizedMessage {
+		t.Fatalf("history = %#v, want only the oversized current user message", history)
 	}
 }
 

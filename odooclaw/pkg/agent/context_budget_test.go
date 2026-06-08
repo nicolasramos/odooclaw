@@ -1,11 +1,54 @@
 package agent
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/nicolasramos/odooclaw/pkg/providers"
 )
+
+func TestEstimateTokensIsConservativeAcrossScripts(t *testing.T) {
+	tests := []struct {
+		name      string
+		content   string
+		minTokens int
+		maxTokens int
+	}{
+		{
+			name:      "CJK is at least three tokens per two runes",
+			content:   strings.Repeat("界", 100),
+			minTokens: 150,
+		},
+		{
+			name:      "emoji is at least two tokens per rune",
+			content:   strings.Repeat("🦞", 100),
+			minTokens: 200,
+		},
+		{
+			name:      "ASCII remains near four characters per token",
+			content:   strings.Repeat("a", 1000),
+			maxTokens: 350,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := estimateMessageTokens([]providers.Message{{
+				Role:    "user",
+				Content: tt.content,
+			}})
+			if got < tt.minTokens {
+				t.Fatalf("estimateMessageTokens() = %d, want at least %d for %d content runes",
+					got, tt.minTokens, utf8.RuneCountInString(tt.content))
+			}
+			if tt.maxTokens > 0 && got > tt.maxTokens {
+				t.Fatalf("estimateMessageTokens() = %d, want at most %d", got, tt.maxTokens)
+			}
+		})
+	}
+}
 
 func TestEstimateTokensCountsStructuredMessageContent(t *testing.T) {
 	al := &AgentLoop{}
@@ -137,8 +180,12 @@ func TestForceCompressionPreservesCompleteTurnsAndNonLeadingSystem(t *testing.T)
 		{Role: "assistant", Content: "prelude answer"},
 		{Role: "system", Content: "policy added later"},
 		{Role: "user", Content: "tool question"},
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "call-1", Name: "lookup"}}},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{
+			{ID: "call-1", Name: "lookup"},
+			{ID: "call-2", Name: "search"},
+		}},
 		{Role: "tool", ToolCallID: "call-1", Content: "tool result"},
+		{Role: "tool", ToolCallID: "call-2", Content: "second tool result"},
 		{Role: "assistant", Content: "tool answer"},
 		{Role: "user", Content: "recent question"},
 		{Role: "assistant", Content: "recent answer"},
@@ -146,7 +193,9 @@ func TestForceCompressionPreservesCompleteTurnsAndNonLeadingSystem(t *testing.T)
 	}
 	agent.Sessions.SetHistory(sessionKey, history)
 
-	al.forceCompression(agent, sessionKey)
+	if !al.forceCompression(agent, sessionKey) {
+		t.Fatal("forceCompression reported no change")
+	}
 	got := agent.Sessions.GetHistory(sessionKey)
 
 	if len(got) >= len(history) {
@@ -156,12 +205,45 @@ func TestForceCompressionPreservesCompleteTurnsAndNonLeadingSystem(t *testing.T)
 	assertMessageAbsent(t, got, "user", "tool question")
 	assertNoOrphanToolMessages(t, got)
 	assertContainsMessage(t, got, "system", "policy added later")
-	assertContainsMessage(t, got, "system", "Emergency compression dropped")
+	assertMessageAbsent(t, got, "system", "Emergency compression dropped")
 	assertContainsMessage(t, got, "user", "recent question")
 	assertContainsMessage(t, got, "user", "latest question")
-	if got[0].Role == "user" && strings.Contains(got[0].Content, "System Note") {
-		t.Fatal("forceCompression appended the compression note to a non-system message")
+
+	built := agent.ContextBuilder.BuildMessages(got, "", "", nil, "test", "chat", "sender", nil)
+	if len(built) == 0 || built[0].Role != "system" {
+		t.Fatal("BuildMessages did not produce the provider system prompt")
 	}
+	for _, message := range built {
+		if strings.Contains(message.Content, "Emergency compression dropped") {
+			t.Fatal("BuildMessages exposed a persisted emergency compression note")
+		}
+	}
+}
+
+func TestCompressedHistorySingleOversizedTurnIsNoOp(t *testing.T) {
+	history := []providers.Message{
+		{Role: "user", Content: strings.Repeat("界🦞", 10_000)},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{
+			{ID: "call-1", Name: "lookup"},
+			{ID: "call-2", Name: "search"},
+		}},
+		{Role: "tool", ToolCallID: "call-1", Content: "first result"},
+		{Role: "tool", ToolCallID: "call-2", Content: "second result"},
+		{Role: "assistant", Content: "answer"},
+	}
+
+	got, dropped, compressed := compressedHistory(history)
+
+	if compressed {
+		t.Fatal("compressedHistory reported compression for a single active turn")
+	}
+	if dropped != 0 {
+		t.Fatalf("compressedHistory dropped %d messages, want 0", dropped)
+	}
+	if !reflect.DeepEqual(got, history) {
+		t.Fatal("compressedHistory changed a single active turn")
+	}
+	assertNoOrphanToolMessages(t, got)
 }
 
 func assertNoOrphanToolMessages(t *testing.T, messages []providers.Message) {

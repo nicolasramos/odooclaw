@@ -1088,6 +1088,17 @@ func (al *AgentLoop) runLLMIteration(
 					},
 				)
 
+				if !al.forceCompression(agent, opts.SessionKey) {
+					logger.WarnCF(
+						"agent",
+						"Context compression made no progress; skipping identical retry",
+						map[string]any{
+							"session_key": opts.SessionKey,
+							"retry":       retry,
+						},
+					)
+					break
+				}
 				if retry == 0 && !constants.IsInternalChannel(opts.Channel) {
 					al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 						Channel: opts.Channel,
@@ -1095,8 +1106,6 @@ func (al *AgentLoop) runLLMIteration(
 						Content: "Context window exceeded. Compressing history and retrying...",
 					})
 				}
-
-				al.forceCompression(agent, opts.SessionKey)
 				newHistory := agent.Sessions.GetHistory(opts.SessionKey)
 				newSummary := agent.Sessions.GetSummary(opts.SessionKey)
 				messages = agent.ContextBuilder.BuildMessages(
@@ -1332,11 +1341,11 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 }
 
 // forceCompression aggressively reduces context at complete-turn boundaries.
-func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
+func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) bool {
 	history := agent.Sessions.GetHistory(sessionKey)
 	newHistory, droppedCount, compressed := compressedHistory(history)
 	if !compressed {
-		return
+		return false
 	}
 
 	// Update session
@@ -1348,6 +1357,7 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 		"dropped_msgs": droppedCount,
 		"new_count":    len(newHistory),
 	})
+	return true
 }
 
 // GetStartupInfo returns information about loaded tools and skills for logging.
@@ -1559,8 +1569,7 @@ func (al *AgentLoop) summarizeBatch(
 }
 
 // estimateTokens estimates the number of tokens in a message list.
-// Uses a safe heuristic of 2.5 characters per token to account for CJK and other
-// overheads better than the previous 3 chars/token.
+// Uses a conservative serialized multilingual heuristic.
 func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
 	return estimateMessageTokens(messages)
 }

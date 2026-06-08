@@ -2,31 +2,42 @@ package agent
 
 import (
 	"encoding/json"
-	"fmt"
 	"unicode/utf8"
 
 	"github.com/nicolasramos/odooclaw/pkg/providers"
 )
 
-// estimateMessageTokens estimates serialized message cost using a conservative
-// 2.5-runes-per-token heuristic.
+// estimateMessageTokens applies a conservative lower bound to serialized
+// message cost: at most four ASCII bytes or two UTF-8 multibyte bytes per
+// estimated token. This keeps ordinary ASCII near four characters per token,
+// while budgeting at least 1.5 tokens per three-byte CJK rune and two tokens per
+// four-byte emoji rune. It is a safety estimate, not a provider tokenizer.
 func estimateMessageTokens(messages []providers.Message) int {
-	totalRunes := 0
-	for _, message := range messages {
-		encoded, err := json.Marshal(message)
-		if err == nil {
-			totalRunes += utf8.RuneCount(encoded)
-		}
-		for _, call := range message.ToolCalls {
-			// These compatibility fields are intentionally excluded from JSON.
-			totalRunes += utf8.RuneCountInString(call.Name)
-			totalRunes += utf8.RuneCountInString(call.ThoughtSignature)
-			if encodedArgs, err := json.Marshal(call.Arguments); err == nil {
-				totalRunes += utf8.RuneCount(encodedArgs)
+	weightedBytes := 0
+	count := func(encoded []byte) {
+		for _, b := range encoded {
+			weightedBytes++
+			if b >= utf8.RuneSelf {
+				weightedBytes++
 			}
 		}
 	}
-	return (totalRunes*2 + 4) / 5
+
+	for _, message := range messages {
+		encoded, err := json.Marshal(message)
+		if err == nil {
+			count(encoded)
+		}
+		for _, call := range message.ToolCalls {
+			// These compatibility fields are intentionally excluded from JSON.
+			count([]byte(call.Name))
+			count([]byte(call.ThoughtSignature))
+			if encodedArgs, err := json.Marshal(call.Arguments); err == nil {
+				count(encodedArgs)
+			}
+		}
+	}
+	return (weightedBytes + 3) / 4
 }
 
 // compressedHistory drops complete oldest turns. A turn boundary starts at a
@@ -68,17 +79,5 @@ func compressedHistory(history []providers.Message) ([]providers.Message, int, b
 		return history, 0, false
 	}
 
-	note := fmt.Sprintf(
-		"[System Note: Emergency compression dropped %d oldest messages due to context limit]",
-		dropped,
-	)
-	for i := range result {
-		if result[i].Role == "system" {
-			result[i].Content += "\n\n" + note
-			return result, dropped, true
-		}
-	}
-
-	result = append([]providers.Message{{Role: "system", Content: note}}, result...)
 	return result, dropped, true
 }
