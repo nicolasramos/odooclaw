@@ -1001,3 +1001,138 @@ func TestResolveMediaRefs_UsesMetaContentType(t *testing.T) {
 		t.Fatalf("expected jpeg prefix, got %q", result[0].Media[0][:30])
 	}
 }
+
+func TestAgentLoop_HTTP5xxRetry(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &failFirstMockProvider{
+		failures:    1,
+		failError:   fmt.Errorf("API request failed:\n Status: 500\n Body: internal server error"),
+		successResp: "Recovered from server error",
+	}
+
+	al := NewAgentLoop(cfg, msgBus, provider)
+	defaultAgent := al.registry.GetDefaultAgent()
+	sessionKey := "test-session-5xx"
+	defaultAgent.Sessions.GetOrCreate(sessionKey)
+
+	response, err := al.runAgentLoop(
+		context.Background(),
+		defaultAgent,
+		processOptions{
+			SessionKey:      sessionKey,
+			Channel:         "test",
+			ChatID:          "test-chat",
+			UserMessage:     "Trigger",
+			DefaultResponse: defaultResponse,
+		},
+	)
+	if err != nil {
+		t.Fatalf("expected HTTP 500 retry to recover, got error: %v", err)
+	}
+	if response != "Recovered from server error" {
+		t.Fatalf("response = %q, want recovered response", response)
+	}
+	if provider.currentCall != 2 {
+		t.Fatalf("callCount = %d, want 2", provider.currentCall)
+	}
+}
+
+func TestAgentLoop_RateLimitRetry(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &failFirstMockProvider{
+		failures:    1,
+		failError:   fmt.Errorf("HTTP 429: rate limit exceeded"),
+		successResp: "Recovered from rate limit",
+	}
+
+	al := NewAgentLoop(cfg, msgBus, provider)
+	defaultAgent := al.registry.GetDefaultAgent()
+	sessionKey := "test-session-ratelimit"
+	defaultAgent.Sessions.GetOrCreate(sessionKey)
+
+	response, err := al.runAgentLoop(
+		context.Background(),
+		defaultAgent,
+		processOptions{
+			SessionKey:      sessionKey,
+			Channel:         "test",
+			ChatID:          "test-chat",
+			UserMessage:     "Trigger",
+			DefaultResponse: defaultResponse,
+		},
+	)
+	if err != nil {
+		t.Fatalf("expected rate limit retry to recover, got error: %v", err)
+	}
+	if response != "Recovered from rate limit" {
+		t.Fatalf("response = %q, want recovered response", response)
+	}
+}
+
+func TestAgentLoop_NetworkErrorRetry(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &failFirstMockProvider{
+		failures:    1,
+		failError:   fmt.Errorf("connection refused by remote host"),
+		successResp: "Recovered from network error",
+	}
+
+	al := NewAgentLoop(cfg, msgBus, provider)
+	defaultAgent := al.registry.GetDefaultAgent()
+	sessionKey := "test-session-network"
+	defaultAgent.Sessions.GetOrCreate(sessionKey)
+
+	response, err := al.runAgentLoop(
+		context.Background(),
+		defaultAgent,
+		processOptions{
+			SessionKey:      sessionKey,
+			Channel:         "test",
+			ChatID:          "test-chat",
+			UserMessage:     "Trigger",
+			DefaultResponse: defaultResponse,
+		},
+	)
+	if err != nil {
+		t.Fatalf("expected network error retry to recover, got error: %v", err)
+	}
+	if response != "Recovered from network error" {
+		t.Fatalf("response = %q, want recovered response", response)
+	}
+}
