@@ -1049,15 +1049,10 @@ func (al *AgentLoop) runLLMIteration(
 
 			errMsg := strings.ToLower(err.Error())
 
-			// Check if this is a network/HTTP timeout — not a context window error.
-			isTimeoutError := errors.Is(err, context.DeadlineExceeded) ||
-				strings.Contains(errMsg, "deadline exceeded") ||
-				strings.Contains(errMsg, "client.timeout") ||
-				strings.Contains(errMsg, "timed out") ||
-				strings.Contains(errMsg, "timeout exceeded")
+			retryReason, isTransient := transientLLMRetryReason(err)
 
-			// Detect real context window / token limit errors, excluding network timeouts.
-			isContextError := !isTimeoutError && (strings.Contains(errMsg, "context_length_exceeded") ||
+			// Detect real context window / token limit errors, excluding transient errors.
+			isContextError := !isTransient && (strings.Contains(errMsg, "context_length_exceeded") ||
 				strings.Contains(errMsg, "context window") ||
 				strings.Contains(errMsg, "maximum context length") ||
 				strings.Contains(errMsg, "token limit") ||
@@ -1067,10 +1062,11 @@ func (al *AgentLoop) runLLMIteration(
 				strings.Contains(errMsg, "prompt is too long") ||
 				strings.Contains(errMsg, "request too large"))
 
-			if isTimeoutError && retry < maxRetries {
+			if isTransient && retry < maxRetries {
 				backoff := time.Duration(retry+1) * 5 * time.Second
-				logger.WarnCF("agent", "Timeout error, retrying after backoff", map[string]any{
+				logger.WarnCF("agent", "Transient LLM error, retrying after backoff", map[string]any{
 					"error":   err.Error(),
+					"reason":  retryReason,
 					"retry":   retry,
 					"backoff": backoff.String(),
 				})
@@ -1702,4 +1698,38 @@ func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 		return nil
 	}
 	return &routing.RoutePeer{Kind: parentKind, ID: parentID}
+}
+
+// transientLLMRetryReason classifies an LLM error as transient (safe to retry)
+// using the provider error classifier first, then falling back to string patterns.
+// Returns the reason string and true if the error is transient.
+func transientLLMRetryReason(err error) (string, bool) {
+	if err == nil {
+		return "", false
+	}
+
+	// Use the provider error classifier for structured detection.
+	if failErr := providers.ClassifyError(err, "", ""); failErr != nil {
+		switch failErr.Reason {
+		case providers.FailoverTimeout:
+			if failErr.Status >= 500 {
+				return "server_error", true
+			}
+			return "timeout", true
+		case providers.FailoverRateLimit, providers.FailoverOverloaded:
+			return "rate_limit", true
+		}
+	}
+
+	// Fallback: string patterns for network errors not caught by the classifier.
+	errMsg := strings.ToLower(err.Error())
+	if strings.Contains(errMsg, "connection reset") ||
+		strings.Contains(errMsg, "connection refused") ||
+		strings.Contains(errMsg, "broken pipe") ||
+		strings.Contains(errMsg, "no such host") ||
+		strings.Contains(errMsg, "network is unreachable") {
+		return "network", true
+	}
+
+	return "", false
 }
