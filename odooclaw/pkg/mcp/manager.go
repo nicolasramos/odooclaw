@@ -103,21 +103,61 @@ type ServerConnection struct {
 	Client  *mcp.Client
 	Session *mcp.ClientSession
 	Tools   []*mcp.Tool
+
+	callSession clientSession
+	config      config.MCPServerConfig
+}
+
+type clientSession interface {
+	CallTool(context.Context, *mcp.CallToolParams) (*mcp.CallToolResult, error)
+	Close() error
+}
+
+func (c *ServerConnection) activeSession() clientSession {
+	if c.callSession != nil {
+		return c.callSession
+	}
+	return c.Session
+}
+
+type connector func(
+	context.Context,
+	string,
+	config.MCPServerConfig,
+) (*ServerConnection, error)
+
+type reconnectCall struct {
+	done chan struct{}
+	conn *ServerConnection
+	err  error
 }
 
 // Manager manages multiple MCP server connections
 type Manager struct {
-	servers map[string]*ServerConnection
-	mu      sync.RWMutex
-	closed  atomic.Bool    // changed from bool to atomic.Bool to avoid TOCTOU race
-	wg      sync.WaitGroup // tracks in-flight CallTool calls
+	servers    map[string]*ServerConnection
+	reconnects map[string]*reconnectCall
+	connector  connector
+	mu         sync.RWMutex
+	closed     atomic.Bool
+	wg         sync.WaitGroup
+	lifecycle  context.Context
+	cancel     context.CancelFunc
+
+	beforeCallAdmit          func()
+	beforeCloseAdmissionLock func()
 }
 
 // NewManager creates a new MCP manager
 func NewManager() *Manager {
-	return &Manager{
-		servers: make(map[string]*ServerConnection),
+	lifecycle, cancel := context.WithCancel(context.Background())
+	manager := &Manager{
+		servers:    make(map[string]*ServerConnection),
+		reconnects: make(map[string]*reconnectCall),
+		lifecycle:  lifecycle,
+		cancel:     cancel,
 	}
+	manager.connector = manager.connectServer
+	return manager
 }
 
 // LoadFromConfig loads MCP servers from configuration
@@ -242,6 +282,45 @@ func (m *Manager) ConnectServer(
 	name string,
 	cfg config.MCPServerConfig,
 ) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	if m.closed.Load() {
+		m.mu.Unlock()
+		return fmt.Errorf("manager is closed")
+	}
+	m.wg.Add(1)
+	m.mu.Unlock()
+	defer m.wg.Done()
+
+	conn, err := m.connector(m.lifecycle, name, cfg)
+	if err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	if m.closed.Load() {
+		m.mu.Unlock()
+		_ = conn.activeSession().Close()
+		return fmt.Errorf("manager is closed")
+	}
+	old := m.servers[name]
+	m.servers[name] = conn
+	m.mu.Unlock()
+
+	if old != nil {
+		_ = old.activeSession().Close()
+	}
+	return nil
+}
+
+func (m *Manager) connectServer(
+	ctx context.Context,
+	name string,
+	cfg config.MCPServerConfig,
+) (*ServerConnection, error) {
 	logger.InfoCF("mcp", "Connecting to MCP server",
 		map[string]any{
 			"server":     name,
@@ -267,14 +346,14 @@ func (m *Manager) ConnectServer(
 		} else if cfg.Command != "" {
 			transportType = "stdio"
 		} else {
-			return fmt.Errorf("either URL or command must be provided")
+			return nil, fmt.Errorf("either URL or command must be provided")
 		}
 	}
 
 	switch transportType {
 	case "sse", "http":
 		if cfg.URL == "" {
-			return fmt.Errorf("URL is required for SSE/HTTP transport")
+			return nil, fmt.Errorf("URL is required for SSE/HTTP transport")
 		}
 		logger.DebugCF("mcp", "Using SSE/HTTP transport",
 			map[string]any{
@@ -305,7 +384,7 @@ func (m *Manager) ConnectServer(
 		transport = sseTransport
 	case "stdio":
 		if cfg.Command == "" {
-			return fmt.Errorf("command is required for stdio transport")
+			return nil, fmt.Errorf("command is required for stdio transport")
 		}
 		logger.DebugCF("mcp", "Using stdio transport",
 			map[string]any{
@@ -330,7 +409,7 @@ func (m *Manager) ConnectServer(
 		if cfg.EnvFile != "" {
 			envVars, err := loadEnvFile(cfg.EnvFile)
 			if err != nil {
-				return fmt.Errorf("failed to load env file %s: %w", cfg.EnvFile, err)
+				return nil, fmt.Errorf("failed to load env file %s: %w", cfg.EnvFile, err)
 			}
 			for k, v := range envVars {
 				envMap[k] = v
@@ -357,7 +436,7 @@ func (m *Manager) ConnectServer(
 
 		transport = &mcp.CommandTransport{Command: cmd}
 	default:
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"unsupported transport type: %s (supported: stdio, sse, http)",
 			transportType,
 		)
@@ -366,7 +445,7 @@ func (m *Manager) ConnectServer(
 	// Connect to server
 	session, err := client.Connect(ctx, transport, nil)
 	if err != nil {
-		return fmt.Errorf("failed to connect: %w", err)
+		return nil, fmt.Errorf("failed to connect: %w", err)
 	}
 
 	// Get server info
@@ -401,17 +480,13 @@ func (m *Manager) ConnectServer(
 			})
 	}
 
-	// Store connection
-	m.mu.Lock()
-	m.servers[name] = &ServerConnection{
+	return &ServerConnection{
 		Name:    name,
 		Client:  client,
 		Session: session,
 		Tools:   tools,
-	}
-	m.mu.Unlock()
-
-	return nil
+		config:  cfg,
+	}, nil
 }
 
 // GetServers returns all connected servers
@@ -452,6 +527,9 @@ func (m *Manager) CallTool(
 		m.mu.RUnlock()
 		return nil, fmt.Errorf("manager is closed")
 	}
+	if m.beforeCallAdmit != nil {
+		m.beforeCallAdmit()
+	}
 	conn, ok := m.servers[serverName]
 	if ok {
 		m.wg.Add(1) // Add to WaitGroup while holding the lock
@@ -468,7 +546,14 @@ func (m *Manager) CallTool(
 		Arguments: arguments,
 	}
 
-	result, err := conn.Session.CallTool(ctx, params)
+	result, err := conn.activeSession().CallTool(ctx, params)
+	if errors.Is(err, mcp.ErrSessionMissing) {
+		conn, reconnectErr := m.reconnect(ctx, serverName, conn)
+		if reconnectErr != nil {
+			return nil, fmt.Errorf("failed to reconnect server %s: %w", serverName, reconnectErr)
+		}
+		result, err = conn.activeSession().CallTool(ctx, params)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to call tool: %w", err)
 	}
@@ -476,13 +561,109 @@ func (m *Manager) CallTool(
 	return result, nil
 }
 
+func (m *Manager) reconnect(
+	ctx context.Context,
+	serverName string,
+	stale *ServerConnection,
+) (*ServerConnection, error) {
+	m.mu.Lock()
+	if m.closed.Load() {
+		m.mu.Unlock()
+		return nil, fmt.Errorf("manager is closed")
+	}
+
+	current, ok := m.servers[serverName]
+	if !ok {
+		m.mu.Unlock()
+		return nil, fmt.Errorf("server %s not found", serverName)
+	}
+	if current != stale {
+		m.mu.Unlock()
+		return current, nil
+	}
+	if ongoing, ok := m.reconnects[serverName]; ok {
+		m.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ongoing.done:
+			return ongoing.conn, ongoing.err
+		}
+	}
+
+	ongoing := &reconnectCall{done: make(chan struct{})}
+	m.reconnects[serverName] = ongoing
+	m.wg.Add(1)
+	m.mu.Unlock()
+
+	go m.runReconnect(serverName, stale, ongoing)
+	return waitReconnect(ctx, ongoing)
+}
+
+func waitReconnect(ctx context.Context, ongoing *reconnectCall) (*ServerConnection, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-ongoing.done:
+		return ongoing.conn, ongoing.err
+	}
+}
+
+func (m *Manager) runReconnect(
+	serverName string,
+	stale *ServerConnection,
+	ongoing *reconnectCall,
+) {
+	defer m.wg.Done()
+
+	fresh, connectErr := m.connector(m.lifecycle, serverName, stale.config)
+
+	var closeFresh, closeStale *ServerConnection
+	m.mu.Lock()
+	switch {
+	case connectErr != nil:
+		ongoing.err = connectErr
+	case fresh == nil:
+		ongoing.err = fmt.Errorf("connector returned nil connection")
+	case m.closed.Load():
+		ongoing.err = fmt.Errorf("manager is closed")
+		closeFresh = fresh
+	case m.servers[serverName] != stale:
+		ongoing.conn = m.servers[serverName]
+		closeFresh = fresh
+	default:
+		m.servers[serverName] = fresh
+		ongoing.conn = fresh
+		closeStale = stale
+	}
+	delete(m.reconnects, serverName)
+	close(ongoing.done)
+	m.mu.Unlock()
+
+	if closeFresh != nil {
+		_ = closeFresh.activeSession().Close()
+	}
+	if closeStale != nil {
+		_ = closeStale.activeSession().Close()
+	}
+}
+
 // Close closes all server connections
 func (m *Manager) Close() error {
-	// Use Swap to atomically set closed=true and get the previous value
-	// This prevents TOCTOU race with CallTool's closed check
-	if m.closed.Swap(true) {
+	if m.beforeCloseAdmissionLock != nil {
+		m.beforeCloseAdmissionLock()
+	}
+
+	// Synchronize closing with CallTool admission so every successful wg.Add
+	// happens before Wait begins.
+	m.mu.Lock()
+	if m.closed.Load() {
+		m.mu.Unlock()
 		return nil // already closed
 	}
+	m.closed.Store(true)
+	m.cancel()
+	m.mu.Unlock()
 
 	// Wait for all in-flight CallTool calls to finish before closing sessions
 	// After closed=true is set, no new CallTool can start (they check closed first)
@@ -498,7 +679,7 @@ func (m *Manager) Close() error {
 
 	var errs []error
 	for name, conn := range m.servers {
-		if err := conn.Session.Close(); err != nil {
+		if err := conn.activeSession().Close(); err != nil {
 			logger.ErrorCF("mcp", "Failed to close server connection",
 				map[string]any{
 					"server": name,
