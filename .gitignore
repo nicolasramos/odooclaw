@@ -1558,3 +1558,7 @@
 .venv-browser-copilot/lib/python3.9/site-packages/pydantic/_internal/_schema_generation_shared.py
 .venv-browser-copilot/lib/python3.9/site-packages/pydantic/_internal/_known_annotated_metadata.py
 .venv-browser-copilot/lib/python3.9/site-packages/pydantic_core/_pydantic_core.cpython-39-darwin.so
+
+# Internal planning docs
+docs/slices/
+.atl/
