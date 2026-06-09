@@ -2,9 +2,14 @@ package mcp
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -294,5 +299,449 @@ func TestClose_IdempotentOnEmptyManager(t *testing.T) {
 	}
 	if err := mgr.Close(); err != nil {
 		t.Fatalf("second close should be idempotent, got: %v", err)
+	}
+}
+
+type fakeToolSession struct {
+	mu          sync.Mutex
+	results     []*sdkmcp.CallToolResult
+	errs        []error
+	callStarted chan<- struct{}
+	releaseCall <-chan struct{}
+	callCount   atomic.Int32
+	closeCount  atomic.Int32
+}
+
+func (s *fakeToolSession) CallTool(
+	context.Context,
+	*sdkmcp.CallToolParams,
+) (*sdkmcp.CallToolResult, error) {
+	index := int(s.callCount.Add(1)) - 1
+	if s.callStarted != nil {
+		s.callStarted <- struct{}{}
+	}
+	if s.releaseCall != nil {
+		<-s.releaseCall
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if index >= len(s.errs) {
+		return nil, fmt.Errorf("unexpected call %d", index+1)
+	}
+	var result *sdkmcp.CallToolResult
+	if index < len(s.results) {
+		result = s.results[index]
+	}
+	return result, s.errs[index]
+}
+
+func (s *fakeToolSession) Close() error {
+	s.closeCount.Add(1)
+	return nil
+}
+
+func testConnection(name string, session clientSession) *ServerConnection {
+	return &ServerConnection{
+		Name:        name,
+		callSession: session,
+		config:      config.MCPServerConfig{Enabled: true, URL: "http://example.test"},
+	}
+}
+
+func TestCallTool_RetriesOnlyErrSessionMissing(t *testing.T) {
+	tests := []struct {
+		name          string
+		firstErr      error
+		wantReconnect bool
+	}{
+		{
+			name:          "sentinel wrapped",
+			firstErr:      fmt.Errorf("request failed: %w", sdkmcp.ErrSessionMissing),
+			wantReconnect: true,
+		},
+		{
+			name:     "similar text is not sentinel",
+			firstErr: errors.New("request failed: session not found"),
+		},
+		{
+			name:     "ambiguous EOF",
+			firstErr: errors.New("EOF"),
+		},
+		{
+			name:     "context cancellation",
+			firstErr: context.Canceled,
+		},
+		{
+			name:     "generic transport error",
+			firstErr: errors.New("HTTP 500"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldSession := &fakeToolSession{errs: []error{tt.firstErr}}
+			newSession := &fakeToolSession{
+				results: []*sdkmcp.CallToolResult{{}},
+				errs:    []error{nil},
+			}
+			mgr := NewManager()
+			mgr.servers["odoo"] = testConnection("odoo", oldSession)
+			var reconnects atomic.Int32
+			mgr.connector = func(
+				context.Context,
+				string,
+				config.MCPServerConfig,
+			) (*ServerConnection, error) {
+				reconnects.Add(1)
+				return testConnection("odoo", newSession), nil
+			}
+
+			result, err := mgr.CallTool(context.Background(), "odoo", "write", nil)
+			if tt.wantReconnect {
+				if err != nil {
+					t.Fatalf("expected retry success, got: %v", err)
+				}
+				if result == nil {
+					t.Fatal("expected retry result")
+				}
+				if reconnects.Load() != 1 {
+					t.Fatalf("expected one reconnect, got %d", reconnects.Load())
+				}
+				if newSession.callCount.Load() != 1 {
+					t.Fatalf("expected one retry, got %d", newSession.callCount.Load())
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatal("expected original call error")
+			}
+			if reconnects.Load() != 0 {
+				t.Fatalf("unsafe reconnect for ambiguous error: %d", reconnects.Load())
+			}
+			if newSession.callCount.Load() != 0 {
+				t.Fatalf("unsafe retry for ambiguous error: %d", newSession.callCount.Load())
+			}
+		})
+	}
+}
+
+func TestCallTool_SecondSessionMissingDoesNotRetryAgain(t *testing.T) {
+	oldSession := &fakeToolSession{errs: []error{sdkmcp.ErrSessionMissing}}
+	newSession := &fakeToolSession{errs: []error{sdkmcp.ErrSessionMissing}}
+	mgr := NewManager()
+	mgr.servers["odoo"] = testConnection("odoo", oldSession)
+	var reconnects atomic.Int32
+	mgr.connector = func(
+		context.Context,
+		string,
+		config.MCPServerConfig,
+	) (*ServerConnection, error) {
+		reconnects.Add(1)
+		return testConnection("odoo", newSession), nil
+	}
+
+	_, err := mgr.CallTool(context.Background(), "odoo", "write", nil)
+	if !errors.Is(err, sdkmcp.ErrSessionMissing) {
+		t.Fatalf("expected second session missing error, got: %v", err)
+	}
+	if reconnects.Load() != 1 {
+		t.Fatalf("expected exactly one reconnect, got %d", reconnects.Load())
+	}
+	if oldSession.callCount.Load() != 1 || newSession.callCount.Load() != 1 {
+		t.Fatalf(
+			"expected exactly two calls, got old=%d new=%d",
+			oldSession.callCount.Load(),
+			newSession.callCount.Load(),
+		)
+	}
+}
+
+func TestCallTool_ConcurrentSessionMissingDeduplicatesReconnect(t *testing.T) {
+	const callers = 16
+
+	staleCallsStarted := make(chan struct{}, callers)
+	releaseStaleCalls := make(chan struct{})
+	oldSession := &fakeToolSession{
+		errs:        make([]error, callers),
+		callStarted: staleCallsStarted,
+		releaseCall: releaseStaleCalls,
+	}
+	for i := range oldSession.errs {
+		oldSession.errs[i] = sdkmcp.ErrSessionMissing
+	}
+	newSession := &fakeToolSession{
+		results: make([]*sdkmcp.CallToolResult, callers),
+		errs:    make([]error, callers),
+	}
+	for i := range newSession.results {
+		newSession.results[i] = &sdkmcp.CallToolResult{}
+	}
+	mgr := NewManager()
+	mgr.servers["odoo"] = testConnection("odoo", oldSession)
+	reconnectStarted := make(chan struct{})
+	releaseReconnect := make(chan struct{})
+	var reconnects atomic.Int32
+	mgr.connector = func(
+		context.Context,
+		string,
+		config.MCPServerConfig,
+	) (*ServerConnection, error) {
+		if reconnects.Add(1) == 1 {
+			close(reconnectStarted)
+		}
+		<-releaseReconnect
+		return testConnection("odoo", newSession), nil
+	}
+
+	errs := make(chan error, callers)
+	var wg sync.WaitGroup
+	for range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := mgr.CallTool(context.Background(), "odoo", "write", nil)
+			errs <- err
+		}()
+	}
+
+	for range callers {
+		<-staleCallsStarted
+	}
+	if oldSession.callCount.Load() != callers {
+		t.Fatalf("expected all %d callers on stale session, got %d", callers, oldSession.callCount.Load())
+	}
+	close(releaseStaleCalls)
+	<-reconnectStarted
+	close(releaseReconnect)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("expected retry success, got: %v", err)
+		}
+	}
+	if reconnects.Load() != 1 {
+		t.Fatalf("expected one deduplicated reconnect, got %d", reconnects.Load())
+	}
+	if oldSession.closeCount.Load() != 1 {
+		t.Fatalf("expected stale session closed once, got %d", oldSession.closeCount.Load())
+	}
+	if newSession.callCount.Load() != callers {
+		t.Fatalf("expected %d retries, got %d", callers, newSession.callCount.Load())
+	}
+}
+
+func TestClose_WaitsForCallAdmittedBeforeCloseWait(t *testing.T) {
+	sessionCallStarted := make(chan struct{}, 1)
+	releaseSessionCall := make(chan struct{})
+	session := &fakeToolSession{
+		results:     []*sdkmcp.CallToolResult{{}},
+		errs:        []error{nil},
+		callStarted: sessionCallStarted,
+		releaseCall: releaseSessionCall,
+	}
+	mgr := NewManager()
+	mgr.servers["odoo"] = testConnection("odoo", session)
+
+	admissionReached := make(chan struct{})
+	releaseAdmission := make(chan struct{})
+	mgr.beforeCallAdmit = func() {
+		close(admissionReached)
+		<-releaseAdmission
+	}
+	closeAdmissionStarted := make(chan struct{})
+	mgr.beforeCloseAdmissionLock = func() {
+		close(closeAdmissionStarted)
+	}
+
+	callDone := make(chan error, 1)
+	go func() {
+		_, err := mgr.CallTool(context.Background(), "odoo", "read", nil)
+		callDone <- err
+	}()
+	<-admissionReached
+
+	closeDone := make(chan error, 1)
+	go func() {
+		closeDone <- mgr.Close()
+	}()
+	<-closeAdmissionStarted
+	close(releaseAdmission)
+	<-sessionCallStarted
+
+	select {
+	case err := <-closeDone:
+		t.Fatalf("Close returned before admitted call completed: %v", err)
+	default:
+	}
+
+	close(releaseSessionCall)
+	if err := <-callDone; err != nil {
+		t.Fatalf("call failed: %v", err)
+	}
+	if err := <-closeDone; err != nil {
+		t.Fatalf("close failed: %v", err)
+	}
+}
+
+func TestCallTool_CanceledReconnectLeaderDoesNotPoisonWaiter(t *testing.T) {
+	staleCallsStarted := make(chan struct{}, 2)
+	oldSession := &fakeToolSession{
+		errs:        []error{sdkmcp.ErrSessionMissing, sdkmcp.ErrSessionMissing},
+		callStarted: staleCallsStarted,
+	}
+	newSession := &fakeToolSession{
+		results: []*sdkmcp.CallToolResult{{}},
+		errs:    []error{nil},
+	}
+	mgr := NewManager()
+	mgr.servers["odoo"] = testConnection("odoo", oldSession)
+
+	reconnectStarted := make(chan struct{})
+	releaseReconnect := make(chan struct{})
+	reconnectCanceled := make(chan struct{}, 1)
+	mgr.connector = func(
+		ctx context.Context,
+		_ string,
+		_ config.MCPServerConfig,
+	) (*ServerConnection, error) {
+		close(reconnectStarted)
+		select {
+		case <-ctx.Done():
+			reconnectCanceled <- struct{}{}
+			return nil, ctx.Err()
+		case <-releaseReconnect:
+			return testConnection("odoo", newSession), nil
+		}
+	}
+
+	leaderCtx, cancelLeader := context.WithCancel(context.Background())
+	leaderDone := make(chan error, 1)
+	go func() {
+		_, err := mgr.CallTool(leaderCtx, "odoo", "write", nil)
+		leaderDone <- err
+	}()
+	<-reconnectStarted
+
+	waiterDone := make(chan error, 1)
+	go func() {
+		_, err := mgr.CallTool(context.Background(), "odoo", "write", nil)
+		waiterDone <- err
+	}()
+	<-staleCallsStarted
+	<-staleCallsStarted
+
+	cancelLeader()
+	if err := <-leaderDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected canceled leader wait, got: %v", err)
+	}
+	select {
+	case <-reconnectCanceled:
+		t.Fatal("leader cancellation canceled shared reconnect")
+	default:
+	}
+	select {
+	case err := <-waiterDone:
+		t.Fatalf("waiter returned before shared reconnect completed: %v", err)
+	default:
+	}
+
+	close(releaseReconnect)
+	if err := <-waiterDone; err != nil {
+		t.Fatalf("waiter retry failed: %v", err)
+	}
+	if newSession.callCount.Load() != 1 {
+		t.Fatalf("expected one waiter retry, got %d", newSession.callCount.Load())
+	}
+	if err := mgr.Close(); err != nil {
+		t.Fatalf("close failed: %v", err)
+	}
+}
+
+func TestClose_CancelsReconnectLifecycle(t *testing.T) {
+	oldSession := &fakeToolSession{errs: []error{sdkmcp.ErrSessionMissing}}
+	mgr := NewManager()
+	mgr.servers["odoo"] = testConnection("odoo", oldSession)
+
+	reconnectStarted := make(chan struct{})
+	reconnectCanceled := make(chan struct{})
+	mgr.connector = func(
+		ctx context.Context,
+		_ string,
+		_ config.MCPServerConfig,
+	) (*ServerConnection, error) {
+		close(reconnectStarted)
+		<-ctx.Done()
+		close(reconnectCanceled)
+		return nil, ctx.Err()
+	}
+
+	callDone := make(chan error, 1)
+	go func() {
+		_, err := mgr.CallTool(context.Background(), "odoo", "write", nil)
+		callDone <- err
+	}()
+	<-reconnectStarted
+
+	if err := mgr.Close(); err != nil {
+		t.Fatalf("close failed: %v", err)
+	}
+	<-reconnectCanceled
+	if err := <-callDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected lifecycle cancellation error, got: %v", err)
+	}
+	if oldSession.closeCount.Load() != 1 {
+		t.Fatalf("expected stale session closed once, got %d", oldSession.closeCount.Load())
+	}
+}
+
+func TestClose_DuringReconnectClosesNewAndStaleSessions(t *testing.T) {
+	oldSession := &fakeToolSession{errs: []error{sdkmcp.ErrSessionMissing}}
+	newSession := &fakeToolSession{errs: []error{nil}}
+	mgr := NewManager()
+	mgr.servers["odoo"] = testConnection("odoo", oldSession)
+	reconnectStarted := make(chan struct{})
+	releaseReconnect := make(chan struct{})
+	mgr.connector = func(
+		context.Context,
+		string,
+		config.MCPServerConfig,
+	) (*ServerConnection, error) {
+		close(reconnectStarted)
+		<-releaseReconnect
+		return testConnection("odoo", newSession), nil
+	}
+
+	callErr := make(chan error, 1)
+	go func() {
+		_, err := mgr.CallTool(context.Background(), "odoo", "write", nil)
+		callErr <- err
+	}()
+	<-reconnectStarted
+
+	closeErr := make(chan error, 1)
+	go func() {
+		closeErr <- mgr.Close()
+	}()
+	for !mgr.closed.Load() {
+		runtime.Gosched()
+	}
+	close(releaseReconnect)
+
+	if err := <-callErr; err == nil || !strings.Contains(err.Error(), "manager is closed") {
+		t.Fatalf("expected manager closed error, got: %v", err)
+	}
+	if err := <-closeErr; err != nil {
+		t.Fatalf("close failed: %v", err)
+	}
+	if oldSession.closeCount.Load() != 1 {
+		t.Fatalf("expected stale session closed once, got %d", oldSession.closeCount.Load())
+	}
+	if newSession.closeCount.Load() != 1 {
+		t.Fatalf("expected new session closed once, got %d", newSession.closeCount.Load())
+	}
+	if len(mgr.GetServers()) != 0 {
+		t.Fatal("expected no server retained after close")
 	}
 }
