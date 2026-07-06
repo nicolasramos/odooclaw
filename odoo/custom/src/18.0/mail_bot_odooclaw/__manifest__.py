@@ -7,8 +7,8 @@
     "license": "AGPL-3",
     "depends": ["mail"],
     "data": [
-        "security/odooclaw_security.xml",
         "data/odooclaw_bot_data.xml",
+        "security/odooclaw_security.xml",
     ],
     "installable": True,
     "application": False,
