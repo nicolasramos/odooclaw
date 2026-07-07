@@ -124,6 +124,15 @@ class MailThread(models.AbstractModel):
                 payload["reply_res_id"] = private_channel.id
 
             # We use threading to not block the current transaction
+
+            # Generate reply token — allows OdooClaw to identify solicited replies
+            reply_token_rec = self.env["mail.odooclaw.reply.token"].sudo()._generate(
+                model=payload["reply_model"],
+                res_id=payload["reply_res_id"],
+                message_id=message.id,
+            )
+            payload["reply_token"] = reply_token_rec.token
+
             webhook_url = (
                 self.env["ir.config_parameter"]
                 .sudo()
