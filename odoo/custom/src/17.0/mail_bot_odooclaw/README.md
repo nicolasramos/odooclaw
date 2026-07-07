@@ -2,6 +2,8 @@
 
 > **Fork Notice**: This Odoo module is part of the [OdooClaw](https://github.com/nicolasramos/odooclaw) project, which is a fork of [PicoClaw](https://github.com/sipeed/picoclaw) by [Sipeed], integrated with Odoo ERP.
 
+> **⚠️ SECURITY WARNING**: The `/odooclaw/reply` and `/odooclaw/call_kw_as_user` endpoints are **NOT safe for public exposure**. They must be protected by network isolation AND configured with `odooclaw.reply_token`. See the [Security](#security) section below.
+
 ## Version Compatibility
 
 | Version | Odoo | Channel Model | Member Field |
@@ -208,3 +210,53 @@ rules, and company access of the requesting Odoo user.
 
 For production, configure `ODOO_USERNAME` with a dedicated technical user in
 the **OdooClaw Delegated RPC** group instead of a general-purpose administrator.
+
+## Security
+
+### Threat Model
+
+The `/odooclaw/reply` and `/odooclaw/call_kw_as_user` endpoints are designed for
+internal use by the OdooClaw container only. They are **not safe for public
+exposure**. An attacker who can reach these endpoints can:
+
+- Post messages as the `odooclaw_bot` user in any channel (phishing, social
+  engineering, spam)
+- Enumerate records by probing `res_id` values
+- Execute ORM methods as delegated users (via `call_kw_as_user`)
+
+### Protection Layers
+
+The module implements two layers of protection, configured via System Parameters:
+
+1. **IP Allowlist** (`odooclaw.allowed_ips`): Comma-separated list of IP
+   addresses or CIDR networks allowed to call the endpoints. Default empty
+   (disabled — relies on token auth).
+
+2. **Shared Secret Token** (`odooclaw.reply_token`): A secret string that the
+   caller must provide in the `X-OdooClaw-Token` HTTP header. Compared in
+   constant time to prevent timing attacks. Default empty (disabled — relies on
+   IP allowlist).
+
+**Default-deny**: If neither parameter is configured, the request is rejected
+with a 401 response.
+
+### Configuration
+
+Set these values in **Settings > Technical > System Parameters**:
+
+| Key | Value | Description |
+|-----|-------|-------------|
+| `odooclaw.reply_token` | `<random-hex-string>` | Shared secret for endpoint auth |
+| `odooclaw.allowed_ips` | `192.168.1.0/24,10.0.0.0/8` | Allowed client IPs/CIDRs |
+
+Generate a token with: `openssl rand -hex 32`
+
+### Best Practices
+
+- Always configure `odooclaw.reply_token` in production.
+- Use network isolation (Docker internal network, firewall rules) as the primary
+  defense.
+- The IP allowlist does **not** honor `X-Forwarded-For` headers (deliberate:
+  otherwise an attacker can spoof the source IP).
+- Rotate the token periodically and on any suspected compromise.
+- Monitor Odoo logs for `401 Unauthorized` responses to these endpoints.
