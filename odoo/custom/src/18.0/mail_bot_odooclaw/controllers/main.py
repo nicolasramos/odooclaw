@@ -1,4 +1,5 @@
 from odoo import http, SUPERUSER_ID
+from werkzeug.exceptions import HTTPException
 from odoo.http import request
 import json
 from markupsafe import Markup
@@ -84,7 +85,7 @@ class OdooClawController(http.Controller):
 
             return security.error_response("Record not found")
         except Exception as e:
-            if isinstance(e, http.Response):
+            if isinstance(e, (http.Response, HTTPException)):
                 raise
             return security.log_exception(security._logger, "odooclaw_reply error")
 
@@ -193,6 +194,6 @@ class OdooClawController(http.Controller):
                 return security.error_response("Odoo ORM error", status=500)
 
         except Exception as e:
-            if isinstance(e, http.Response):
+            if isinstance(e, (http.Response, HTTPException)):
                 raise
             return security.log_exception(security._logger, "call_kw_as_user error")

@@ -18,16 +18,29 @@ def authorize():
     2. Shared secret token (from ir.config_parameter 'odooclaw.reply_token',
        expected in the X-OdooClaw-Token header)
 
-    Default-deny: if neither is configured, the request is rejected.
+    Default-deny: at least one of the two must be configured AND pass.
+    If neither is configured, the request is rejected.
     The IP check runs first so that a trusted host can recover from a
     misconfigured token.
     """
-    _check_ip_allowlist()
-    _check_token()
+    ip_configured = _check_ip_allowlist()
+    token_configured = _check_token()
+    if not ip_configured and not token_configured:
+        _abort(
+            401,
+            "Unauthorized: no security configuration. "
+            "Set odooclaw.reply_token or odooclaw.allowed_ips",
+        )
 
 
 def _check_ip_allowlist():
-    """Reject the request if the client IP is not in the allowlist."""
+    """
+    Check the client IP against the allowlist.
+
+    Returns True if the allowlist is configured (check was performed),
+    False if no allowlist is configured (check was skipped).
+    Raises _abort if the IP is not allowed.
+    """
     raw = (
         request.env["ir.config_parameter"]
         .sudo()
@@ -35,7 +48,7 @@ def _check_ip_allowlist():
         .strip()
     )
     if not raw:
-        return
+        return False
 
     client_ip = request.httprequest.remote_addr
     if not client_ip:
@@ -46,7 +59,7 @@ def _check_ip_allowlist():
         try:
             network = ipaddress.ip_network(entry, strict=False)
             if ipaddress.ip_address(client_ip) in network:
-                return
+                return True
         except ValueError:
             _logger.warning("odooclaw: invalid IP network in allowlist: %r", entry)
             continue
@@ -55,7 +68,13 @@ def _check_ip_allowlist():
 
 
 def _check_token():
-    """Reject the request if the shared secret token is missing or wrong."""
+    """
+    Check the shared secret token from the X-OdooClaw-Token header.
+
+    Returns True if a token is configured (check was performed),
+    False if no token is configured (check was skipped).
+    Raises _abort if the token is invalid.
+    """
     expected = (
         request.env["ir.config_parameter"]
         .sudo()
@@ -63,19 +82,24 @@ def _check_token():
         .strip()
     )
     if not expected:
-        return
+        return False
 
     actual = request.httprequest.headers.get("X-OdooClaw-Token", "")
     if not secrets.compare_digest(actual, expected):
         _abort(401, "Unauthorized: invalid token")
+    return True
+
+
+from werkzeug.exceptions import HTTPException
 
 
 def _abort(status, reason):
     """Send a JSON error response and raise to short-circuit the handler."""
-    body = json.dumps({"status": "error", "reason": reason})
-    response = request.make_response(body, headers=[("Content-Type", "application/json")])
-    response.status_code = status
-    raise response
+    raise HTTPException(
+        response=request.make_json_response(
+            {"status": "error", "reason": reason}, status=status
+        )
+    )
 
 
 def error_response(reason, status=400):
