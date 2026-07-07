@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="ir_cron_cleanup_reply_tokens" model="ir.cron">
+        <field name="name">OdooClaw: Clean up expired reply tokens</field>
+        <field name="model_id" ref="model_mail_odooclaw_reply_token"/>
+        <field name="state">code</field>
+        <field name="code">model._cleanup_expired()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">hours</field>
+        <field name="numbercall">-1</field>
+        <field name="active">True</field>
+    </record>
+
+    <record id="ir_config_parameter_reply_token_ttl" model="ir.config_parameter">
+        <field name="key">odooclaw.reply_token_ttl</field>
+        <field name="value">300</field>
+    </record>
+</odoo>

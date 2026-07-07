@@ -31,6 +31,7 @@ class OdooClawController(http.Controller):
             message_body = payload.get("message", "")
             attachment_ids = payload.get("attachment_ids", [])
             voice_metadata_ids = payload.get("voice_metadata_ids", [])
+            reply_token = payload.get("reply_token", "")
 
             if not model_name or not res_id:
                 return request.make_json_response(
@@ -40,6 +41,23 @@ class OdooClawController(http.Controller):
             if not message_body and not attachment_ids:
                 return request.make_json_response(
                     {"status": "error", "reason": "Missing message or attachments"}
+                )
+
+            # Validate reply token — ensures this reply was solicited by a human message
+            if not reply_token:
+                return request.make_json_response(
+                    {"status": "error", "reason": "Missing reply_token"},
+                    status=401
+                )
+            token_valid = (
+                request.env["mail.odooclaw.reply.token"]
+                .sudo()
+                ._validate(reply_token, model_name, res_id)
+            )
+            if not token_valid:
+                return request.make_json_response(
+                    {"status": "error", "reason": "Invalid or expired reply_token"},
+                    status=403
                 )
 
             bot_user = (
