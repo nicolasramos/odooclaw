@@ -18,26 +18,25 @@ class TestSecurityHelpers(TransactionCase):
             "odooclaw.allowed_ips", "192.168.1.0/24,10.0.0.0/8"
         )
 
-    def test_default_deny_no_token_no_ip(self):
-        """Without any config, requests should be denied."""
-        self.env["ir.config_parameter"].sudo().set_param("odooclaw.reply_token", "")
-        self.env["ir.config_parameter"].sudo().set_param("odooclaw.allowed_ips", "")
+    def test_default_deny_no_config(self):
+        """Without any config, authorize() should reject the request."""
+        from ..controllers.security import authorize, _abort
 
-        from odoo.http import request
-        from ..controllers.security import _check_token, _check_ip_allowlist
-
-        # Both checks should pass (skip) when no config is set
-        # This is by design: if neither is configured, the authorize() call
-        # will pass both checks but the endpoint will still be protected
-        # because at least one MUST be configured for production use.
-        # The README documents this as a deployment requirement.
-        self.assertTrue(True)
+        with patch("odoo.http.request") as mock_request:
+            mock_request.env = self.env
+            mock_request.env["ir.config_parameter"].sudo().get_param = (
+                lambda key, default="": ""
+            )
+            mock_request.httprequest.remote_addr = "10.0.0.1"
+            mock_request.httprequest.headers.get = lambda key, default="": ""
+            with self.assertRaises(Exception) as ctx:
+                authorize()
+            self.assertIn("Unauthorized", str(ctx.exception))
 
     def test_ip_allowed_cidr(self):
         """Test that IPs within allowed CIDR ranges pass."""
         from ..controllers.security import _check_ip_allowlist
 
-        # Mock the request to have an allowed IP
         with patch("odoo.http.request") as mock_request:
             mock_request.env = self.env
             mock_request.httprequest.remote_addr = "192.168.1.50"
@@ -48,12 +47,12 @@ class TestSecurityHelpers(TransactionCase):
                     else default
                 )
             )
-            # Should not raise
-            _check_ip_allowlist()
+            result = _check_ip_allowlist()
+            self.assertTrue(result)
 
     def test_ip_not_allowed(self):
         """Test that IPs outside allowed ranges are rejected."""
-        from ..controllers.security import _check_ip_allowlist, _abort
+        from ..controllers.security import _check_ip_allowlist
 
         with patch("odoo.http.request") as mock_request:
             mock_request.env = self.env
@@ -84,8 +83,8 @@ class TestSecurityHelpers(TransactionCase):
                     else default
                 )
             )
-            # Should not raise
-            _check_token()
+            result = _check_token()
+            self.assertTrue(result)
 
     def test_token_invalid(self):
         """Test that an invalid token is rejected."""
@@ -122,3 +121,41 @@ class TestSecurityHelpers(TransactionCase):
 
         result = error_response("Bad request")
         self.assertEqual(result.status_code, 400)
+
+    def test_authorize_passes_with_token_only(self):
+        """authorize() should pass when only token is configured and valid."""
+        from ..controllers.security import authorize
+
+        with patch("odoo.http.request") as mock_request:
+            mock_request.env = self.env
+            mock_request.httprequest.remote_addr = "10.0.0.1"
+            mock_request.httprequest.headers.get = lambda key, default="": (
+                "test-token-123" if key == "X-OdooClaw-Token" else default
+            )
+            mock_request.env["ir.config_parameter"].sudo().get_param = (
+                lambda key, default="": (
+                    "test-token-123"
+                    if key == "odooclaw.reply_token"
+                    else ""
+                )
+            )
+            # Should not raise
+            authorize()
+
+    def test_authorize_passes_with_ip_only(self):
+        """authorize() should pass when only IP allowlist is configured and IP matches."""
+        from ..controllers.security import authorize
+
+        with patch("odoo.http.request") as mock_request:
+            mock_request.env = self.env
+            mock_request.httprequest.remote_addr = "192.168.1.50"
+            mock_request.httprequest.headers.get = lambda key, default="": ""
+            mock_request.env["ir.config_parameter"].sudo().get_param = (
+                lambda key, default="": (
+                    "192.168.1.0/24"
+                    if key == "odooclaw.allowed_ips"
+                    else ""
+                )
+            )
+            # Should not raise
+            authorize()
