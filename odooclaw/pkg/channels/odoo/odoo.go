@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"sync"
+
 	"github.com/nicolasramos/odooclaw/pkg/bus"
 	"github.com/nicolasramos/odooclaw/pkg/channels"
 	"github.com/nicolasramos/odooclaw/pkg/config"
@@ -21,8 +23,9 @@ import (
 
 type OdooChannel struct {
 	*channels.BaseChannel
-	config config.OdooConfig
-	client *http.Client
+	config        config.OdooConfig
+	client        *http.Client
+	pendingTokens sync.Map // replyChatID -> replyToken (string), single-use
 }
 
 type OdooWebhookPayload struct {
@@ -38,12 +41,14 @@ type OdooWebhookPayload struct {
 	IsDM              bool   `json:"is_dm"`
 	CompanyID         int    `json:"company_id"`
 	AllowedCompanyIDs []int  `json:"allowed_company_ids"`
+	ReplyToken        string `json:"reply_token,omitempty"`
 }
 
 type OdooReplyPayload struct {
-	Model   string `json:"model"`
-	ResID   int    `json:"res_id"`
-	Message string `json:"message"`
+	Model      string `json:"model"`
+	ResID      int    `json:"res_id"`
+	Message    string `json:"message"`
+	ReplyToken string `json:"reply_token,omitempty"`
 }
 
 func NewOdooChannel(cfg config.OdooConfig, messageBus *bus.MessageBus) (*OdooChannel, error) {
@@ -94,6 +99,15 @@ func (c *OdooChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		Model:   modelName,
 		ResID:   resID,
 		Message: utils.RemoveReasoning(msg.Content),
+	}
+
+	// Include reply token if one was registered for this chatID (single-use)
+	if token, ok := c.pendingTokens.LoadAndDelete(msg.ChatID); ok {
+		reply.ReplyToken = token.(string)
+	} else {
+		// No token — Odoo would reject this reply anyway, skip LLM cost
+		slog.Warn("No reply token for chatID, skipping send", "chatID", msg.ChatID)
+		return nil
 	}
 
 	jsonData, err := json.Marshal(reply)
@@ -246,6 +260,14 @@ func (c *OdooChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			metadata["allowed_company_ids"] = string(b)
 		}
 	}
+
+	// Reject webhook if no reply token — Odoo did not generate one
+	if payload.ReplyToken == "" {
+		slog.Warn("Rejected Odoo webhook: missing reply_token", "model", payload.Model, "res_id", payload.ResID)
+		http.Error(w, "Missing reply_token", http.StatusBadRequest)
+		return
+	}
+	c.pendingTokens.Store(replyChatID, payload.ReplyToken)
 
 	c.HandleMessage(r.Context(), peer, strconv.Itoa(payload.MessageID), senderID, replyChatID, content, mediaPaths, metadata, sender)
 
