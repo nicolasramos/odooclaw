@@ -91,7 +91,7 @@ class OdooClawController(http.Controller):
             # Perform action as the bot user to circumvent public access rights
             record = request.env[model_name].sudo().browse(res_id)
             if record.exists():
-                record.with_user(bot_user).message_post(**post_values)
+                record.with_user(bot_user).sudo().message_post(**post_values)
 
                 # Clear typing indicator after replying
                 if model_name == "discuss.channel":
