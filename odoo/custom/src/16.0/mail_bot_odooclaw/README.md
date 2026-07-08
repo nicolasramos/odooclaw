@@ -178,6 +178,41 @@ ODOO_PASSWORD="your_odoo_api_key"
 
 Docker Compose will automatically load these variables, allowing references like `${OPENAI_API_KEY}` in your YAML file to work correctly.
 
+
+## Reply Token Security
+
+To prevent unsolicited replies, this module uses a **single-use reply token** mechanism.
+
+### How it works
+
+When a human message triggers the OdooClaw webhook, Odoo generates a UUID token
+tied to the exact message context (`model`, `res_id`, `message_id`) and includes
+it in the webhook payload. OdooClaw returns this token in the reply payload.
+The controller validates the token before posting any message:
+
+- Token must exist, be unused, and not expired
+- `model` and `res_id` must match the original message context
+- Token is consumed on first use (single-use)
+
+This ensures OdooClaw can only post in the chatter of a record where a human
+actually asked something, preventing any unsolicited write.
+
+### Configuration
+
+| System Parameter | Default | Description |
+|---|---|---|
+| `odooclaw.reply_token_ttl` | `300` | Token lifetime in seconds |
+
+To adjust the TTL:
+
+1. Go to **Settings → Technical → System Parameters**
+2. Set `odooclaw.reply_token_ttl` to the desired value in seconds
+
+### Cleanup
+
+A scheduled action runs hourly to purge expired and consumed tokens:
+**Settings → Technical → Scheduled Actions → OdooClaw: Clean up expired reply tokens**
+
 ## Installation
 
 1. Make sure you have the base `mail` module installed.
