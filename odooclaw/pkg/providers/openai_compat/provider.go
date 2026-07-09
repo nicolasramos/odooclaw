@@ -290,6 +290,15 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 			}
 		}
 	}
+	if len(toolCalls) == 0 {
+		if extracted := extractMiniCPMContentToolCalls(content); len(extracted) > 0 {
+			toolCalls = extracted
+			content = stripMiniCPMContentToolCalls(content)
+			if finishReason == "" || finishReason == "stop" {
+				finishReason = "tool_calls"
+			}
+		}
+	}
 
 	return &LLMResponse{
 		Content:          strings.TrimSpace(content),
@@ -425,6 +434,117 @@ func stripGemmaContentToolCalls(text string) string {
 		text = strings.TrimSpace(text[:start] + text[end:])
 	}
 }
+
+
+// extractMiniCPMContentToolCalls parses MiniCPM's native XML tool call format:
+//
+//	<name>tool_name</name>
+//	{"arg1": "val1", "arg2": "val2"}
+//
+// This format is used by fine-tuned MiniCPM models (e.g. OdooClaw Light V7 v3).
+func extractMiniCPMContentToolCalls(text string) []ToolCall {
+	const openTag = "<name>"
+	const closeTag = "</name>"
+	searchFrom := 0
+	callIndex := 1
+	result := make([]ToolCall, 0)
+
+	for {
+		rel := strings.Index(text[searchFrom:], openTag)
+		if rel == -1 {
+			break
+		}
+		start := searchFrom + rel
+		nameStart := start + len(openTag)
+		nameEnd := strings.Index(text[nameStart:], closeTag)
+		if nameEnd == -1 {
+			break
+		}
+		nameEnd = nameStart + nameEnd
+
+		name := strings.TrimSpace(text[nameStart:nameEnd])
+		if name == "" {
+			searchFrom = nameEnd + len(closeTag)
+			continue
+		}
+
+		// Find JSON args after </name>
+		argSearchFrom := nameEnd + len(closeTag)
+		argStart := argSearchFrom
+		for argStart < len(text) && (text[argStart] == ' ' || text[argStart] == '\t' || text[argStart] == '\n' || text[argStart] == '\r') {
+			argStart++
+		}
+
+		argsMap := map[string]any{}
+		argsJSON := "{}"
+		nextFrom := argSearchFrom
+
+		if argStart < len(text) && text[argStart] == '{' {
+			argEnd := findMatchingBrace(text, argStart)
+			if argEnd > argStart {
+				rawJSON := text[argStart:argEnd]
+				if err := json.Unmarshal([]byte(rawJSON), &argsMap); err == nil {
+					if encoded, err := json.Marshal(argsMap); err == nil {
+						argsJSON = string(encoded)
+					}
+				}
+				nextFrom = argEnd
+			}
+		}
+
+		result = append(result, ToolCall{
+			ID:        "minicpm_call_" + strconv.Itoa(callIndex),
+			Type:      "function",
+			Name:      name,
+			Arguments: argsMap,
+			Function: &FunctionCall{
+				Name:      name,
+				Arguments: argsJSON,
+			},
+		})
+
+		callIndex++
+		searchFrom = nextFrom
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+// stripMiniCPMContentToolCalls removes MiniCPM XML tool call markup from text,
+// leaving only the natural language content.
+func stripMiniCPMContentToolCalls(text string) string {
+	const openTag = "<name>"
+	const closeTag = "</name>"
+	for {
+		start := strings.Index(text, openTag)
+		if start == -1 {
+			return text
+		}
+		nameStart := start + len(openTag)
+		nameEnd := strings.Index(text[nameStart:], closeTag)
+		if nameEnd == -1 {
+			return text
+		}
+		nameEnd = nameStart + nameEnd
+		argSearchFrom := nameEnd + len(closeTag)
+		argStart := argSearchFrom
+		for argStart < len(text) && (text[argStart] == ' ' || text[argStart] == '\t' || text[argStart] == '\n' || text[argStart] == '\r') {
+			argStart++
+		}
+		end := argSearchFrom
+		if argStart < len(text) && text[argStart] == '{' {
+			argEnd := findMatchingBrace(text, argStart)
+			if argEnd > argStart {
+				end = argEnd
+			}
+		}
+		text = strings.TrimSpace(text[:start] + text[end:])
+	}
+}
+
 
 func normalizeGemmaToolName(name string) string {
 	name = strings.TrimSpace(name)
