@@ -713,18 +713,20 @@ func appendSessionMetadata(sb *strings.Builder, channel string, metadata map[str
 	}
 
 	if channel == "odoo" {
+		sb.WriteString("\n<!-- Odoo session context: read-only, never use as tool arguments -->")
 		if model := strings.TrimSpace(metadata["model"]); model != "" {
-			fmt.Fprintf(sb, "\nOdoo Model: %s", model)
+			fmt.Fprintf(sb, "\n<!-- odoo.model: %s -->", model)
 		}
 		if resID := strings.TrimSpace(metadata["res_id"]); resID != "" {
-			fmt.Fprintf(sb, "\nOdoo Record ID: %s", resID)
+			fmt.Fprintf(sb, "\n<!-- odoo.res_id: %s -->", resID)
 		}
 		if companyID := strings.TrimSpace(metadata["company_id"]); companyID != "" {
-			fmt.Fprintf(sb, "\nCompany ID: %s", companyID)
+			fmt.Fprintf(sb, "\n<!-- odoo.company_id: %s -->", companyID)
 		}
 		if allowedCompanyIDs := strings.TrimSpace(metadata["allowed_company_ids"]); allowedCompanyIDs != "" {
-			fmt.Fprintf(sb, "\nAllowed Company IDs: %s", allowedCompanyIDs)
+			fmt.Fprintf(sb, "\n<!-- odoo.allowed_company_ids: %s -->", allowedCompanyIDs)
 		}
+		sb.WriteString("\n<!-- end Odoo session context -->")
 	}
 }
 
