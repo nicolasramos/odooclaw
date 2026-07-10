@@ -372,16 +372,13 @@ OdooClaw stores its data in the configured workspace (default inside Docker: `/h
 
 ### Heartbeat (Periodic Tasks)
 
-OdooClaw can perform periodic tasks automatically in the background without user intervention. Simply edit the `HEARTBEAT.md` file in your workspace:
+OdooClaw supports periodic background tasks via `HEARTBEAT.md`. Disabled by default
+to avoid unnecessary token consumption. Enable with:
 
-```markdown
-# Periodic Tasks
-
-- Query Odoo for unconfirmed Sales Orders older than 3 days and summarize them.
-- Check the Odoo logs or system parameters to ensure the webhook is correctly set.
+```env
+ODOOCLAW_HEARTBEAT_ENABLED=true
+ODOOCLAW_HEARTBEAT_INTERVAL=30  # minutes, minimum 5
 ```
-
-The agent will read this file every 30 minutes (configurable via `ODOOCLAW_HEARTBEAT_INTERVAL` env var) and execute any tasks using the Odoo skill, silently acting as a background supervisor for your ERP.
 
 ### 🔒 Security Sandbox
 

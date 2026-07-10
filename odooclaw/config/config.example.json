@@ -412,7 +412,7 @@
     }
   },
   "heartbeat": {
-    "enabled": true,
+    "enabled": false,
     "interval": 30
   },
   "devices": {
