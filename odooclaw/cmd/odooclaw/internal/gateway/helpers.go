@@ -156,7 +156,11 @@ func gatewayCmd(debug bool) error {
 	if err := heartbeatService.Start(); err != nil {
 		fmt.Printf("Error starting heartbeat service: %v\n", err)
 	}
-	fmt.Println("✓ Heartbeat service started")
+	if cfg.Heartbeat.Enabled {
+		fmt.Println("✓ Heartbeat service started")
+	} else {
+		fmt.Println("✓ Heartbeat service disabled")
+	}
 
 	stateManager := state.NewManager(cfg.WorkspacePath())
 	deviceService := devices.NewService(devices.Config{
