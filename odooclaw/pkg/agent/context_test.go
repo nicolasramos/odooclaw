@@ -238,10 +238,10 @@ func TestBuildMessagesIncludesOdooScopedMemoryRecall(t *testing.T) {
 	if !strings.Contains(system, "Partner 42 prefers Friday deployment updates") {
 		t.Fatal("expected scoped memory content in system prompt")
 	}
-	if !strings.Contains(system, "Odoo Model: res.partner") {
+	if !strings.Contains(system, "<!-- odoo.model: res.partner -->") {
 		t.Fatal("expected odoo model in dynamic context")
 	}
-	if !strings.Contains(system, "Company ID: 7") {
+	if !strings.Contains(system, "<!-- odoo.company_id: 7 -->") {
 		t.Fatal("expected company id in dynamic context")
 	}
 	if !strings.Contains(system, filepath.Base("entity-res.partner-42.md")) {
