@@ -24,4 +24,5 @@ Features:
     "application": False,
     "auto_install": False,
     "maintainer": "nicolasramos",
+    "development_status": "Beta",
 }
