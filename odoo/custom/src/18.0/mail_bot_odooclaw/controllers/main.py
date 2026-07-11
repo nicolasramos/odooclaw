@@ -94,7 +94,7 @@ class OdooClawController(http.Controller):
         type="http",
         auth="public",
         methods=["POST"],
-        csrf=True,
+        csrf=False,
     )
     def call_kw_as_user(self, **kwargs):
         """
