@@ -122,6 +122,10 @@ func (c *OdooChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
+	if token := os.Getenv("ODOOCLAW_REPLY_TOKEN"); token != "" {
+		req.Header.Set("X-OdooClaw-Token", token)
+	}
+
 	resp, err := c.client.Do(req)
 	if err != nil {
 		slog.Error("Failed to send message to Odoo", "error", err)
