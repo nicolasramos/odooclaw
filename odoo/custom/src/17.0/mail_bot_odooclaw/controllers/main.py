@@ -1,9 +1,11 @@
 from odoo import http, SUPERUSER_ID
+from werkzeug.exceptions import HTTPException
 from odoo.http import request
 import json
 from markupsafe import Markup
 
 from ..utils.markdown_html import markdown_to_safe_html
+from . import security
 
 
 class OdooClawController(http.Controller):
@@ -25,6 +27,8 @@ class OdooClawController(http.Controller):
         }
         """
         try:
+            security.authorize()
+
             payload = json.loads(request.httprequest.data)
             model_name = payload.get("model")
             res_id = payload.get("res_id")
@@ -34,15 +38,10 @@ class OdooClawController(http.Controller):
             reply_token = payload.get("reply_token", "")
 
             if not model_name or not res_id:
-                return request.make_json_response(
-                    {"status": "error", "reason": "Missing parameters"}
-                )
+                return security.error_response("Missing parameters")
 
-            # Must have either a message body or attachments
             if not message_body and not attachment_ids:
-                return request.make_json_response(
-                    {"status": "error", "reason": "Missing message or attachments"}
-                )
+                return security.error_response("Missing message or attachments")
 
             # Validate reply token — ensures this reply was solicited by a human message
             if not reply_token:
@@ -67,35 +66,28 @@ class OdooClawController(http.Controller):
                 .search([("login", "=", "odooclaw_bot")], limit=1)
             )
             if not bot_user:
-                return request.make_json_response(
-                    {"status": "error", "reason": "OdooClaw bot user not found"}
-                )
+                return security.error_response("OdooClaw bot user not found")
 
             message_html = markdown_to_safe_html(message_body)
 
-            # Prepare message_post values
             post_values = {
                 "body": Markup(message_html),
                 "author_id": bot_user.partner_id.id,
                 "message_type": "comment",
             }
 
-            # Add attachments if provided
             if attachment_ids:
                 post_values["attachment_ids"] = [(6, 0, attachment_ids)]
 
-            # Add voice metadata if provided (links attachments to voice player)
             if voice_metadata_ids:
                 post_values["voice_ids"] = [(6, 0, voice_metadata_ids)]
 
-            # Perform action as the bot user to circumvent public access rights
             record = request.env[model_name].sudo().browse(res_id)
             if record.exists():
                 record.with_user(bot_user).sudo().message_post(**post_values)
 
-                # Clear typing indicator after replying
                 if model_name == "mail.channel":
-                    channel_partner = request.env["mail.channel.partner"].search(
+                    channel_partner = request.env["mail.channel.member"].search(
                         [
                             ("channel_id", "=", record.id),
                             ("partner_id", "=", bot_user.partner_id.id),
@@ -107,11 +99,11 @@ class OdooClawController(http.Controller):
 
                 return request.make_json_response({"status": "ok"})
 
-            return request.make_json_response(
-                {"status": "error", "reason": "Record not found"}
-            )
+            return security.error_response("Record not found")
         except Exception as e:
-            return request.make_json_response({"status": "error", "reason": str(e)})
+            if isinstance(e, (http.Response, HTTPException)):
+                raise
+            return security.log_exception(security._logger, "odooclaw_reply error")
 
     @http.route(
         "/odooclaw/call_kw_as_user",
@@ -133,6 +125,8 @@ class OdooClawController(http.Controller):
         }
         """
         try:
+            security.authorize()
+
             payload = json.loads(request.httprequest.data)
             user_id = payload.get("user_id")
             model = payload.get("model")
@@ -142,19 +136,12 @@ class OdooClawController(http.Controller):
             context_dict = payload.get("context") or {}
 
             if not user_id or not model or not method:
-                return request.make_json_response(
-                    {"status": "error", "reason": "Missing user_id, model, or method"}
-                )
+                return security.error_response("Missing user_id, model, or method")
 
-            # Security: Verify the caller is an internal OdooClaw/Admin session
-            # For now, we assume if you can hit this and you have a valid session id
-            # (which the Python MCP server does), you are authorized.
             if not request.session.uid:
-                return request.make_json_response(
-                    {
-                        "status": "error",
-                        "reason": "Unauthorized. Must be logged in via session.",
-                    }
+                return security.error_response(
+                    "Unauthorized. Must be logged in via session.",
+                    status=401,
                 )
 
             caller = request.env.user
@@ -166,27 +153,20 @@ class OdooClawController(http.Controller):
                 or caller.has_group("mail_bot_odooclaw.group_odooclaw_delegator")
                 or caller.has_group("base.group_system")
             ):
-                return request.make_json_response(
-                    {
-                        "status": "error",
-                        "reason": "Unauthorized. Delegated RPC permission required.",
-                    }
+                return security.error_response(
+                    "Unauthorized. Delegated RPC permission required.",
+                    status=401,
                 )
 
             try:
                 user_id = int(user_id)
             except (TypeError, ValueError):
-                return request.make_json_response(
-                    {"status": "error", "reason": "Invalid user_id"}
-                )
+                return security.error_response("Invalid user_id")
 
             target_user = request.env["res.users"].sudo().browse(user_id)
             if user_id == SUPERUSER_ID or not target_user.exists() or not target_user.active:
-                return request.make_json_response(
-                    {"status": "error", "reason": "Invalid delegated user"}
-                )
+                return security.error_response("Invalid delegated user")
 
-            # Merge explicit context from caller if provided
             if not isinstance(kwargs_dict, dict):
                 kwargs_dict = {}
             if not isinstance(context_dict, dict):
@@ -195,10 +175,8 @@ class OdooClawController(http.Controller):
             merged_context = dict(request.env.context)
             merged_context.update(context_dict)
 
-            # Switch environment to the requested user with provided context
             safe_env = request.env(user=user_id, context=merged_context)
 
-            # Execute the method safely
             try:
                 recs = safe_env[model]
                 if args and (
@@ -225,12 +203,9 @@ class OdooClawController(http.Controller):
                         result = result.ids
                 return request.make_json_response({"status": "ok", "result": result})
             except Exception as orm_error:
-                return request.make_json_response(
-                    {
-                        "status": "error",
-                        "reason": f"Odoo Access/ORM Error: {str(orm_error)}",
-                    }
-                )
+                return security.error_response("Odoo ORM error", status=500)
 
         except Exception as e:
-            return request.make_json_response({"status": "error", "reason": str(e)})
+            if isinstance(e, (http.Response, HTTPException)):
+                raise
+            return security.log_exception(security._logger, "call_kw_as_user error")
