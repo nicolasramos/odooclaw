@@ -13,6 +13,9 @@ func extractToolCallsFromText(text string) []ToolCall {
 	if tc := extractWrappedToolCalls(text); len(tc) > 0 {
 		return tc
 	}
+	if tc := extractLFMToolCalls(text); len(tc) > 0 {
+		return tc
+	}
 	if tc := extractGemmaToolCalls(text); len(tc) > 0 {
 		return tc
 	}
@@ -22,6 +25,7 @@ func extractToolCallsFromText(text string) []ToolCall {
 // stripToolCallsFromText removes tool call JSON from response text.
 func stripToolCallsFromText(text string) string {
 	stripped := stripWrappedToolCalls(text)
+	stripped = stripLFMToolCalls(stripped)
 	stripped = stripGemmaToolCalls(stripped)
 	return strings.TrimSpace(stripped)
 }
@@ -232,6 +236,370 @@ func stripGemmaToolCalls(text string) string {
 		}
 		text = strings.TrimSpace(text[:start] + text[end:])
 	}
+}
+
+const (
+	lfmToolCallStart = "<|tool_call_start|>"
+	lfmToolCallEnd   = "<|tool_call_end|>"
+)
+
+func extractLFMToolCalls(text string) []ToolCall {
+	searchFrom := 0
+	callIndex := 1
+	result := make([]ToolCall, 0)
+
+	for {
+		relStart := strings.Index(text[searchFrom:], lfmToolCallStart)
+		if relStart == -1 {
+			break
+		}
+		start := searchFrom + relStart
+		bodyStart := start + len(lfmToolCallStart)
+		relEnd := strings.Index(text[bodyStart:], lfmToolCallEnd)
+		if relEnd == -1 {
+			break
+		}
+		bodyEnd := bodyStart + relEnd
+
+		calls := parseLFMToolCallList(text[bodyStart:bodyEnd], callIndex)
+		if len(calls) > 0 {
+			result = append(result, calls...)
+			callIndex += len(calls)
+		}
+		searchFrom = bodyEnd + len(lfmToolCallEnd)
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func parseLFMToolCallList(raw string, startIndex int) []ToolCall {
+	toolText := strings.TrimSpace(raw)
+	if !strings.HasPrefix(toolText, "[") || !strings.HasSuffix(toolText, "]") {
+		return nil
+	}
+
+	body := strings.TrimSpace(toolText[1 : len(toolText)-1])
+	if body == "" {
+		return nil
+	}
+
+	parts := splitLFMTopLevel(body, ',')
+	result := make([]ToolCall, 0, len(parts))
+	for _, part := range parts {
+		call, ok := parseLFMFunctionCall(part, startIndex+len(result))
+		if ok {
+			result = append(result, call)
+		}
+	}
+	return result
+}
+
+func parseLFMFunctionCall(raw string, callIndex int) (ToolCall, bool) {
+	callText := strings.TrimSpace(raw)
+	open := strings.IndexByte(callText, '(')
+	if open <= 0 {
+		return ToolCall{}, false
+	}
+	close := findMatchingDelimiter(callText, open, '(', ')')
+	if close <= open || strings.TrimSpace(callText[close:]) != "" {
+		return ToolCall{}, false
+	}
+
+	name := normalizeToolCallName(callText[:open])
+	if name == "" {
+		return ToolCall{}, false
+	}
+
+	argsMap := parseLFMKeywordArguments(callText[open+1 : close-1])
+	argsJSONBytes, _ := json.Marshal(argsMap)
+	argsJSON := string(argsJSONBytes)
+
+	return ToolCall{
+		ID:        "lfm_call_" + strconv.Itoa(callIndex),
+		Type:      "function",
+		Name:      name,
+		Arguments: argsMap,
+		Function: &FunctionCall{
+			Name:      name,
+			Arguments: argsJSON,
+		},
+	}, true
+}
+
+func parseLFMKeywordArguments(raw string) map[string]any {
+	result := map[string]any{}
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return result
+	}
+
+	for _, part := range splitLFMTopLevel(trimmed, ',') {
+		piece := strings.TrimSpace(part)
+		if piece == "" {
+			continue
+		}
+		idx := indexLFMTopLevelEqual(piece)
+		if idx <= 0 {
+			continue
+		}
+		key := strings.TrimSpace(piece[:idx])
+		key = strings.Trim(key, "\"'`")
+		if key == "" {
+			continue
+		}
+		result[key] = parseLFMPythonValue(piece[idx+1:])
+	}
+	return result
+}
+
+func parseLFMPythonValue(raw string) any {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return ""
+	}
+	v = strings.ReplaceAll(v, `<|"|>`, `"`)
+
+	if strings.HasPrefix(v, "\"") && strings.HasSuffix(v, "\"") {
+		if unquoted, err := strconv.Unquote(v); err == nil {
+			return unquoted
+		}
+	}
+	if strings.HasPrefix(v, "'") && strings.HasSuffix(v, "'") && len(v) >= 2 {
+		return strings.ReplaceAll(v[1:len(v)-1], `\'`, `'`)
+	}
+
+	switch v {
+	case "True", "true":
+		return true
+	case "False", "false":
+		return false
+	case "None", "none", "null":
+		return nil
+	}
+
+	if strings.HasPrefix(v, "{") || strings.HasPrefix(v, "[") {
+		candidate := pythonLiteralToJSON(v)
+		var parsed any
+		if err := json.Unmarshal([]byte(candidate), &parsed); err == nil {
+			return parsed
+		}
+	}
+
+	if n, err := strconv.ParseFloat(v, 64); err == nil {
+		return n
+	}
+	return strings.Trim(v, "\"'`")
+}
+
+func pythonLiteralToJSON(raw string) string {
+	var sb strings.Builder
+	inString := false
+	var quote byte
+
+	for i := 0; i < len(raw); i++ {
+		ch := raw[i]
+		if inString {
+			if ch == '\\' && i+1 < len(raw) {
+				sb.WriteByte(ch)
+				i++
+				sb.WriteByte(raw[i])
+				continue
+			}
+			if ch == quote {
+				inString = false
+				sb.WriteByte('"')
+				continue
+			}
+			if quote == '\'' && ch == '"' {
+				sb.WriteByte('\\')
+			}
+			sb.WriteByte(ch)
+			continue
+		}
+
+		switch ch {
+		case '\'', '"':
+			inString = true
+			quote = ch
+			sb.WriteByte('"')
+		default:
+			if strings.HasPrefix(raw[i:], "True") {
+				sb.WriteString("true")
+				i += len("True") - 1
+			} else if strings.HasPrefix(raw[i:], "False") {
+				sb.WriteString("false")
+				i += len("False") - 1
+			} else if strings.HasPrefix(raw[i:], "None") {
+				sb.WriteString("null")
+				i += len("None") - 1
+			} else {
+				sb.WriteByte(ch)
+			}
+		}
+	}
+	return sb.String()
+}
+
+func stripLFMToolCalls(text string) string {
+	for {
+		start := strings.Index(text, lfmToolCallStart)
+		if start == -1 {
+			return text
+		}
+		bodyStart := start + len(lfmToolCallStart)
+		relEnd := strings.Index(text[bodyStart:], lfmToolCallEnd)
+		if relEnd == -1 {
+			return strings.TrimSpace(text[:start])
+		}
+		end := bodyStart + relEnd + len(lfmToolCallEnd)
+		text = strings.TrimSpace(text[:start] + text[end:])
+	}
+}
+
+func splitLFMTopLevel(input string, sep byte) []string {
+	parts := make([]string, 0)
+	start := 0
+	parenDepth := 0
+	braceDepth := 0
+	bracketDepth := 0
+	inString := false
+	var quote byte
+
+	for i := 0; i < len(input); i++ {
+		ch := input[i]
+		if inString {
+			if ch == '\\' {
+				i++
+				continue
+			}
+			if ch == quote {
+				inString = false
+			}
+			continue
+		}
+
+		switch ch {
+		case '\'', '"':
+			inString = true
+			quote = ch
+		case '(':
+			parenDepth++
+		case ')':
+			if parenDepth > 0 {
+				parenDepth--
+			}
+		case '{':
+			braceDepth++
+		case '}':
+			if braceDepth > 0 {
+				braceDepth--
+			}
+		case '[':
+			bracketDepth++
+		case ']':
+			if bracketDepth > 0 {
+				bracketDepth--
+			}
+		case sep:
+			if parenDepth == 0 && braceDepth == 0 && bracketDepth == 0 {
+				parts = append(parts, input[start:i])
+				start = i + 1
+			}
+		}
+	}
+
+	if start <= len(input) {
+		parts = append(parts, input[start:])
+	}
+	return parts
+}
+
+func indexLFMTopLevelEqual(input string) int {
+	parenDepth := 0
+	braceDepth := 0
+	bracketDepth := 0
+	inString := false
+	var quote byte
+
+	for i := 0; i < len(input); i++ {
+		ch := input[i]
+		if inString {
+			if ch == '\\' {
+				i++
+				continue
+			}
+			if ch == quote {
+				inString = false
+			}
+			continue
+		}
+
+		switch ch {
+		case '\'', '"':
+			inString = true
+			quote = ch
+		case '(':
+			parenDepth++
+		case ')':
+			if parenDepth > 0 {
+				parenDepth--
+			}
+		case '{':
+			braceDepth++
+		case '}':
+			if braceDepth > 0 {
+				braceDepth--
+			}
+		case '[':
+			bracketDepth++
+		case ']':
+			if bracketDepth > 0 {
+				bracketDepth--
+			}
+		case '=':
+			if parenDepth == 0 && braceDepth == 0 && bracketDepth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func findMatchingDelimiter(text string, pos int, open, close byte) int {
+	depth := 0
+	inString := false
+	var quote byte
+
+	for i := pos; i < len(text); i++ {
+		ch := text[i]
+		if inString {
+			if ch == '\\' {
+				i++
+				continue
+			}
+			if ch == quote {
+				inString = false
+			}
+			continue
+		}
+
+		switch ch {
+		case '\'', '"':
+			inString = true
+			quote = ch
+		case open:
+			depth++
+		case close:
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return pos
 }
 
 func decodeToolArguments(raw any) (map[string]any, string) {
