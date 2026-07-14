@@ -923,6 +923,70 @@ func TestExtractToolCalls_ToolCallArgumentsParsing(t *testing.T) {
 	}
 }
 
+func TestExtractToolCalls_LFMNativeToolCall(t *testing.T) {
+	p := NewClaudeCliProvider("/workspace")
+	text := `I'll check that.
+<|tool_call_start|>[get_candidate_status(candidate_id="12345")]<|tool_call_end|>
+Checking the current status.`
+
+	got := p.extractToolCalls(text)
+	if len(got) != 1 {
+		t.Fatalf("extractToolCalls() = %d, want 1", len(got))
+	}
+	if got[0].ID != "lfm_call_1" {
+		t.Errorf("ID = %q, want lfm_call_1", got[0].ID)
+	}
+	if got[0].Name != "get_candidate_status" {
+		t.Errorf("Name = %q, want get_candidate_status", got[0].Name)
+	}
+	if got[0].Type != "function" {
+		t.Errorf("Type = %q, want function", got[0].Type)
+	}
+	if got[0].Arguments["candidate_id"] != "12345" {
+		t.Errorf("candidate_id = %v, want 12345", got[0].Arguments["candidate_id"])
+	}
+	if got[0].Function == nil || got[0].Function.Arguments == "" {
+		t.Fatal("Function.Arguments should contain raw JSON string")
+	}
+}
+
+func TestExtractToolCalls_LFMNativeMultipleToolCalls(t *testing.T) {
+	p := NewClaudeCliProvider("/workspace")
+	text := `<|tool_call_start|>[read_file(path="/tmp/in", limit=20), write_file(path="/tmp/out", content="hello", overwrite=True)]<|tool_call_end|>`
+
+	got := p.extractToolCalls(text)
+	if len(got) != 2 {
+		t.Fatalf("extractToolCalls() = %d, want 2", len(got))
+	}
+	if got[0].Name != "read_file" {
+		t.Errorf("[0].Name = %q, want read_file", got[0].Name)
+	}
+	if got[1].Name != "write_file" {
+		t.Errorf("[1].Name = %q, want write_file", got[1].Name)
+	}
+	if got[0].Arguments["limit"] != float64(20) {
+		t.Errorf("[0].Arguments[limit] = %v (%T), want 20", got[0].Arguments["limit"], got[0].Arguments["limit"])
+	}
+	if got[1].Arguments["overwrite"] != true {
+		t.Errorf("[1].Arguments[overwrite] = %v, want true", got[1].Arguments["overwrite"])
+	}
+}
+
+func TestStripToolCallsJSON_LFMNativeToolCall(t *testing.T) {
+	p := NewClaudeCliProvider("/workspace")
+	text := `Before.
+<|tool_call_start|>[get_weather(location="Paris")]<|tool_call_end|>
+After.`
+
+	got := p.stripToolCallsJSON(text)
+	if strings.Contains(got, "tool_call_start") || strings.Contains(got, "get_weather") {
+		t.Errorf("should remove LFM tool call, got %q", got)
+	}
+	if !strings.Contains(got, "Before.") || !strings.Contains(got, "After.") {
+		t.Errorf("should keep surrounding text, got %q", got)
+	}
+}
+
 // --- stripToolCallsJSON tests ---
 
 func TestStripToolCallsJSON(t *testing.T) {
