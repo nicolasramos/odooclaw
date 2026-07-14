@@ -236,6 +236,47 @@ func TestProviderChat_ParsesGemmaPseudoToolCallsWithNestedPayload(t *testing.T) 
 	}
 }
 
+func TestProviderChat_ParsesLFMNativeToolCallsFromContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": `<|tool_call_start|>[get_candidate_status(candidate_id="12345")]<|tool_call_end|>
+Checking the current status.`,
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "status?"}}, nil, "lfm2.5-1.2b", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if out.FinishReason != "tool_calls" {
+		t.Fatalf("FinishReason = %q, want tool_calls", out.FinishReason)
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].Name != "get_candidate_status" {
+		t.Fatalf("ToolCalls[0].Name = %q", out.ToolCalls[0].Name)
+	}
+	if out.ToolCalls[0].Arguments["candidate_id"] != "12345" {
+		t.Fatalf("candidate_id = %v, want 12345", out.ToolCalls[0].Arguments["candidate_id"])
+	}
+	if strings.Contains(out.Content, "tool_call_start") {
+		t.Fatalf("Content still contains LFM tool call: %q", out.Content)
+	}
+}
+
 func TestProviderChat_PreservesReasoningContentInHistory(t *testing.T) {
 	var requestBody map[string]any
 
