@@ -282,6 +282,15 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 	content := choice.Message.Content
 	finishReason := choice.FinishReason
 	if len(toolCalls) == 0 {
+		if extracted := extractLFMContentToolCalls(content); len(extracted) > 0 {
+			toolCalls = extracted
+			content = stripLFMContentToolCalls(content)
+			if finishReason == "" || finishReason == "stop" {
+				finishReason = "tool_calls"
+			}
+		}
+	}
+	if len(toolCalls) == 0 {
 		if extracted := extractGemmaContentToolCalls(content); len(extracted) > 0 {
 			toolCalls = extracted
 			content = stripGemmaContentToolCalls(content)
@@ -309,6 +318,279 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 		FinishReason:     finishReason,
 		Usage:            apiResponse.Usage,
 	}, nil
+}
+
+const (
+	lfmToolCallStart = "<|tool_call_start|>"
+	lfmToolCallEnd   = "<|tool_call_end|>"
+)
+
+func extractLFMContentToolCalls(text string) []ToolCall {
+	searchFrom := 0
+	callIndex := 1
+	result := make([]ToolCall, 0)
+	for {
+		relStart := strings.Index(text[searchFrom:], lfmToolCallStart)
+		if relStart == -1 {
+			break
+		}
+		start := searchFrom + relStart
+		bodyStart := start + len(lfmToolCallStart)
+		relEnd := strings.Index(text[bodyStart:], lfmToolCallEnd)
+		if relEnd == -1 {
+			break
+		}
+		bodyEnd := bodyStart + relEnd
+		calls := parseLFMContentToolCallList(text[bodyStart:bodyEnd], callIndex)
+		if len(calls) > 0 {
+			result = append(result, calls...)
+			callIndex += len(calls)
+		}
+		searchFrom = bodyEnd + len(lfmToolCallEnd)
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func parseLFMContentToolCallList(raw string, startIndex int) []ToolCall {
+	toolText := strings.TrimSpace(raw)
+	if !strings.HasPrefix(toolText, "[") || !strings.HasSuffix(toolText, "]") {
+		return nil
+	}
+	body := strings.TrimSpace(toolText[1 : len(toolText)-1])
+	if body == "" {
+		return nil
+	}
+	parts := splitLFMContentTopLevel(body, ',')
+	result := make([]ToolCall, 0, len(parts))
+	for _, part := range parts {
+		call, ok := parseLFMContentFunctionCall(part, startIndex+len(result))
+		if ok {
+			result = append(result, call)
+		}
+	}
+	return result
+}
+
+func parseLFMContentFunctionCall(raw string, callIndex int) (ToolCall, bool) {
+	callText := strings.TrimSpace(raw)
+	open := strings.IndexByte(callText, '(')
+	if open <= 0 {
+		return ToolCall{}, false
+	}
+	close := findMatchingLFMDelimiter(callText, open, '(', ')')
+	if close <= open || strings.TrimSpace(callText[close:]) != "" {
+		return ToolCall{}, false
+	}
+	name := normalizeGemmaToolName(callText[:open])
+	if name == "" {
+		return ToolCall{}, false
+	}
+	argsMap := parseLFMContentKeywordArguments(callText[open+1 : close-1])
+	argsJSONBytes, _ := json.Marshal(argsMap)
+	argsJSON := string(argsJSONBytes)
+	return ToolCall{
+		ID:        "lfm_call_" + strconv.Itoa(callIndex),
+		Type:      "function",
+		Name:      name,
+		Arguments: argsMap,
+		Function:  &FunctionCall{Name: name, Arguments: argsJSON},
+	}, true
+}
+
+func parseLFMContentKeywordArguments(raw string) map[string]any {
+	result := map[string]any{}
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return result
+	}
+	for _, part := range splitLFMContentTopLevel(trimmed, ',') {
+		piece := strings.TrimSpace(part)
+		if piece == "" {
+			continue
+		}
+		idx := indexLFMContentTopLevelEqual(piece)
+		if idx <= 0 {
+			continue
+		}
+		key := strings.Trim(strings.TrimSpace(piece[:idx]), "\"'`")
+		if key == "" {
+			continue
+		}
+		result[key] = parseLFMContentValue(piece[idx+1:])
+	}
+	return result
+}
+
+func parseLFMContentValue(raw string) any {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return ""
+	}
+	v = strings.ReplaceAll(v, `<|"|>`, `"`)
+	if strings.HasPrefix(v, "\"") && strings.HasSuffix(v, "\"") {
+		if unquoted, err := strconv.Unquote(v); err == nil {
+			return unquoted
+		}
+	}
+	if strings.HasPrefix(v, "'") && strings.HasSuffix(v, "'") && len(v) >= 2 {
+		return strings.ReplaceAll(v[1:len(v)-1], `\'`, `'`)
+	}
+	return parseGemmaValue(v)
+}
+
+func stripLFMContentToolCalls(text string) string {
+	for {
+		start := strings.Index(text, lfmToolCallStart)
+		if start == -1 {
+			return text
+		}
+		bodyStart := start + len(lfmToolCallStart)
+		relEnd := strings.Index(text[bodyStart:], lfmToolCallEnd)
+		if relEnd == -1 {
+			return strings.TrimSpace(text[:start])
+		}
+		end := bodyStart + relEnd + len(lfmToolCallEnd)
+		text = strings.TrimSpace(text[:start] + text[end:])
+	}
+}
+
+func splitLFMContentTopLevel(input string, sep byte) []string {
+	parts := make([]string, 0)
+	start := 0
+	parenDepth := 0
+	braceDepth := 0
+	bracketDepth := 0
+	inString := false
+	var quote byte
+	for i := 0; i < len(input); i++ {
+		ch := input[i]
+		if inString {
+			if ch == '\\' {
+				i++
+				continue
+			}
+			if ch == quote {
+				inString = false
+			}
+			continue
+		}
+		switch ch {
+		case '\'', '"':
+			inString = true
+			quote = ch
+		case '(':
+			parenDepth++
+		case ')':
+			if parenDepth > 0 {
+				parenDepth--
+			}
+		case '{':
+			braceDepth++
+		case '}':
+			if braceDepth > 0 {
+				braceDepth--
+			}
+		case '[':
+			bracketDepth++
+		case ']':
+			if bracketDepth > 0 {
+				bracketDepth--
+			}
+		case sep:
+			if parenDepth == 0 && braceDepth == 0 && bracketDepth == 0 {
+				parts = append(parts, input[start:i])
+				start = i + 1
+			}
+		}
+	}
+	if start <= len(input) {
+		parts = append(parts, input[start:])
+	}
+	return parts
+}
+
+func indexLFMContentTopLevelEqual(input string) int {
+	parenDepth := 0
+	braceDepth := 0
+	bracketDepth := 0
+	inString := false
+	var quote byte
+	for i := 0; i < len(input); i++ {
+		ch := input[i]
+		if inString {
+			if ch == '\\' {
+				i++
+				continue
+			}
+			if ch == quote {
+				inString = false
+			}
+			continue
+		}
+		switch ch {
+		case '\'', '"':
+			inString = true
+			quote = ch
+		case '(':
+			parenDepth++
+		case ')':
+			if parenDepth > 0 {
+				parenDepth--
+			}
+		case '{':
+			braceDepth++
+		case '}':
+			if braceDepth > 0 {
+				braceDepth--
+			}
+		case '[':
+			bracketDepth++
+		case ']':
+			if bracketDepth > 0 {
+				bracketDepth--
+			}
+		case '=':
+			if parenDepth == 0 && braceDepth == 0 && bracketDepth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func findMatchingLFMDelimiter(text string, pos int, open, close byte) int {
+	depth := 0
+	inString := false
+	var quote byte
+	for i := pos; i < len(text); i++ {
+		ch := text[i]
+		if inString {
+			if ch == '\\' {
+				i++
+				continue
+			}
+			if ch == quote {
+				inString = false
+			}
+			continue
+		}
+		switch ch {
+		case '\'', '"':
+			inString = true
+			quote = ch
+		case open:
+			depth++
+		case close:
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return pos
 }
 
 func extractGemmaContentToolCalls(text string) []ToolCall {
@@ -435,7 +717,6 @@ func stripGemmaContentToolCalls(text string) string {
 	}
 }
 
-
 // extractMiniCPMContentToolCalls parses MiniCPM's native XML tool call format:
 //
 //	<name>tool_name</name>
@@ -544,7 +825,6 @@ func stripMiniCPMContentToolCalls(text string) string {
 		text = strings.TrimSpace(text[:start] + text[end:])
 	}
 }
-
 
 func normalizeGemmaToolName(name string) string {
 	name = strings.TrimSpace(name)
