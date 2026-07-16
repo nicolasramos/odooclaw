@@ -17,6 +17,7 @@ import (
 
 	"github.com/nicolasramos/odooclaw/pkg/config"
 	"github.com/nicolasramos/odooclaw/pkg/logger"
+	"github.com/nicolasramos/odooclaw/pkg/toolguard"
 )
 
 // headerTransport is an http.RoundTripper that adds custom headers to requests
@@ -145,6 +146,14 @@ type Manager struct {
 
 	beforeCallAdmit          func()
 	beforeCloseAdmissionLock func()
+
+	// validator, if set, is consulted by CallTool BEFORE the
+	// session dispatch. A non-nil validator blocks every call
+	// that fails ValidateToolCall or that DetectDestructiveOperation
+	// flags as destructive. Setting validator to nil (the default)
+	// disables validation, preserving the original behaviour for
+	// tests and for callers that want to opt out.
+	validator *toolguard.Validator
 }
 
 // NewManager creates a new MCP manager
@@ -158,6 +167,34 @@ func NewManager() *Manager {
 	}
 	manager.connector = manager.connectServer
 	return manager
+}
+
+// SetValidator attaches a toolguard.Validator to the manager.
+// The validator is consulted by every CallTool before the
+// underlying MCP session is invoked. Pass nil to disable
+// validation.
+//
+// Typically called by the application bootstrap after the
+// registry has been auto-populated from GetAllTools. Tests can
+// inject a hand-built validator directly.
+func (m *Manager) SetValidator(v *toolguard.Validator) {
+	m.validator = v
+}
+
+// loadValidatorFromTools is called once after every
+// LoadFromMCPConfig to (re)build the validator from the current
+// tool list. It is a no-op when the application has not opted in
+// by calling SetValidator at least once — the manager is
+// conservative: by default it does nothing, and the user must
+// explicitly enable validation.
+func (m *Manager) loadValidatorFromTools() {
+	if m.validator == nil {
+		return
+	}
+	fresh := toolguard.RegistryFromManagerToolset(m.GetAllTools())
+	if fresh.ToolCount() > 0 {
+		m.validator = fresh
+	}
 }
 
 // LoadFromConfig loads MCP servers from configuration
@@ -272,6 +309,8 @@ func (m *Manager) LoadFromMCPConfig(
 			"connected": connectedCount,
 			"total":     enabledCount,
 		})
+
+	m.loadValidatorFromTools()
 
 	return nil
 }
@@ -544,6 +583,20 @@ func (m *Manager) CallTool(
 	params := &mcp.CallToolParams{
 		Name:      toolName,
 		Arguments: arguments,
+	}
+
+	// toolguard hook: validate the call before dispatching to
+	// the MCP server. A non-nil validator blocks the call by
+	// returning an error WITHOUT touching the session. This is
+	// the runtime counterpart of the offline checks in
+	// mcp_harness_v3 and the acceptance gate.
+	if m.validator != nil {
+		if r := m.validator.ValidateToolCall(toolName, arguments); !r.OK {
+			return nil, fmt.Errorf("toolguard: schema invalid: %s", strings.Join(r.Errors, "; "))
+		}
+		if r := m.validator.DetectDestructiveOperation(toolName, arguments); r.Destructive {
+			return nil, fmt.Errorf("toolguard: destructive operation blocked: %s", r.DestructiveReason)
+		}
 	}
 
 	result, err := conn.activeSession().CallTool(ctx, params)
