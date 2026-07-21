@@ -27,6 +27,7 @@ import (
 	"github.com/nicolasramos/odooclaw/pkg/mcp"
 	"github.com/nicolasramos/odooclaw/pkg/media"
 	corememory "github.com/nicolasramos/odooclaw/pkg/memory"
+	"github.com/nicolasramos/odooclaw/pkg/multimodel"
 	"github.com/nicolasramos/odooclaw/pkg/providers"
 	"github.com/nicolasramos/odooclaw/pkg/routing"
 	"github.com/nicolasramos/odooclaw/pkg/skills"
@@ -45,6 +46,7 @@ type AgentLoop struct {
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
 	mediaStore     media.MediaStore
+	pipeline       *multimodel.Pipeline // Multi-model pipeline (nil when disabled)
 }
 
 // processOptions configures how a message is processed
@@ -85,6 +87,53 @@ func NewAgentLoop(
 		stateManager = state.NewManager(defaultAgent.Workspace)
 	}
 
+	// Initialize multi-model pipeline if configured
+	var pipeline *multimodel.Pipeline
+	if cfg.Multimodel.Enabled {
+		pipelineCfg := multimodel.PipelineConfig{
+			Enabled: true,
+			Classifier: multimodel.ClassifierConfig{
+				Endpoint: cfg.Multimodel.Classifier.Endpoint,
+				APIKey:   cfg.Multimodel.Classifier.APIKey,
+				Model:    cfg.Multimodel.Classifier.Model,
+			},
+			Router: multimodel.RouterConfig{
+				Routes: map[string]*multimodel.ModelConfig{
+					"tool_call": {
+						Name:        "tool-model",
+						Endpoint:    cfg.Multimodel.Router.ToolCalling.Endpoint,
+						ModelID:     cfg.Multimodel.Router.ToolCalling.ModelID,
+						MaxTokens:   cfg.Multimodel.Router.ToolCalling.MaxTokens,
+						Temperature: cfg.Multimodel.Router.ToolCalling.Temperature,
+					},
+					"summary": {
+						Name:        "summarizer-model",
+						Endpoint:    cfg.Multimodel.Router.Summarizer.Endpoint,
+						ModelID:     cfg.Multimodel.Router.Summarizer.ModelID,
+						MaxTokens:   cfg.Multimodel.Router.Summarizer.MaxTokens,
+						Temperature: cfg.Multimodel.Router.Summarizer.Temperature,
+					},
+					"complex": {
+						Name:        "complex-model",
+						Endpoint:    cfg.Multimodel.Router.Complex.Endpoint,
+						ModelID:     cfg.Multimodel.Router.Complex.ModelID,
+						MaxTokens:   cfg.Multimodel.Router.Complex.MaxTokens,
+						Temperature: cfg.Multimodel.Router.Complex.Temperature,
+					},
+				},
+				Fallback: &multimodel.ModelConfig{
+					Name:        "primary-model",
+					MaxTokens:   cfg.Agents.Defaults.MaxTokens,
+					Temperature: 0.7,
+				},
+			},
+		}
+		pipeline = multimodel.NewPipeline(pipelineCfg, provider)
+		logger.InfoCF("agent", "Multi-model pipeline initialized", map[string]any{
+			"classifier_endpoint": cfg.Multimodel.Classifier.Endpoint,
+		})
+	}
+
 	return &AgentLoop{
 		bus:         msgBus,
 		cfg:         cfg,
@@ -92,6 +141,7 @@ func NewAgentLoop(
 		state:       stateManager,
 		summarizing: sync.Map{},
 		fallback:    fallbackChain,
+		pipeline:    pipeline,
 	}
 }
 
@@ -851,7 +901,61 @@ func (al *AgentLoop) runAgentLoop(
 	// 3. Save user message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
 
-	// 4. Run LLM iteration loop
+	// 4. Multi-model pipeline pre-processing
+	// If the pipeline can handle this request directly (greeting, escalation),
+	// return the response immediately without calling the main LLM.
+	if al.pipeline != nil {
+		// Convert history to multimodel.Message format for classifier context
+		var mmHistory []multimodel.Message
+		for _, msg := range history {
+			if msg.Role == "user" || msg.Role == "assistant" {
+				mmHistory = append(mmHistory, multimodel.Message{
+					Role:    msg.Role,
+					Content: msg.Content,
+				})
+			}
+		}
+
+		pipelineReq := multimodel.PipelineRequest{
+			Message:    opts.UserMessage,
+			SessionKey: opts.SessionKey,
+			History:    mmHistory,
+			Metadata:   opts.Metadata,
+		}
+
+		pipelineResult, pipelineErr := al.pipeline.ProcessRequest(ctx, pipelineReq)
+		if pipelineErr != nil {
+			logger.WarnCF("agent", "Pipeline pre-process failed, falling back to main model",
+				map[string]any{"error": pipelineErr.Error()})
+		} else if pipelineResult.SkippedMain && pipelineResult.Response != "" {
+			// Pipeline handled the request directly — no need for main LLM
+			logger.InfoCF("agent", "Pipeline handled request directly",
+				map[string]any{
+					"intent":       pipelineResult.Intent.Intent,
+					"confidence":   pipelineResult.Intent.Confidence,
+					"model_used":   pipelineResult.ModelUsed,
+					"latency_ms":   pipelineResult.Latency.Milliseconds(),
+					"tokens_saved": pipelineResult.TokensUsed,
+				})
+			// Save assistant response to session
+			agent.Sessions.AddMessage(opts.SessionKey, "assistant", pipelineResult.Response)
+			agent.Sessions.Save(opts.SessionKey)
+
+			// Send response via bus if needed
+			if opts.SendResponse {
+				al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+					Channel: opts.Channel,
+					ChatID:  opts.ChatID,
+					Content: pipelineResult.Response,
+				})
+			}
+
+			return pipelineResult.Response, nil
+		}
+		// If pipeline didn't skip main model, continue to regular LLM flow
+	}
+
+	// 5. Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)
 	if err != nil {
 		return "", err
