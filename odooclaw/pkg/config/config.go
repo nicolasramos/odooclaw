@@ -59,6 +59,7 @@ type Config struct {
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
+	Multimodel MultimodelConfig `json:"multimodel,omitempty"`
 }
 
 // MarshalJSON implements custom JSON marshaling for Config
@@ -425,6 +426,38 @@ type HeartbeatConfig struct {
 type DevicesConfig struct {
 	Enabled    bool `json:"enabled"     env:"ODOOCLAW_DEVICES_ENABLED"`
 	MonitorUSB bool `json:"monitor_usb" env:"ODOOCLAW_DEVICES_MONITOR_USB"`
+}
+
+// MultimodelConfig configures the multi-model architecture.
+// When enabled, user messages are classified by intent and routed to
+// specialized models (tool calling, summarization) instead of always
+// using the primary LLM.
+type MultimodelConfig struct {
+	Enabled    bool                    `json:"enabled"`
+	Classifier ClassifierConfig        `json:"classifier"`
+	Router     MultimodelRouterConfig  `json:"router"`
+}
+
+// ClassifierConfig configures the intent classifier model.
+type ClassifierConfig struct {
+	Endpoint string `json:"endpoint"`   // e.g. "http://n100:8080/v1"
+	APIKey   string `json:"api_key"`    // Often empty for local llama.cpp
+	Model    string `json:"model"`      // e.g. "local-model"
+}
+
+// MultimodelRouterConfig configures model routing per intent.
+type MultimodelRouterConfig struct {
+	ToolCalling ModelEndpointConfig `json:"tool_calling"`
+	Summarizer  ModelEndpointConfig `json:"summarizer"`
+	Complex     ModelEndpointConfig `json:"complex"`
+}
+
+// ModelEndpointConfig describes a model endpoint for the multi-model pipeline.
+type ModelEndpointConfig struct {
+	Endpoint    string  `json:"endpoint"`     // e.g. "http://n100:8080/v1"
+	ModelID     string  `json:"model_id"`     // e.g. "qwen2.5-1.5b-lora"
+	MaxTokens   int     `json:"max_tokens"`
+	Temperature float64 `json:"temperature"`
 }
 
 type ProvidersConfig struct {
