@@ -134,6 +134,10 @@ See [Voice Features Documentation](odooclaw/docs/VOICE_FEATURES.md) for detailed
 
 The native module is located at: `odoo/custom/src/{version}/mail_bot_odooclaw/`
 
+> **Note**: This module has been moved to a dedicated repository for standalone use:
+> [`github.com/nicolasramos/odoo-addons`](https://github.com/nicolasramos/odoo-addons)  
+> Each Odoo version lives on its own branch: [`16`](https://github.com/nicolasramos/odoo-addons/tree/16), [`17`](https://github.com/nicolasramos/odoo-addons/tree/17), [`18`](https://github.com/nicolasramos/odoo-addons/tree/18).
+
 ### Supported Odoo Versions
 
 | Version | Module Path | Channel Model |
@@ -147,7 +151,9 @@ The native module is located at: `odoo/custom/src/{version}/mail_bot_odooclaw/`
 ### Installation in Odoo
 
 1. Spin up your Odoo environment (for instance, using Doodba).
-2. Copy the `mail_bot_odooclaw` folder to your `addons` directory.
+2. Get the `mail_bot_odooclaw` module:
+   - **From this repo**: copy `odoo/custom/src/{version}/mail_bot_odooclaw/` to your addons directory.
+   - **From the addons repo**: clone `https://github.com/nicolasramos/odoo-addons.git` (branch `16`, `17`, or `18`) and add it to your addons path.
 3. Enable **Developer Mode** in Odoo (Settings -> Activate the developer mode).
 4. Go to **Apps**, click on "Update Apps List".
 5. Search for `OdooClaw` and install the **OdooClaw AI Bot** module.
