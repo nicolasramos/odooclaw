@@ -28,20 +28,29 @@ type OdooChannel struct {
 	pendingTokens sync.Map // replyChatID -> replyToken (string), single-use
 }
 
+// ChatterMessage represents a single message from the Odoo record chatter,
+// sent in the webhook payload as context for the LLM.
+type ChatterMessage struct {
+	Date   string `json:"date"`
+	Author string `json:"author"`
+	Body   string `json:"body"`
+}
+
 type OdooWebhookPayload struct {
-	MessageID         int    `json:"message_id"`
-	Model             string `json:"model"`
-	ResID             int    `json:"res_id"`
-	ReplyModel        string `json:"reply_model"`
-	ReplyResID        int    `json:"reply_res_id"`
-	AuthorID          int    `json:"author_id"`
-	AuthorUserID      int    `json:"author_user_id"`
-	AuthorName        string `json:"author_name"`
-	Body              string `json:"body"`
-	IsDM              bool   `json:"is_dm"`
-	CompanyID         int    `json:"company_id"`
-	AllowedCompanyIDs []int  `json:"allowed_company_ids"`
-	ReplyToken        string `json:"reply_token,omitempty"`
+	MessageID         int              `json:"message_id"`
+	Model             string           `json:"model"`
+	ResID             int              `json:"res_id"`
+	ReplyModel        string           `json:"reply_model"`
+	ReplyResID        int              `json:"reply_res_id"`
+	AuthorID          int              `json:"author_id"`
+	AuthorUserID      int              `json:"author_user_id"`
+	AuthorName        string           `json:"author_name"`
+	Body              string           `json:"body"`
+	IsDM              bool             `json:"is_dm"`
+	CompanyID         int              `json:"company_id"`
+	AllowedCompanyIDs []int            `json:"allowed_company_ids"`
+	ReplyToken        string           `json:"reply_token,omitempty"`
+	ChatterContext    []ChatterMessage `json:"chatter_context,omitempty"`
 }
 
 type OdooReplyPayload struct {
@@ -246,6 +255,19 @@ func (c *OdooChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			payload.ResID,
 			content,
 		)
+	}
+
+	// Prepend chatter context: messages posted since last OdooClaw reply,
+	// in chronological order. This gives the LLM visibility into what
+	// happened between its last intervention and the current message.
+	if len(payload.ChatterContext) > 0 {
+		var sb strings.Builder
+		sb.WriteString("[Chatter history since last OdooClaw reply]\n")
+		for _, msg := range payload.ChatterContext {
+			sb.WriteString(fmt.Sprintf("[%s] %s: %s\n", msg.Date, msg.Author, msg.Body))
+		}
+		sb.WriteString("[End of chatter history]\n\n")
+		content = sb.String() + content
 	}
 
 	// Odoo filters mentions server-side before sending to the webhook.
