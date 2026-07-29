@@ -118,11 +118,15 @@ class MailThread(models.AbstractModel):
             }
 
             if not is_dm and message.model == "mail.channel":
-                private_channel = self._resolve_private_reply_channel(
-                    message.author_id, odooclaw_user.partner_id
-                )
-                payload["reply_model"] = "mail.channel"
-                payload["reply_res_id"] = private_channel.id
+                channel = self.env["mail.channel"].browse(message.res_id)
+                if channel.channel_type == "chat":
+                    # Existing 1-to-1 chat: keep private reply behaviour
+                    private_channel = self._resolve_private_reply_channel(
+                        message.author_id, odooclaw_user.partner_id
+                    )
+                    payload["reply_model"] = "mail.channel"
+                    payload["reply_res_id"] = private_channel.id
+                # else: group channel → reply in the same channel (reply_model/res_id unchanged)
 
             # We use threading to not block the current transaction
 
