@@ -138,7 +138,7 @@ class MailThread(models.AbstractModel):
                     ("res_id", "=", payload["reply_res_id"]),
                     ("message_type", "in", ["comment", "email"]),
                     ("id", "!=", message.id),
-                ], order="date desc"):
+                ], order="date desc", limit=20):
                     if ctx_msg.author_id == odooclaw_user.partner_id:
                         break
                     chatter_context.append({
