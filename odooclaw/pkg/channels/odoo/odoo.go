@@ -209,7 +209,8 @@ func (c *OdooChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		replyResID = payload.ResID
 	}
 	replyChatID := fmt.Sprintf("%s_%d", replyModel, replyResID)
-	hasPrivateReplyTarget := !payload.IsDM && payload.ReplyModel != "" && payload.ReplyResID > 0
+	hasPrivateReplyTarget := !payload.IsDM && payload.ReplyModel != "" && payload.ReplyResID > 0 &&
+		(payload.ReplyModel != payload.Model || payload.ReplyResID != payload.ResID)
 
 	senderNumericID := payload.AuthorUserID
 	if senderNumericID <= 0 {
