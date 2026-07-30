@@ -151,11 +151,15 @@ func (r *RouteResolver) findPeerMatch(bindings []config.AgentBinding, peer *Rout
 			continue
 		}
 		peerKind := strings.ToLower(strings.TrimSpace(b.Match.Peer.Kind))
-		peerID := strings.TrimSpace(b.Match.Peer.ID)
+		peerID := strings.ToLower(strings.TrimSpace(b.Match.Peer.ID))
 		if peerKind == "" || peerID == "" {
 			continue
 		}
-		if peerKind == strings.ToLower(peer.Kind) && peerID == peer.ID {
+		normalizedPeerID := strings.ToLower(peer.ID)
+		isExact := peerID == normalizedPeerID
+		isPrefix := strings.HasSuffix(peerID, "*") &&
+			strings.HasPrefix(normalizedPeerID, strings.TrimSuffix(peerID, "*"))
+		if peerKind == strings.ToLower(peer.Kind) && (isExact || isPrefix) {
 			return b
 		}
 	}
