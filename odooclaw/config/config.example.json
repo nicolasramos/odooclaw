@@ -7,8 +7,17 @@
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
-    }
+    },
+    "list": [
+      {
+        "id": "main",
+        "default": true,
+        "workspace": "~/.odooclaw/workspace"
+      }
+    ]
   },
+  "bindings": [
+  ],
   "engram": {
     "enabled": false,
     "mcp_server": "engram"

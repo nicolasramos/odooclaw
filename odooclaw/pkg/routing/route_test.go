@@ -295,3 +295,85 @@ func TestResolveRoute_NoDefaultUsesFirst(t *testing.T) {
 		t.Errorf("AgentID = %q, want 'alpha' (first in list)", route.AgentID)
 	}
 }
+
+func TestResolveRoute_PeerBinding_WildcardPrefix_OdooModel(t *testing.T) {
+	agents := []config.AgentConfig{
+		{ID: "main", Default: true},
+		{ID: "crm"},
+		{ID: "finance"},
+	}
+	bindings := []config.AgentBinding{
+		{
+			AgentID: "crm",
+			Match: config.BindingMatch{
+				Channel:   "odoo",
+				AccountID: "*",
+				Peer:      &config.PeerMatch{Kind: "group", ID: "crm.lead_*"},
+			},
+		},
+		{
+			AgentID: "finance",
+			Match: config.BindingMatch{
+				Channel:   "odoo",
+				AccountID: "*",
+				Peer:      &config.PeerMatch{Kind: "group", ID: "account.move_*"},
+			},
+		},
+	}
+	cfg := testConfig(agents, bindings)
+	r := NewRouteResolver(cfg)
+
+	tests := []struct {
+		name      string
+		peerID    string
+		wantAgent string
+		wantMatch string
+	}{
+		{"crm lead routes to crm agent", "crm.lead_23824", "crm", "binding.peer"},
+		{"another crm lead routes to crm agent", "crm.lead_1", "crm", "binding.peer"},
+		{"invoice routes to finance agent", "account.move_42", "finance", "binding.peer"},
+		{"project task falls back to default", "project.task_19908", "main", "default"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			route := r.ResolveRoute(RouteInput{
+				Channel: "odoo",
+				Peer:    &RoutePeer{Kind: "group", ID: tt.peerID},
+			})
+			if route.AgentID != tt.wantAgent {
+				t.Errorf("AgentID = %q, want %q", route.AgentID, tt.wantAgent)
+			}
+			if route.MatchedBy != tt.wantMatch {
+				t.Errorf("MatchedBy = %q, want %q", route.MatchedBy, tt.wantMatch)
+			}
+		})
+	}
+}
+
+func TestResolveRoute_PeerBinding_ExactMatch_StillWorks(t *testing.T) {
+	agents := []config.AgentConfig{
+		{ID: "main", Default: true},
+		{ID: "support"},
+	}
+	bindings := []config.AgentBinding{
+		{
+			AgentID: "support",
+			Match: config.BindingMatch{
+				Channel:   "odoo",
+				AccountID: "*",
+				Peer:      &config.PeerMatch{Kind: "group", ID: "project.task_19908"},
+			},
+		},
+	}
+	cfg := testConfig(agents, bindings)
+	r := NewRouteResolver(cfg)
+
+	route := r.ResolveRoute(RouteInput{
+		Channel: "odoo",
+		Peer:    &RoutePeer{Kind: "group", ID: "project.task_19908"},
+	})
+	if route.AgentID != "support" {
+		t.Errorf("AgentID = %q, want 'support'", route.AgentID)
+	}
+}
