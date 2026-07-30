@@ -127,8 +127,12 @@ class MailThread(models.AbstractModel):
             # Build chatter context: read messages in reverse chronological order,
             # stopping at the last OdooClaw intervention. This gives OdooClaw
             # visibility into what happened between its last reply and now.
+            is_private_redirect = (
+                message.model == "mail.channel" and
+                payload["reply_res_id"] != message.res_id
+            )
             chatter_context = []
-            if not is_dm and payload["reply_model"] != "mail.channel":
+            if not is_dm and not is_private_redirect:
                 for ctx_msg in self.env["mail.message"].sudo().search([
                     ("model", "=", payload["reply_model"]),
                     ("res_id", "=", payload["reply_res_id"]),
