@@ -127,6 +127,28 @@ class MailThread(models.AbstractModel):
                     payload["reply_res_id"] = private_channel.id
                 # else: group channel → reply in the same channel (reply_model/res_id unchanged)
 
+
+            # Build chatter context: read messages in reverse chronological order,
+            # stopping at the last OdooClaw intervention. This gives OdooClaw
+            # visibility into what happened between its last reply and now.
+            chatter_context = []
+            if not is_dm and payload["reply_model"] != "mail.channel":
+                for ctx_msg in self.env["mail.message"].sudo().search([
+                    ("model", "=", payload["reply_model"]),
+                    ("res_id", "=", payload["reply_res_id"]),
+                    ("message_type", "in", ["comment", "email"]),
+                    ("id", "!=", message.id),
+                ], order="date desc", limit=20):
+                    if ctx_msg.author_id == odooclaw_user.partner_id:
+                        break
+                    chatter_context.append({
+                        "date": ctx_msg.date.isoformat(),
+                        "author": ctx_msg.author_id.name,
+                        "body": tools.html2plaintext(ctx_msg.body),
+                    })
+                chatter_context.reverse()
+            payload["chatter_context"] = chatter_context
+
             # We use threading to not block the current transaction
 
             # Generate reply token — allows OdooClaw to identify solicited replies
