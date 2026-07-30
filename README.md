@@ -152,8 +152,7 @@ The native module is located at: `odoo/custom/src/{version}/mail_bot_odooclaw/`
 
 1. Spin up your Odoo environment (for instance, using Doodba).
 2. Get the `mail_bot_odooclaw` module:
-   - **From this repo**: copy `odoo/custom/src/{version}/mail_bot_odooclaw/` to your addons directory.
-   - **From the addons repo**: clone `https://github.com/nicolasramos/odoo-addons.git` (branch `16`, `17`, or `18`) and add it to your addons path.
+   - Clone `https://github.com/nicolasramos/odoo-addons.git` (branch `16`, `17`, or `18`) and add it to your addons path.
 3. Enable **Developer Mode** in Odoo (Settings -> Activate the developer mode).
 4. Go to **Apps**, click on "Update Apps List".
 5. Search for `OdooClaw` and install the **OdooClaw AI Bot** module.
