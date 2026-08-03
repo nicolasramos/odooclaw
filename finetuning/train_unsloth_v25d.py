@@ -108,6 +108,7 @@ def main():
         trainer,
         instruction_part="<|im_start|>user",
         response_part="<|im_start|>assistant",
+        tokenizer=tokenizer,
     )
 
     # ── Entrenar ──────────────────────────────────────────────────────────
@@ -123,7 +124,7 @@ def main():
     if args.fuse:
         fused_dir = args.output_dir.rstrip("/") + "_fused"
         print(f"[Fuse] Fusionando LoRA en {fused_dir}...")
-        model.save_pretrained_merged(fused_dir, tokenizer)
+        model.save_pretrained_merged(fused_dir, tokenizer, save_method="16bit")
         print(f"✅ Modelo fusionado en: {fused_dir}")
 
     print("\n✅ Entrenamiento completado exitosamente.")
