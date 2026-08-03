@@ -96,10 +96,12 @@ def main():
 
     trainer = SFTTrainer(
         model=model,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         args=training_args,
         train_dataset=dataset,
     )
+    # Unsloth's train_on_responses_only expects trainer.tokenizer
+    trainer.tokenizer = tokenizer
 
     # ── Loss masking en respuestas (CLAVE) ────────────────────────────────
     trainer = train_on_responses_only(
