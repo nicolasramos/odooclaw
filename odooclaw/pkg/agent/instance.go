@@ -72,13 +72,13 @@ func NewAgentInstance(
 	sessionsDir := filepath.Join(workspace, "sessions")
 	sessionsManager := session.NewSessionManager(sessionsDir)
 
-	contextWindowTokens := defaults.ContextWindowTokens
-	if contextWindowTokens == 0 {
-		contextWindowTokens = 800000
+	contextWindowTokens := 800000 // default
+	if defaults.ContextWindowTokens != nil {
+		contextWindowTokens = *defaults.ContextWindowTokens
 	}
-	toolResultMaxChars := defaults.ToolResultMaxChars
-	if toolResultMaxChars == 0 {
-		toolResultMaxChars = 4000
+	toolResultMaxChars := 4000 // default
+	if defaults.ToolResultMaxChars != nil {
+		toolResultMaxChars = *defaults.ToolResultMaxChars
 	}
 	contextBuilder := NewContextBuilder(workspace, contextWindowTokens, toolResultMaxChars)
 
