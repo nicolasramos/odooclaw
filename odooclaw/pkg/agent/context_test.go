@@ -212,7 +212,7 @@ func TestBuildMessagesIncludesOdooScopedMemoryRecall(t *testing.T) {
 	})
 	defer os.RemoveAll(tmpDir)
 
-	cb := NewContextBuilder(tmpDir)
+	cb := NewContextBuilder(tmpDir, 0, 0)
 	msgs := cb.BuildMessages(
 		nil,
 		"",
@@ -257,7 +257,7 @@ func TestBuildMessagesIncludesBrowserContext(t *testing.T) {
 
 	recordID := 42
 	age := 18
-	cb := NewContextBuilder(tmpDir)
+	cb := NewContextBuilder(tmpDir, 0, 0)
 	cb.browser = fakeBrowserResolver{response: browsercopilot.ContextResponse{
 		Found:      true,
 		AgeSeconds: &age,
@@ -335,5 +335,206 @@ func assertRoles(t *testing.T, msgs []providers.Message, expected ...string) {
 		if msgs[i].Role != exp {
 			t.Errorf("message[%d]: got role %q, want %q", i, msgs[i].Role, exp)
 		}
+	}
+}
+
+// --- Tests for maskToolResults ---
+
+func TestMaskToolResults_NoChangeWhenUnlimited(t *testing.T) {
+	history := []providers.Message{
+		{Role: "tool", Content: "short result", ToolCallID: "A"},
+	}
+	result := maskToolResults(history, 0)
+	if len(result) != 1 || result[0].Content != "short result" {
+		t.Fatal("expected no change when maxChars=0")
+	}
+}
+
+func TestMaskToolResults_NoChangeWhenUnderLimit(t *testing.T) {
+	history := []providers.Message{
+		{Role: "tool", Content: "short result", ToolCallID: "A"},
+	}
+	result := maskToolResults(history, 4000)
+	if len(result) != 1 || result[0].Content != "short result" {
+		t.Fatal("expected no change when content under limit")
+	}
+}
+
+func TestMaskToolResults_NoChangeOnNonToolMessages(t *testing.T) {
+	history := []providers.Message{
+		{Role: "user", Content: strings.Repeat("x", 10000)},
+		{Role: "assistant", Content: strings.Repeat("y", 10000)},
+	}
+	result := maskToolResults(history, 4000)
+	if len(result) != 2 || result[0].Content != strings.Repeat("x", 10000) {
+		t.Fatal("expected non-tool messages unchanged")
+	}
+}
+
+func TestMaskToolResults_TruncatesLongToolResult(t *testing.T) {
+	longContent := strings.Repeat("x", 10000)
+	history := []providers.Message{
+		{Role: "tool", Content: longContent, ToolCallID: "A"},
+	}
+	result := maskToolResults(history, 4000)
+	if len(result) != 1 {
+		t.Fatal("expected 1 message")
+	}
+	if result[0].Content == longContent {
+		t.Fatal("expected content to be truncated")
+	}
+	if !strings.Contains(result[0].Content, "[...") {
+		t.Fatal("expected truncation marker in output")
+	}
+	if !strings.Contains(result[0].Content, "chars truncated") {
+		t.Fatal("expected truncated count in output")
+	}
+}
+
+func TestMaskToolResults_HalfOneEdgeCase(t *testing.T) {
+	// When maxChars=1, half=0, so we clamp to 1.
+	// The result should be: first char + truncation marker + last char.
+	longContent := strings.Repeat("x", 100)
+	history := []providers.Message{
+		{Role: "tool", Content: longContent, ToolCallID: "A"},
+	}
+	result := maskToolResults(history, 1)
+	if len(result) != 1 {
+		t.Fatal("expected 1 message")
+	}
+	// The truncated content should be shorter than original
+	if len(result[0].Content) >= len(longContent) {
+		t.Fatal("expected truncated content to be shorter than original")
+	}
+}
+
+func TestMaskToolResults_PreservesToolPairing(t *testing.T) {
+	history := []providers.Message{
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "A"}}},
+		{Role: "tool", Content: strings.Repeat("x", 10000), ToolCallID: "A"},
+	}
+	result := maskToolResults(history, 4000)
+	if len(result) != 2 {
+		t.Fatal("expected 2 messages")
+	}
+	// The tool_use message should be unchanged
+	if len(result[0].ToolCalls) == 0 {
+		t.Fatal("expected tool_use message to retain ToolCalls")
+	}
+	// The tool_result should be truncated
+	if result[1].Content == strings.Repeat("x", 10000) {
+		t.Fatal("expected tool_result to be truncated")
+	}
+}
+
+// --- Tests for slidingWindowByTokens ---
+
+func TestSlidingWindowByTokens_NoChangeWhenUnlimited(t *testing.T) {
+	history := []providers.Message{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "hi"},
+	}
+	result := slidingWindowByTokens(history, 0)
+	if len(result) != 2 {
+		t.Fatal("expected no change when maxTokens=0")
+	}
+}
+
+func TestSlidingWindowByTokens_EmptyHistory(t *testing.T) {
+	result := slidingWindowByTokens(nil, 800000)
+	if len(result) != 0 {
+		t.Fatal("expected empty result for nil history")
+	}
+}
+
+func TestSlidingWindowByTokens_FitsWithinBudget(t *testing.T) {
+	history := []providers.Message{
+		{Role: "user", Content: "short"},
+		{Role: "assistant", Content: "short"},
+	}
+	result := slidingWindowByTokens(history, 800000)
+	if len(result) != 2 {
+		t.Fatal("expected all messages when within budget")
+	}
+}
+
+func TestSlidingWindowByTokens_DropsOldest(t *testing.T) {
+	// Create history that exceeds the budget
+	history := []providers.Message{
+		{Role: "user", Content: strings.Repeat("x", 200000)}, // ~50k tokens
+		{Role: "assistant", Content: strings.Repeat("y", 200000)}, // ~50k tokens
+		{Role: "user", Content: "last"}, // ~1 token
+	}
+	result := slidingWindowByTokens(history, 1000) // ~4000 chars budget
+	if len(result) == 0 {
+		t.Fatal("expected at least some messages")
+	}
+	// The oldest messages should be dropped
+	if result[0].Content == strings.Repeat("x", 200000) {
+		t.Fatal("expected oldest message to be dropped")
+	}
+}
+
+func TestSlidingWindowByTokens_NeverSplitsToolPair(t *testing.T) {
+	history := []providers.Message{
+		{Role: "user", Content: "do something"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "A", Function: &providers.FunctionCall{Name: "read_file"}}}},
+		{Role: "tool", Content: "result", ToolCallID: "A"},
+		{Role: "user", Content: "last"},
+	}
+	result := slidingWindowByTokens(history, 100) // very tight budget
+	// Should not return a tool_result without its tool_use
+	for i, msg := range result {
+		if msg.ToolCallID != "" {
+			// There should be an assistant message with ToolCalls before this tool_result
+			found := false
+			for j := i - 1; j >= 0; j-- {
+				if result[j].Role == "assistant" && len(result[j].ToolCalls) > 0 {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("tool_result at index %d has no preceding tool_use", i)
+			}
+		}
+	}
+}
+
+func TestSlidingWindowByTokens_PreservesLastUserMessage(t *testing.T) {
+	// When all messages exceed the budget, should keep at least the last user message
+	history := []providers.Message{
+		{Role: "user", Content: strings.Repeat("x", 200000)},
+		{Role: "assistant", Content: strings.Repeat("y", 200000)},
+		{Role: "user", Content: "last request"},
+	}
+	result := slidingWindowByTokens(history, 100) // very tight budget
+	if len(result) == 0 {
+		t.Fatal("expected at least the last user message to be preserved")
+	}
+	if result[0].Role != "user" {
+		t.Fatalf("expected last user message, got role %q", result[0].Role)
+	}
+}
+
+func TestSlidingWindowByTokens_FallbackToSystemWhenNoUser(t *testing.T) {
+	// When there's no user message, should keep at least the first message
+	history := []providers.Message{
+		{Role: "system", Content: "system prompt"},
+		{Role: "assistant", Content: strings.Repeat("y", 200000)},
+	}
+	result := slidingWindowByTokens(history, 100)
+	if len(result) == 0 {
+		t.Fatal("expected at least the first message to be preserved")
+	}
+	if result[0].Role != "system" {
+		t.Fatalf("expected system message, got role %q", result[0].Role)
+	}
+}
+
+func TestSlidingWindowByTokens_EmptyHistoryReturnsEmpty(t *testing.T) {
+	result := slidingWindowByTokens([]providers.Message{}, 800000)
+	if len(result) != 0 {
+		t.Fatal("expected empty result for empty history")
 	}
 }

@@ -187,6 +187,16 @@ type AgentDefaults struct {
 	Temperature               *float64 `json:"temperature,omitempty"           env:"ODOOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations         int      `json:"max_tool_iterations"             env:"ODOOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 	MaxMediaSize              int      `json:"max_media_size,omitempty"        env:"ODOOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
+	// ContextWindowTokens limits history sent to the LLM per request.
+	// Uses a 1 token ~4 chars heuristic. Oldest messages are dropped first,
+	// always preserving tool_use/tool_result pairs. nil = unlimited.
+	// Default: 800000 (80% of 1M, leaves room for system prompt and current message).
+	ContextWindowTokens *int `json:"context_window_tokens,omitempty" env:"ODOOCLAW_AGENTS_DEFAULTS_CONTEXT_WINDOW_TOKENS"`
+	// ToolResultMaxChars caps the content of each tool result stored in history.
+	// Long results are truncated head+tail with a marker. nil = unlimited.
+	// Default: 4000 (~1000 tokens). Tool calls returning 2MB+ are the #1 cause
+	// of context overflow; capping them here prevents cascade failures.
+	ToolResultMaxChars *int `json:"tool_result_max_chars,omitempty" env:"ODOOCLAW_AGENTS_DEFAULTS_TOOL_RESULT_MAX_CHARS"`
 }
 
 const DefaultMaxMediaSize = 20 * 1024 * 1024 // 20 MB

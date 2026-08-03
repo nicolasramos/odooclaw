@@ -72,7 +72,15 @@ func NewAgentInstance(
 	sessionsDir := filepath.Join(workspace, "sessions")
 	sessionsManager := session.NewSessionManager(sessionsDir)
 
-	contextBuilder := NewContextBuilder(workspace)
+	contextWindowTokens := 800000 // default
+	if defaults.ContextWindowTokens != nil {
+		contextWindowTokens = *defaults.ContextWindowTokens
+	}
+	toolResultMaxChars := 4000 // default
+	if defaults.ToolResultMaxChars != nil {
+		toolResultMaxChars = *defaults.ToolResultMaxChars
+	}
+	contextBuilder := NewContextBuilder(workspace, contextWindowTokens, toolResultMaxChars)
 
 	agentID := routing.DefaultAgentID
 	agentName := ""
