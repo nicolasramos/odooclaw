@@ -396,7 +396,7 @@ def train(config: TrainingConfig):
         model=model,
         args=training_args,
         train_dataset=dataset,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         max_seq_length=config.seq_length,
         packing=config.packing,  # False = loss masking on response only
         dataset_text_field="text" if "text" in dataset.column_names else None,
