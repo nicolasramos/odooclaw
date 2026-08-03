@@ -75,7 +75,17 @@ def main():
 
     # ── Dataset ───────────────────────────────────────────────────────────
     dataset = load_dataset("json", data_files=args.dataset, split="train")
-    print(f"[Dataset] {len(dataset)} ejemplos")
+    print(f"[Dataset] {len(dataset)} ejemplos | columnas: {dataset.column_names}")
+
+    # ── Formateo: messages → texto con chat template de Qwen ─────────────
+    def formatting_func(example):
+        """Convierte el dataset de formato messages (OpenAI tool_calls) a texto con chat template."""
+        messages = example["messages"]
+        # El dataset ya viene con el system prompt que lista SOLO las tools disponibles
+        text = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=False
+        )
+        return {"text": text}
 
     # ── Training ──────────────────────────────────────────────────────────
     training_args = SFTConfig(
@@ -92,7 +102,6 @@ def main():
         run_name=f"v25d-{args.base_model.split('/')[-1]}" if args.wandb else None,
         max_length=args.seq_length,
         packing=False,
-        dataset_text_field="text",
         remove_unused_columns=False,
         gradient_checkpointing=True,
         optim="adamw_8bit",
@@ -105,6 +114,7 @@ def main():
         processing_class=tokenizer,
         args=training_args,
         train_dataset=dataset,
+        formatting_func=formatting_func,
     )
     # Unsloth's train_on_responses_only expects trainer.tokenizer
     trainer.tokenizer = tokenizer
