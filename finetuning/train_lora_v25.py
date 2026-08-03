@@ -480,7 +480,9 @@ def parse_args(argv: list[str] | None = None) -> tuple[TrainingConfig, argparse.
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    # Dataset
+    # Model
+    parser.add_argument("--base-model", type=str, default="Qwen/Qwen2.5-Coder-1.5B-Instruct",
+                        help="Modelo base para fine-tuning")
     parser.add_argument("--dataset", type=str, required=True,
                         help="Ruta al dataset JSONL en formato OpenAI tool_calls")
     parser.add_argument("--max-train-samples", type=int, default=None,
@@ -522,6 +524,7 @@ def parse_args(argv: list[str] | None = None) -> tuple[TrainingConfig, argparse.
     config = TrainingConfig(
         dataset_path=args.dataset,
         output_dir=args.output_dir,
+        model_name=args.base_model,
         lora_r=args.lora_r,
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout,
