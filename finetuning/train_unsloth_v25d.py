@@ -79,13 +79,16 @@ def main():
 
     # ── Formateo: messages → texto con chat template de Qwen ─────────────
     def formatting_func(example):
-        """Convierte el dataset de formato messages (OpenAI tool_calls) a texto con chat template."""
-        messages = example["messages"]
-        # El dataset ya viene con el system prompt que lista SOLO las tools disponibles
-        text = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=False
-        )
-        return {"text": text}
+        """Convierte el dataset de formato messages (OpenAI tool_calls) a texto con chat template.
+        Unsloth espera que devuelva una LISTA de strings."""
+        texts = []
+        for messages in example["messages"]:
+            texts.append(
+                tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=False
+                )
+            )
+        return texts
 
     # ── Training ──────────────────────────────────────────────────────────
     training_args = SFTConfig(
