@@ -41,7 +41,7 @@ from transformers import (
     TrainingArguments,
     set_seed,
 )
-from trl import SFTTrainer, DataCollatorForCompletionOnlyLM
+from trl import SFTTrainer
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -251,7 +251,7 @@ def load_model_and_tokenizer(config: TrainingConfig):
         torch_dtype=torch_dtype,
         trust_remote_code=True,
         device_map="auto",
-        attn_implementation="flash_attention_2",  # ROCm + FlashAttention
+        attn_implementation="eager",  # fallback si flash-attn no está instalado
     )
 
     # ── LoRA (E4: all_linear) ─────────────────────────────────────────────
@@ -387,8 +387,8 @@ def train(config: TrainingConfig):
         gradient_checkpointing=True,
         optim="adamw_torch",
         ddp_find_unused_parameters=False if torch.cuda.device_count() > 1 else None,
-        # ROCm compat
-        group_by_length=False,
+        # CUDA compat
+        # group_by_length eliminado en transformers 5.x
     )
 
     # 6. SFTTrainer — packing=False, loss masking automático (E2 corregido)
