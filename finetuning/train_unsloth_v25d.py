@@ -15,7 +15,7 @@ import torch
 from datasets import load_dataset
 from trl import SFTConfig, SFTTrainer
 from unsloth import FastLanguageModel, is_bfloat16_supported
-from unsloth.chat_templates import get_chat_template, train_on_responses_only
+from unsloth.chat_templates import train_on_responses_only
 
 
 def parse_args():
@@ -66,7 +66,10 @@ def main():
     model.print_trainable_parameters()
 
     # ── Chat template ─────────────────────────────────────────────────────
-    tokenizer = get_chat_template(tokenizer, chat_template="qwen-2.5")
+    # Dataset ya tiene el template aplicado (text field), no necesitamos get_chat_template
+    # Solo aseguramos que el pad_token existe
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
 
     # ── Dataset ───────────────────────────────────────────────────────────
     dataset = load_dataset("json", data_files=args.dataset, split="train")
