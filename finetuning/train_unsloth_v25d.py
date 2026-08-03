@@ -97,6 +97,7 @@ def main():
         gradient_checkpointing=True,
         optim="adamw_8bit",
         seed=42,
+        eos_token="<|im_end|>",
     )
 
     trainer = SFTTrainer(
