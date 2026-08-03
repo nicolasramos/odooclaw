@@ -24,6 +24,8 @@ type ContextBuilder struct {
 	skillsLoader *skills.SkillsLoader
 	memory       *MemoryStore
 	browser      browserContextResolver
+	contextWindowTokens int // max estimated tokens to keep from history (0 = unlimited)
+	toolResultMaxChars  int // max chars per tool result content (0 = unlimited)
 
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.
@@ -56,7 +58,7 @@ func getGlobalConfigDir() string {
 	return filepath.Join(home, ".odooclaw")
 }
 
-func NewContextBuilder(workspace string) *ContextBuilder {
+func NewContextBuilder(workspace string, contextWindowTokens, toolResultMaxChars int) *ContextBuilder {
 	// builtin skills: skills directory in current project
 	// Use the skills/ directory under the current working directory
 	builtinSkillsDir := strings.TrimSpace(os.Getenv("ODOOCLAW_BUILTIN_SKILLS"))
@@ -67,10 +69,12 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 	globalSkillsDir := filepath.Join(getGlobalConfigDir(), "skills")
 
 	return &ContextBuilder{
-		workspace:    workspace,
-		skillsLoader: skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir),
-		memory:       NewMemoryStore(workspace),
-		browser:      browsercopilot.NewClientFromEnv(),
+		workspace:           workspace,
+		skillsLoader:        skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir),
+		memory:              NewMemoryStore(workspace),
+		browser:             browsercopilot.NewClientFromEnv(),
+		contextWindowTokens: contextWindowTokens,
+		toolResultMaxChars:  toolResultMaxChars,
 	}
 }
 
@@ -679,6 +683,11 @@ func (cb *ContextBuilder) BuildMessages(
 		})
 
 	history = sanitizeHistoryForProvider(history)
+	// Apply tool result masking first: tool outputs are the #1 cause of context
+	// overflow (60-80% of tokens). Mask before sliding window so token estimates
+	// reflect the actual payload size.
+	history = maskToolResults(history, cb.toolResultMaxChars)
+	history = slidingWindowByTokens(history, cb.contextWindowTokens)
 
 	// Single system message containing all context — compatible with all providers.
 	// SystemParts enables cache-aware adapters to set per-block cache_control;
@@ -705,6 +714,87 @@ func (cb *ContextBuilder) BuildMessages(
 	}
 
 	return messages
+}
+
+// maskToolResults caps the Content of each tool result message to maxChars using
+// a head+tail strategy. This preserves the beginning (result type, first records)
+// and the end (totals, errors) while dropping the bloated middle.
+// The tool_use/tool_result pairing required by LLM protocols is preserved intact.
+func maskToolResults(history []providers.Message, maxChars int) []providers.Message {
+	if maxChars <= 0 {
+		return history
+	}
+	result := make([]providers.Message, len(history))
+	copy(result, history)
+	for i, msg := range result {
+		if msg.ToolCallID != "" && len(msg.Content) > maxChars {
+			half := maxChars / 2
+			if half < 1 {
+				half = 1
+			}
+			head := msg.Content[:half]
+			tail := msg.Content[len(msg.Content)-half:]
+			omitted := len(msg.Content) - maxChars
+			result[i].Content = fmt.Sprintf(
+				"%s\n[... %d chars truncated for context efficiency ...]\n%s",
+				head, omitted, tail,
+			)
+		}
+	}
+	return result
+}
+
+// charsPerToken is a rough heuristic (1 token ~= 4 chars for Latin scripts).
+// Accurate enough for budget estimation without importing a full tokenizer.
+const charsPerToken = 4
+
+// slidingWindowByTokens keeps only the most recent messages whose estimated
+// token count fits within maxTokens. It never splits a tool_use/tool_result
+// pair: if the cut point lands inside a pair, it advances until a safe boundary.
+func slidingWindowByTokens(history []providers.Message, maxTokens int) []providers.Message {
+	if maxTokens <= 0 || len(history) == 0 {
+		return history
+	}
+
+	total := 0
+	cutIdx := 0
+	for i := len(history) - 1; i >= 0; i-- {
+		tokens := len(history[i].Content) / charsPerToken
+		for _, tc := range history[i].ToolCalls {
+			if tc.Function != nil {
+				tokens += len(tc.Function.Arguments) / charsPerToken
+			}
+		}
+		if total+tokens > maxTokens {
+			cutIdx = i + 1
+			break
+		}
+		total += tokens
+	}
+
+	// Advance past any leading tool_result messages (must follow their tool_use).
+	for cutIdx < len(history) && history[cutIdx].ToolCallID != "" {
+		cutIdx++
+	}
+
+	// If all messages were dropped, keep at least the last user message so
+	// the LLM still has its latest request. Never return a completely empty
+	// history — the system prompt alone is useless.
+	if cutIdx >= len(history) {
+		// Find the last user message to preserve.
+		for i := len(history) - 1; i >= 0; i-- {
+			if history[i].Role == "user" {
+				return history[i:]
+			}
+		}
+		// No user message found — return the first message (system) if present.
+		if len(history) > 0 {
+			return history[:1]
+		}
+		return history
+	}
+
+	return history[cutIdx:]
 }
 
 func appendSessionMetadata(sb *strings.Builder, channel string, metadata map[string]string) {
