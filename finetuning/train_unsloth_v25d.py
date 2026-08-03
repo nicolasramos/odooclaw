@@ -67,9 +67,8 @@ def main():
 
     # ── Chat template ─────────────────────────────────────────────────────
     # Dataset ya tiene el template aplicado (text field), no necesitamos get_chat_template
-    # Solo aseguramos que el pad_token existe
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    if tokenizer.pad_token is None or tokenizer.pad_token == "<|PAD_TOKEN|>":
+        tokenizer.pad_token = "<|im_end|>"
 
     # ── Dataset ───────────────────────────────────────────────────────────
     dataset = load_dataset("json", data_files=args.dataset, split="train")
@@ -113,6 +112,13 @@ def main():
         response_part="<|im_start|>assistant",
         tokenizer=tokenizer,
     )
+
+    # train_on_responses_only cambia eos_token a <EOS_TOKEN> que no existe en Qwen2.5
+    # Lo restauramos al token correcto
+    tokenizer.eos_token = "<|im_end|>"
+    tokenizer.eos_token_id = 151645
+    trainer.processing_class.eos_token = "<|im_end|>"
+    trainer.processing_class.eos_token_id = 151645
 
     # ── Entrenar ──────────────────────────────────────────────────────────
     print("\n[Train] Comenzando entrenamiento...\n")
