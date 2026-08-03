@@ -12,10 +12,10 @@ import sys
 from pathlib import Path
 
 import torch
+from unsloth import FastLanguageModel, is_bfloat16_supported  # MUST be before trl
+from unsloth.chat_templates import train_on_responses_only
 from datasets import load_dataset
 from trl import SFTConfig, SFTTrainer
-from unsloth import FastLanguageModel, is_bfloat16_supported
-from unsloth.chat_templates import train_on_responses_only
 
 
 def parse_args():
