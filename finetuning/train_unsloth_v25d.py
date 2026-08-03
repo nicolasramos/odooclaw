@@ -69,6 +69,9 @@ def main():
     # Dataset ya tiene el template aplicado (text field), no necesitamos get_chat_template
     if tokenizer.pad_token is None or tokenizer.pad_token == "<|PAD_TOKEN|>":
         tokenizer.pad_token = "<|im_end|>"
+    # Fijar eos_token ANTES de SFTTrainer (TRL 1.9.x valida que exista en vocab)
+    tokenizer.eos_token = "<|im_end|>"
+    tokenizer.eos_token_id = 151645
 
     # ── Dataset ───────────────────────────────────────────────────────────
     dataset = load_dataset("json", data_files=args.dataset, split="train")
