@@ -80,9 +80,17 @@ def main():
     # ── Formateo: messages → texto con chat template de Qwen ─────────────
     def formatting_func(example):
         """Convierte el dataset de formato messages (OpenAI tool_calls) a texto con chat template.
-        Unsloth espera que devuelva una LISTA de strings."""
+        Unsloth puede llamarlo con un solo ejemplo o con un batch; manejamos ambos."""
+        msgs_list = example["messages"]
+        # Caso batch: msgs_list es lista de listas de mensajes
+        if msgs_list and isinstance(msgs_list[0], list):
+            messages_entries = msgs_list
+        else:
+            # Caso ejemplo individual: msgs_list ya es la lista de mensajes
+            messages_entries = [msgs_list]
+
         texts = []
-        for messages in example["messages"]:
+        for messages in messages_entries:
             texts.append(
                 tokenizer.apply_chat_template(
                     messages, tokenize=False, add_generation_prompt=False
