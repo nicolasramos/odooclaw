@@ -41,7 +41,7 @@ from transformers import (
     TrainingArguments,
     set_seed,
 )
-from trl import SFTTrainer
+from trl import SFTTrainer, SFTConfig
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -368,7 +368,7 @@ def train(config: TrainingConfig):
     total_steps = math.ceil(len(dataset) / config.per_device_train_batch_size / config.gradient_accumulation_steps) * config.num_train_epochs
     print(f"\n[Train] ejemplos: {len(dataset)} | steps totales estimados: {total_steps}")
 
-    training_args = TrainingArguments(
+    training_args = SFTConfig(
         output_dir=config.output_dir,
         per_device_train_batch_size=config.per_device_train_batch_size,
         gradient_accumulation_steps=config.gradient_accumulation_steps,
@@ -387,19 +387,17 @@ def train(config: TrainingConfig):
         gradient_checkpointing=True,
         optim="adamw_torch",
         ddp_find_unused_parameters=False if torch.cuda.device_count() > 1 else None,
-        # CUDA compat
-        # group_by_length eliminado en transformers 5.x
+        max_length=config.seq_length,
+        dataset_text_field="text",
+        packing=config.packing,
     )
 
-    # 6. SFTTrainer — packing=False, loss masking automático (E2 corregido)
+    # 6. SFTTrainer — loss masking automático (E2 corregido)
     trainer = SFTTrainer(
         model=model,
         args=training_args,
         train_dataset=dataset,
         processing_class=tokenizer,
-        max_seq_length=config.seq_length,
-        packing=config.packing,  # False = loss masking on response only
-        dataset_text_field="text" if "text" in dataset.column_names else None,
     )
 
     # 7. Entrenar
