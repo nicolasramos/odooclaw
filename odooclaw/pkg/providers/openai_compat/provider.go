@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -303,6 +304,15 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 		if extracted := extractMiniCPMContentToolCalls(content); len(extracted) > 0 {
 			toolCalls = extracted
 			content = stripMiniCPMContentToolCalls(content)
+			if finishReason == "" || finishReason == "stop" {
+				finishReason = "tool_calls"
+			}
+		}
+	}
+	if len(toolCalls) == 0 {
+		if extracted := extractQwenContentToolCalls(content); len(extracted) > 0 {
+			toolCalls = extracted
+			content = stripQwenContentToolCalls(content)
 			if finishReason == "" || finishReason == "stop" {
 				finishReason = "tool_calls"
 			}
@@ -1171,4 +1181,108 @@ func asFloat(v any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// extractQwenContentToolCalls parses Qwen2.5 native tool call format embedded in
+// the response content:
+//
+//	<tool_call>
+//	{"name": "mcp_odoo-mcp_odoo_find_partner", "arguments": "{\"name\": \"ACME\"}"}
+//	</tool_call>
+//
+// It also handles the plain JSON form without XML tags:
+//
+//	{"name": "mcp_odoo-mcp_odoo_find_partner", "arguments": "{\"name\": \"ACME\"}"}
+func extractQwenContentToolCalls(text string) []ToolCall {
+	result := make([]ToolCall, 0)
+	callIndex := 1
+
+	// Pass 1: explicit <tool_call> blocks
+	searchFrom := 0
+	for {
+		relStart := strings.Index(text[searchFrom:], "<tool_call>")
+		if relStart == -1 {
+			break
+		}
+		start := searchFrom + relStart
+		bodyStart := start + len("<tool_call>")
+		relEnd := strings.Index(text[bodyStart:], "</tool_call>")
+		if relEnd == -1 {
+			break
+		}
+		end := bodyStart + relEnd
+		body := strings.TrimSpace(text[bodyStart:end])
+		if tc := parseQwenToolCallJSON(body, callIndex); tc != nil {
+			result = append(result, *tc)
+			callIndex++
+		}
+		searchFrom = end + len("</tool_call>")
+	}
+
+	// Pass 2: bare JSON objects with mcp_ tool names
+	if len(result) == 0 {
+		re := regexp.MustCompile(`\{"name":\s*"(mcp_[^"]+)"[^}]*\}`)
+		for _, match := range re.FindAllString(text, -1) {
+			if tc := parseQwenToolCallJSON(match, callIndex); tc != nil {
+				result = append(result, *tc)
+				callIndex++
+			}
+		}
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func parseQwenToolCallJSON(body string, index int) *ToolCall {
+	var obj struct {
+		Name      string `json:"name"`
+		ID        string `json:"id"`
+		Arguments string `json:"arguments"`
+	}
+	if err := json.Unmarshal([]byte(body), &obj); err != nil {
+		return nil
+	}
+	name := obj.Name
+	if name == "" {
+		name = obj.ID
+	}
+	if name == "" {
+		return nil
+	}
+	argsMap := map[string]any{}
+	argsJSON := "{}"
+	if obj.Arguments != "" {
+		argsJSON = obj.Arguments
+		if err := json.Unmarshal([]byte(obj.Arguments), &argsMap); err != nil {
+			// arguments may be a JSON object directly
+			var nested map[string]any
+			if err2 := json.Unmarshal([]byte(obj.Arguments), &nested); err2 == nil {
+				argsMap = nested
+			}
+		}
+	}
+	return &ToolCall{
+		ID:        "qwen_call_" + strconv.Itoa(index),
+		Type:      "function",
+		Name:      name,
+		Arguments: argsMap,
+		Function: &FunctionCall{
+			Name:      name,
+			Arguments: argsJSON,
+		},
+	}
+}
+
+// stripQwenContentToolCalls removes Qwen tool call markup from text,
+// leaving only the natural language content.
+func stripQwenContentToolCalls(text string) string {
+	re := regexp.MustCompile(`<tool_call>.*?</tool_call>`)
+	cleaned := re.ReplaceAllString(text, "")
+	// Remove leftover bare JSON tool objects
+	re2 := regexp.MustCompile(`\{"name":\s*"(mcp_[^"]+)"[^}]*\}`)
+	cleaned = re2.ReplaceAllString(cleaned, "")
+	return strings.TrimSpace(cleaned)
 }
