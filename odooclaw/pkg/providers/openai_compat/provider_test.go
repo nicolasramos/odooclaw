@@ -149,6 +149,75 @@ func TestProviderChat_ParsesReasoningContent(t *testing.T) {
 	}
 }
 
+func TestProviderChat_ParsesQwenContentToolCalls(t *testing.T) {
+	// V25e: arguments como JSON string escapado
+	// V26: arguments como objeto directo
+	// Ambos con y sin wrapper <tool_call>
+	cases := []struct {
+		name       string
+		content    string
+		wantTool   string
+		wantArgKey string
+		wantArgVal any
+	}{
+		{
+			name:     "v25e_string_args_bare_json",
+			content:  `{"name": "mcp_odoo-mcp_odoo_find_partner", "arguments": "{\"name\": \"ACME\"}"}`,
+			wantTool: "mcp_odoo-mcp_odoo_find_partner", wantArgKey: "name", wantArgVal: "ACME",
+		},
+		{
+			name:     "v26_object_args_bare_json",
+			content:  `{"name": "mcp_odoo-mcp_odoo_find_partner", "arguments": {"name": "ACME"}}`,
+			wantTool: "mcp_odoo-mcp_odoo_find_partner", wantArgKey: "name", wantArgVal: "ACME",
+		},
+		{
+			name: "v26_object_args_tool_call_wrapper",
+			content: `<tool_call>
+{"name": "mcp_odoo-mcp_odoo_post_chatter_message", "arguments": {"body": "validado", "model": "res.partner", "res_id": 37}}
+</tool_call>`,
+			wantTool: "mcp_odoo-mcp_odoo_post_chatter_message", wantArgKey: "res_id", wantArgVal: float64(37),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				resp := map[string]any{
+					"choices": []map[string]any{
+						{
+							"message": map[string]any{
+								"content": tc.content,
+							},
+							"finish_reason": "stop",
+						},
+					},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+			}))
+			defer server.Close()
+
+			p := NewProvider("key", server.URL, "")
+			out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "test"}}, nil, "qwen-0.5b", nil)
+			if err != nil {
+				t.Fatalf("Chat() error = %v", err)
+			}
+			if out.FinishReason != "tool_calls" {
+				t.Fatalf("FinishReason = %q, want tool_calls", out.FinishReason)
+			}
+			if len(out.ToolCalls) != 1 {
+				t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+			}
+			if out.ToolCalls[0].Name != tc.wantTool {
+				t.Fatalf("ToolCalls[0].Name = %q, want %q", out.ToolCalls[0].Name, tc.wantTool)
+			}
+			if got, ok := out.ToolCalls[0].Arguments[tc.wantArgKey]; !ok || got != tc.wantArgVal {
+				t.Fatalf("Arguments[%q] = %v, want %v (args=%v)", tc.wantArgKey, got, tc.wantArgVal, out.ToolCalls[0].Arguments)
+			}
+		})
+	}
+}
+
 func TestProviderChat_ParsesGemmaPseudoToolCallsFromContent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := map[string]any{
