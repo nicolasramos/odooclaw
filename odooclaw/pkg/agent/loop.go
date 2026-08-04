@@ -137,8 +137,12 @@ func registerSharedTools(
 		}
 
 		// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
-		agent.Tools.Register(tools.NewI2CTool())
-		agent.Tools.Register(tools.NewSPITool())
+		// Only register when devices are enabled (small local models are trained
+		// exclusively on Odoo MCP tools and hallucinate on unrelated hardware tools)
+		if cfg.Devices.Enabled {
+			agent.Tools.Register(tools.NewI2CTool())
+			agent.Tools.Register(tools.NewSPITool())
+		}
 
 		// Message tool
 		messageTool := tools.NewMessageTool()
