@@ -1236,9 +1236,16 @@ func extractQwenContentToolCalls(text string) []ToolCall {
 
 	// Pass 2: bare JSON objects with mcp_ tool names
 	if len(result) == 0 {
-		re := regexp.MustCompile(`\{"name":\s*"(mcp_[^"]+)"[^}]*\}`)
-		for _, match := range re.FindAllString(text, -1) {
-			if tc := parseQwenToolCallJSON(match, callIndex); tc != nil {
+		// Find {"name": "mcp_...", ...} and parse with balanced braces so
+		// nested } inside "arguments" don't truncate the JSON.
+		re := regexp.MustCompile(`\{"name":\s*"(mcp_[^"]+)"`)
+		for _, loc := range re.FindAllStringIndex(text, -1) {
+			start := loc[0]
+			end := findBalancedJSON(text, start)
+			if end <= start {
+				continue
+			}
+			if tc := parseQwenToolCallJSON(text[start:end], callIndex); tc != nil {
 				result = append(result, *tc)
 				callIndex++
 			}
@@ -1289,6 +1296,44 @@ func parseQwenToolCallJSON(body string, index int) *ToolCall {
 			Arguments: argsJSON,
 		},
 	}
+}
+
+// findBalancedJSON returns the index just past the closing brace of the JSON
+// object starting at start (which must point at '{'). Handles strings with
+// escaped quotes and nested braces so arguments containing JSON don't break.
+func findBalancedJSON(text string, start int) int {
+	depth := 0
+	inString := false
+	escaped := false
+	for i := start; i < len(text); i++ {
+		ch := text[i]
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if ch == '\\' {
+				escaped = true
+				continue
+			}
+			if ch == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch ch {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return -1
 }
 
 // stripQwenContentToolCalls removes Qwen tool call markup from text,
