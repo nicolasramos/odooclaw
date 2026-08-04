@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -980,6 +981,14 @@ func (al *AgentLoop) runLLMIteration(
 		// Build tool definitions
 		providerToolDefs := agent.Tools.ToProviderDefs()
 
+		// Small local models (fine-tuned on ~5 tools per example) degrade with
+		// dozens of tools in context. Apply tool retrieval: keep only the top-K
+		// most relevant tools for the current user query.
+		if isLocalSmallModel(agent.Model) && len(providerToolDefs) > maxLocalToolsInPrompt {
+			query := lastUserMessageText(messages)
+			providerToolDefs = retrieveRelevantTools(providerToolDefs, query, maxLocalToolsInPrompt)
+		}
+
 		// Log LLM request details
 		logger.DebugCF("agent", "LLM request",
 			map[string]any{
@@ -1045,9 +1054,7 @@ func (al *AgentLoop) runLLMIteration(
 			// Small local models (llama.cpp/ollama) are fine-tuned with tools
 			// listed as plain text in the system prompt. Inject them there
 			// instead of sending OpenAI JSON function schemas.
-			if strings.Contains(strings.ToLower(agent.Model), "odooclaw") ||
-				strings.Contains(strings.ToLower(agent.Model), "local") ||
-				strings.Contains(strings.ToLower(agent.Model), "qwen") {
+			if isLocalSmallModel(agent.Model) {
 				opts["prompt_tools_in_text"] = true
 			}
 			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, opts)
@@ -1746,4 +1753,122 @@ func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 		return nil
 	}
 	return &routing.RoutePeer{Kind: parentKind, ID: parentID}
+}
+
+// maxLocalToolsInPrompt caps how many tools are sent to small local models.
+// The fine-tuned OdooClaw models (Qwen 0.5B/1.5B) are trained with at most
+// 5 tools listed per example; more tools cause hallucination.
+const maxLocalToolsInPrompt = 5
+
+// isLocalSmallModel reports whether the model name refers to a small local
+// fine-tuned model (llama.cpp/ollama) that needs tools injected as plain text
+// and a reduced tool set.
+func isLocalSmallModel(model string) bool {
+	lower := strings.ToLower(model)
+	return strings.Contains(lower, "odooclaw") ||
+		strings.Contains(lower, "local") ||
+		strings.Contains(lower, "qwen") ||
+		strings.Contains(lower, "llama") ||
+		strings.Contains(lower, "0.5b") ||
+		strings.Contains(lower, "1.5b")
+}
+
+// lastUserMessageText returns the content of the most recent user message.
+func lastUserMessageText(messages []providers.Message) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			return messages[i].Content
+		}
+	}
+	return ""
+}
+
+// retrieveRelevantTools selects the top-K tool definitions most relevant to the
+// user query using lightweight keyword scoring over the tool name and domain.
+// It guarantees the query's most salient Odoo domain is represented.
+func retrieveRelevantTools(defs []providers.ToolDefinition, query string, k int) []providers.ToolDefinition {
+	if len(defs) <= k {
+		return defs
+	}
+	if strings.TrimSpace(query) == "" {
+		return defs[:k]
+	}
+
+	queryLower := strings.ToLower(query)
+	// Domain keywords map to tool name fragments (English + Spanish).
+	domainKeywords := map[string][]string{
+		"partner":     {"partner", "cliente", "contact", "empresa", "acme"},
+		"product":     {"product", "producto", "stock", "almacen", "inventario"},
+		"sale":        {"sale", "venta", "orden", "pedido", "so/", "order"},
+		"invoice":     {"invoice", "factura", "facturas", "pago", "pending", "pendiente"},
+		"task":        {"task", "tarea", "proyecto", "project"},
+		"lead":        {"lead", "crm", "oportunidad"},
+		"reconcile":   {"reconcile", "conciliar", "banco", "bank"},
+		"tax":         {"tax", "impuesto", "iva"},
+		"delivery":    {"delivery", "albaran", "receipt", "recepcion"},
+		"inventory":   {"inventory", "ajuste", "adjustment", "valuation"},
+		"activity":    {"activity", "actividad", "reunion", "meeting"},
+		"chatter":     {"chatter", "mensaje", "message", "nota", "note"},
+		"purchase":    {"purchase", "compra", "po/"},
+		"account":     {"account", "cuenta", "contab"},
+		"migration":   {"migration", "migra"},
+		"report":      {"report", "informe"},
+	}
+
+	score := func(name string) int {
+		s := 0
+		lower := strings.ToLower(name)
+		for _, kw := range domainKeywords["partner"] {
+			if strings.Contains(queryLower, kw) {
+				if strings.Contains(lower, "partner") {
+					s += 3
+				}
+			}
+		}
+		for domain, kws := range domainKeywords {
+			if domain == "partner" {
+				continue
+			}
+			for _, kw := range kws {
+				if strings.Contains(queryLower, kw) && strings.Contains(lower, domain) {
+					s += 3
+				}
+			}
+		}
+		// Token overlap bonus
+		for _, tok := range strings.FieldsFunc(queryLower, func(r rune) bool {
+			return !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'))
+		}) {
+			if len(tok) >= 4 && strings.Contains(lower, tok) {
+				s += 2
+			}
+		}
+		return s
+	}
+
+	type scored struct {
+		def providers.ToolDefinition
+		s   int
+	}
+	scoredDefs := make([]scored, 0, len(defs))
+	for _, d := range defs {
+		scoredDefs = append(scoredDefs, scored{def: d, s: score(d.Function.Name)})
+	}
+	// Stable sort by score desc
+	sort.SliceStable(scoredDefs, func(i, j int) bool { return scoredDefs[i].s > scoredDefs[j].s })
+
+	out := make([]providers.ToolDefinition, 0, k)
+	seen := map[string]bool{}
+	for _, sd := range scoredDefs {
+		name := sd.def.Function.Name
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, sd.def)
+		if len(out) >= k {
+			break
+		}
+	}
+	return out
 }
