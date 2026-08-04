@@ -81,6 +81,10 @@ func NewAgentInstance(
 		toolResultMaxChars = *defaults.ToolResultMaxChars
 	}
 	contextBuilder := NewContextBuilder(workspace, contextWindowTokens, toolResultMaxChars)
+	// Local small models need a minimal system prompt. Wire the resolved model
+	// so BuildSystemPrompt can switch to the compact prompt for them.
+	contextBuilder.SetModel(model)
+	contextBuilder.InvalidateCache()
 
 	agentID := routing.DefaultAgentID
 	agentName := ""
