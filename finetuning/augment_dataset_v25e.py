@@ -44,7 +44,8 @@ def load_manifest(path: str) -> dict:
     return {"tools": by_name, "raw": mdata}
 
 
-def system_prompt_with_tools(tool_names: list[str], descriptions: dict) -> str:
+def system_prompt_with_tools(tool_names: list[str], domains: dict) -> str:
+    """Replica el formato EXACTO del system prompt V25c: '- <tool>: Herramienta de <domain>'."""
     lines = [
         "Eres un asistente experto en Odoo ERP integrado con el sistema OdooClaw.",
         "Tienes acceso a las siguientes herramientas. Cuando necesites ejecutar una operación, ",
@@ -53,11 +54,8 @@ def system_prompt_with_tools(tool_names: list[str], descriptions: dict) -> str:
         "HERRAMIENTAS DISPONIBLES:",
     ]
     for name in tool_names:
-        desc = descriptions.get(name.replace(RUNTIME_PREFIX, ""), "")
-        lines.append(f"- {name}: {desc}" if desc else f"- {name}")
-    lines.append("")
-    lines.append("IMPORTANTE: Solo puedes usar las herramientas listadas arriba. "
-                 "Si ninguna es adecuada, responde sin herramientas.")
+        domain = domains.get(name.replace(RUNTIME_PREFIX, ""), "generic")
+        lines.append(f"- {name}: Herramienta de {domain}")
     return "\n".join(lines)
 
 
@@ -160,7 +158,7 @@ def make_example(tool: str, descriptions: dict, all_tools: list[str], domains: d
     }
     prompt = template.format(**placeholders)
 
-    system = system_prompt_with_tools(available, descriptions)
+    system = system_prompt_with_tools(available, domains)
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": prompt},
