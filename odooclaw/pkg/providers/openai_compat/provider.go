@@ -1359,9 +1359,15 @@ func stripQwenContentToolCalls(text string) string {
 // system message. Small fine-tuned local models (Qwen 0.5B) were trained with
 // tools listed as "HERRAMIENTAS DISPONIBLES:" in the system prompt and
 // hallucinate when tools arrive as OpenAI JSON function schemas.
+//
+// The injected block MUST stay compact: the verbose preamble ("Tienes acceso
+// a las siguientes herramientas. Cuando necesites ejecutar una operación, usa
+// el formato <tool_call>…") makes the 0.5B model repeat the tool list instead
+// of emitting a <tool_call>. A bare list of "- <name>" lines under the
+// HERRAMIENTAS DISPONIBLES: header is what makes it actually call the tool.
 func injectToolsAsText(messages []Message, tools []ToolDefinition) []Message {
 	var sb strings.Builder
-	sb.WriteString("\n\nTienes acceso a las siguientes herramientas. Cuando necesites ejecutar una operación, usa el formato <tool_call> con el nombre exacto de la herramienta y sus argumentos.\n\nHERRAMIENTAS DISPONIBLES:\n")
+	sb.WriteString("\n\nHERRAMIENTAS DISPONIBLES:\n")
 	for _, t := range tools {
 		sb.WriteString("- " + t.Function.Name + "\n")
 	}
