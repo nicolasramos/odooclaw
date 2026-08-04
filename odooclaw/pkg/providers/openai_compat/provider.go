@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -120,9 +121,24 @@ func (p *Provider) Chat(
 		"messages": serializeMessages(messages),
 	}
 
+	promptToolsInText := false
+	if v, ok := options["prompt_tools_in_text"]; ok {
+		if b, ok := v.(bool); ok {
+			promptToolsInText = b
+		}
+	}
+
 	if len(tools) > 0 {
-		requestBody["tools"] = tools
-		requestBody["tool_choice"] = "auto"
+		if promptToolsInText {
+			// Small local models (Qwen 0.5B fine-tuned) are trained with tools
+			// listed as plain text in the system prompt ("HERRAMIENTAS DISPONIBLES:")
+			// and hallucinate when tools arrive as OpenAI JSON function schemas.
+			// Inject them into the last system message instead.
+			messages = injectToolsAsText(messages, tools)
+		} else {
+			requestBody["tools"] = tools
+			requestBody["tool_choice"] = "auto"
+		}
 	}
 
 	if maxTokens, ok := asInt(options["max_tokens"]); ok {
@@ -303,6 +319,15 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 		if extracted := extractMiniCPMContentToolCalls(content); len(extracted) > 0 {
 			toolCalls = extracted
 			content = stripMiniCPMContentToolCalls(content)
+			if finishReason == "" || finishReason == "stop" {
+				finishReason = "tool_calls"
+			}
+		}
+	}
+	if len(toolCalls) == 0 {
+		if extracted := extractQwenContentToolCalls(content); len(extracted) > 0 {
+			toolCalls = extracted
+			content = stripQwenContentToolCalls(content)
 			if finishReason == "" || finishReason == "stop" {
 				finishReason = "tool_calls"
 			}
@@ -1171,4 +1196,179 @@ func asFloat(v any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// extractQwenContentToolCalls parses Qwen2.5 native tool call format embedded in
+// the response content:
+//
+//	<tool_call>
+//	{"name": "mcp_odoo-mcp_odoo_find_partner", "arguments": "{\"name\": \"ACME\"}"}
+//	</tool_call>
+//
+// It also handles the plain JSON form without XML tags:
+//
+//	{"name": "mcp_odoo-mcp_odoo_find_partner", "arguments": "{\"name\": \"ACME\"}"}
+func extractQwenContentToolCalls(text string) []ToolCall {
+	result := make([]ToolCall, 0)
+	callIndex := 1
+
+	// Pass 1: explicit <tool_call> blocks
+	searchFrom := 0
+	for {
+		relStart := strings.Index(text[searchFrom:], "<tool_call>")
+		if relStart == -1 {
+			break
+		}
+		start := searchFrom + relStart
+		bodyStart := start + len("<tool_call>")
+		relEnd := strings.Index(text[bodyStart:], "</tool_call>")
+		if relEnd == -1 {
+			break
+		}
+		end := bodyStart + relEnd
+		body := strings.TrimSpace(text[bodyStart:end])
+		if tc := parseQwenToolCallJSON(body, callIndex); tc != nil {
+			result = append(result, *tc)
+			callIndex++
+		}
+		searchFrom = end + len("</tool_call>")
+	}
+
+	// Pass 2: bare JSON objects with mcp_ tool names
+	if len(result) == 0 {
+		// Find {"name": "mcp_...", ...} and parse with balanced braces so
+		// nested } inside "arguments" don't truncate the JSON.
+		re := regexp.MustCompile(`\{"name":\s*"(mcp_[^"]+)"`)
+		for _, loc := range re.FindAllStringIndex(text, -1) {
+			start := loc[0]
+			end := findBalancedJSON(text, start)
+			if end <= start {
+				continue
+			}
+			if tc := parseQwenToolCallJSON(text[start:end], callIndex); tc != nil {
+				result = append(result, *tc)
+				callIndex++
+			}
+		}
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func parseQwenToolCallJSON(body string, index int) *ToolCall {
+	var obj struct {
+		Name      string `json:"name"`
+		ID        string `json:"id"`
+		Arguments string `json:"arguments"`
+	}
+	if err := json.Unmarshal([]byte(body), &obj); err != nil {
+		return nil
+	}
+	name := obj.Name
+	if name == "" {
+		name = obj.ID
+	}
+	if name == "" {
+		return nil
+	}
+	argsMap := map[string]any{}
+	argsJSON := "{}"
+	if obj.Arguments != "" {
+		argsJSON = obj.Arguments
+		if err := json.Unmarshal([]byte(obj.Arguments), &argsMap); err != nil {
+			// arguments may be a JSON object directly
+			var nested map[string]any
+			if err2 := json.Unmarshal([]byte(obj.Arguments), &nested); err2 == nil {
+				argsMap = nested
+			}
+		}
+	}
+	return &ToolCall{
+		ID:        "qwen_call_" + strconv.Itoa(index),
+		Type:      "function",
+		Name:      name,
+		Arguments: argsMap,
+		Function: &FunctionCall{
+			Name:      name,
+			Arguments: argsJSON,
+		},
+	}
+}
+
+// findBalancedJSON returns the index just past the closing brace of the JSON
+// object starting at start (which must point at '{'). Handles strings with
+// escaped quotes and nested braces so arguments containing JSON don't break.
+func findBalancedJSON(text string, start int) int {
+	depth := 0
+	inString := false
+	escaped := false
+	for i := start; i < len(text); i++ {
+		ch := text[i]
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if ch == '\\' {
+				escaped = true
+				continue
+			}
+			if ch == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch ch {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return -1
+}
+
+// stripQwenContentToolCalls removes Qwen tool call markup from text,
+// leaving only the natural language content.
+func stripQwenContentToolCalls(text string) string {
+	re := regexp.MustCompile(`<tool_call>.*?</tool_call>`)
+	cleaned := re.ReplaceAllString(text, "")
+	// Remove leftover bare JSON tool objects
+	re2 := regexp.MustCompile(`\{"name":\s*"(mcp_[^"]+)"[^}]*\}`)
+	cleaned = re2.ReplaceAllString(cleaned, "")
+	return strings.TrimSpace(cleaned)
+}
+
+// injectToolsAsText appends the available tools as plain text to the last
+// system message. Small fine-tuned local models (Qwen 0.5B) were trained with
+// tools listed as "HERRAMIENTAS DISPONIBLES:" in the system prompt and
+// hallucinate when tools arrive as OpenAI JSON function schemas.
+func injectToolsAsText(messages []Message, tools []ToolDefinition) []Message {
+	var sb strings.Builder
+	sb.WriteString("\n\nTienes acceso a las siguientes herramientas. Cuando necesites ejecutar una operación, usa el formato <tool_call> con el nombre exacto de la herramienta y sus argumentos.\n\nHERRAMIENTAS DISPONIBLES:\n")
+	for _, t := range tools {
+		sb.WriteString("- " + t.Function.Name + "\n")
+	}
+	toolBlock := sb.String()
+
+	out := make([]Message, 0, len(messages))
+	for i, m := range messages {
+		if m.Role == "system" {
+			m.Content = m.Content + toolBlock
+		}
+		out = append(out, m)
+		_ = i
+	}
+	if len(out) == 0 {
+		out = append(out, Message{Role: "system", Content: toolBlock})
+	}
+	return out
 }

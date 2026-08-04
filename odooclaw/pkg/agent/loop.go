@@ -13,10 +13,12 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nicolasramos/odooclaw/pkg/browsercopilot"
 	"github.com/nicolasramos/odooclaw/pkg/bus"
@@ -137,8 +139,12 @@ func registerSharedTools(
 		}
 
 		// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
-		agent.Tools.Register(tools.NewI2CTool())
-		agent.Tools.Register(tools.NewSPITool())
+		// Only register when devices are enabled (small local models are trained
+		// exclusively on Odoo MCP tools and hallucinate on unrelated hardware tools)
+		if cfg.Devices.Enabled {
+			agent.Tools.Register(tools.NewI2CTool())
+			agent.Tools.Register(tools.NewSPITool())
+		}
 
 		// Message tool
 		messageTool := tools.NewMessageTool()
@@ -975,6 +981,14 @@ func (al *AgentLoop) runLLMIteration(
 		// Build tool definitions
 		providerToolDefs := agent.Tools.ToProviderDefs()
 
+		// Small local models (fine-tuned on ~5 tools per example) degrade with
+		// dozens of tools in context. Apply tool retrieval: keep only the top-K
+		// most relevant tools for the current user query.
+		if isLocalSmallModel(agent.Model) && len(providerToolDefs) > maxLocalToolsInPrompt {
+			query := lastUserMessageText(messages)
+			providerToolDefs = retrieveRelevantTools(providerToolDefs, query, maxLocalToolsInPrompt)
+		}
+
 		// Log LLM request details
 		logger.DebugCF("agent", "LLM request",
 			map[string]any{
@@ -1032,11 +1046,18 @@ func (al *AgentLoop) runLLMIteration(
 				}
 				return fbResult.Response, nil
 			}
-			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, map[string]any{
+			opts := map[string]any{
 				"max_tokens":       agent.MaxTokens,
 				"temperature":      agent.Temperature,
 				"prompt_cache_key": agent.ID,
-			})
+			}
+			// Small local models (llama.cpp/ollama) are fine-tuned with tools
+			// listed as plain text in the system prompt. Inject them there
+			// instead of sending OpenAI JSON function schemas.
+			if isLocalSmallModel(agent.Model) {
+				opts["prompt_tools_in_text"] = true
+			}
+			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, opts)
 		}
 
 		// Retry loop for context/token errors
@@ -1049,10 +1070,15 @@ func (al *AgentLoop) runLLMIteration(
 
 			errMsg := strings.ToLower(err.Error())
 
-			retryReason, isTransient := transientLLMRetryReason(err)
+			// Check if this is a network/HTTP timeout — not a context window error.
+			isTimeoutError := errors.Is(err, context.DeadlineExceeded) ||
+				strings.Contains(errMsg, "deadline exceeded") ||
+				strings.Contains(errMsg, "client.timeout") ||
+				strings.Contains(errMsg, "timed out") ||
+				strings.Contains(errMsg, "timeout exceeded")
 
-			// Detect real context window / token limit errors, excluding transient errors.
-			isContextError := !isTransient && (strings.Contains(errMsg, "context_length_exceeded") ||
+			// Detect real context window / token limit errors, excluding network timeouts.
+			isContextError := !isTimeoutError && (strings.Contains(errMsg, "context_length_exceeded") ||
 				strings.Contains(errMsg, "context window") ||
 				strings.Contains(errMsg, "maximum context length") ||
 				strings.Contains(errMsg, "token limit") ||
@@ -1062,11 +1088,10 @@ func (al *AgentLoop) runLLMIteration(
 				strings.Contains(errMsg, "prompt is too long") ||
 				strings.Contains(errMsg, "request too large"))
 
-			if isTransient && retry < maxRetries {
+			if isTimeoutError && retry < maxRetries {
 				backoff := time.Duration(retry+1) * 5 * time.Second
-				logger.WarnCF("agent", "Transient LLM error, retrying after backoff", map[string]any{
+				logger.WarnCF("agent", "Timeout error, retrying after backoff", map[string]any{
 					"error":   err.Error(),
-					"reason":  retryReason,
 					"retry":   retry,
 					"backoff": backoff.String(),
 				})
@@ -1084,17 +1109,6 @@ func (al *AgentLoop) runLLMIteration(
 					},
 				)
 
-				if !al.forceCompression(agent, opts.SessionKey) {
-					logger.WarnCF(
-						"agent",
-						"Context compression made no progress; skipping identical retry",
-						map[string]any{
-							"session_key": opts.SessionKey,
-							"retry":       retry,
-						},
-					)
-					break
-				}
 				if retry == 0 && !constants.IsInternalChannel(opts.Channel) {
 					al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 						Channel: opts.Channel,
@@ -1102,6 +1116,8 @@ func (al *AgentLoop) runLLMIteration(
 						Content: "Context window exceeded. Compressing history and retrying...",
 					})
 				}
+
+				al.forceCompression(agent, opts.SessionKey)
 				newHistory := agent.Sessions.GetHistory(opts.SessionKey)
 				newSummary := agent.Sessions.GetSummary(opts.SessionKey)
 				messages = agent.ContextBuilder.BuildMessages(
@@ -1336,13 +1352,47 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 	}
 }
 
-// forceCompression aggressively reduces context at complete-turn boundaries.
-func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) bool {
+// forceCompression aggressively reduces context when the limit is hit.
+// It drops the oldest 50% of messages (keeping system prompt and last user message).
+func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 	history := agent.Sessions.GetHistory(sessionKey)
-	newHistory, droppedCount, compressed := compressedHistory(history)
-	if !compressed {
-		return false
+	if len(history) <= 4 {
+		return
 	}
+
+	// Keep system prompt (usually [0]) and the very last message (user's trigger)
+	// We want to drop the oldest half of the *conversation*
+	// Assuming [0] is system, [1:] is conversation
+	conversation := history[1 : len(history)-1]
+	if len(conversation) == 0 {
+		return
+	}
+
+	// Helper to find the mid-point of the conversation
+	mid := len(conversation) / 2
+
+	// New history structure:
+	// 1. System Prompt (with compression note appended)
+	// 2. Second half of conversation
+	// 3. Last message
+
+	droppedCount := mid
+	keptConversation := conversation[mid:]
+
+	newHistory := make([]providers.Message, 0, 1+len(keptConversation)+1)
+
+	// Append compression note to the original system prompt instead of adding a new system message
+	// This avoids having two consecutive system messages which some APIs (like Zhipu) reject
+	compressionNote := fmt.Sprintf(
+		"\n\n[System Note: Emergency compression dropped %d oldest messages due to context limit]",
+		droppedCount,
+	)
+	enhancedSystemPrompt := history[0]
+	enhancedSystemPrompt.Content = enhancedSystemPrompt.Content + compressionNote
+	newHistory = append(newHistory, enhancedSystemPrompt)
+
+	newHistory = append(newHistory, keptConversation...)
+	newHistory = append(newHistory, history[len(history)-1]) // Last message
 
 	// Update session
 	agent.Sessions.SetHistory(sessionKey, newHistory)
@@ -1353,7 +1403,6 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) b
 		"dropped_msgs": droppedCount,
 		"new_count":    len(newHistory),
 	})
-	return true
 }
 
 // GetStartupInfo returns information about loaded tools and skills for logging.
@@ -1565,9 +1614,15 @@ func (al *AgentLoop) summarizeBatch(
 }
 
 // estimateTokens estimates the number of tokens in a message list.
-// Uses a conservative serialized multilingual heuristic.
+// Uses a safe heuristic of 2.5 characters per token to account for CJK and other
+// overheads better than the previous 3 chars/token.
 func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
-	return estimateMessageTokens(messages)
+	totalChars := 0
+	for _, m := range messages {
+		totalChars += utf8.RuneCountInString(m.Content)
+	}
+	// 2.5 chars per token = totalChars * 2 / 5
+	return totalChars * 2 / 5
 }
 
 func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) (string, bool) {
@@ -1700,36 +1755,120 @@ func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 	return &routing.RoutePeer{Kind: parentKind, ID: parentID}
 }
 
-// transientLLMRetryReason classifies an LLM error as transient (safe to retry)
-// using the provider error classifier first, then falling back to string patterns.
-// Returns the reason string and true if the error is transient.
-func transientLLMRetryReason(err error) (string, bool) {
-	if err == nil {
-		return "", false
-	}
+// maxLocalToolsInPrompt caps how many tools are sent to small local models.
+// The fine-tuned OdooClaw models (Qwen 0.5B/1.5B) are trained with at most
+// 5 tools listed per example; more tools cause hallucination.
+const maxLocalToolsInPrompt = 5
 
-	// Use the provider error classifier for structured detection.
-	if failErr := providers.ClassifyError(err, "", ""); failErr != nil {
-		switch failErr.Reason {
-		case providers.FailoverTimeout:
-			if failErr.Status >= 500 {
-				return "server_error", true
-			}
-			return "timeout", true
-		case providers.FailoverRateLimit, providers.FailoverOverloaded:
-			return "rate_limit", true
+// isLocalSmallModel reports whether the model name refers to a small local
+// fine-tuned model (llama.cpp/ollama) that needs tools injected as plain text
+// and a reduced tool set.
+func isLocalSmallModel(model string) bool {
+	lower := strings.ToLower(model)
+	return strings.Contains(lower, "odooclaw") ||
+		strings.Contains(lower, "local") ||
+		strings.Contains(lower, "qwen") ||
+		strings.Contains(lower, "llama") ||
+		strings.Contains(lower, "0.5b") ||
+		strings.Contains(lower, "1.5b")
+}
+
+// lastUserMessageText returns the content of the most recent user message.
+func lastUserMessageText(messages []providers.Message) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			return messages[i].Content
 		}
 	}
+	return ""
+}
 
-	// Fallback: string patterns for network errors not caught by the classifier.
-	errMsg := strings.ToLower(err.Error())
-	if strings.Contains(errMsg, "connection reset") ||
-		strings.Contains(errMsg, "connection refused") ||
-		strings.Contains(errMsg, "broken pipe") ||
-		strings.Contains(errMsg, "no such host") ||
-		strings.Contains(errMsg, "network is unreachable") {
-		return "network", true
+// retrieveRelevantTools selects the top-K tool definitions most relevant to the
+// user query using lightweight keyword scoring over the tool name and domain.
+// It guarantees the query's most salient Odoo domain is represented.
+func retrieveRelevantTools(defs []providers.ToolDefinition, query string, k int) []providers.ToolDefinition {
+	if len(defs) <= k {
+		return defs
+	}
+	if strings.TrimSpace(query) == "" {
+		return defs[:k]
 	}
 
-	return "", false
+	queryLower := strings.ToLower(query)
+	// Domain keywords map to tool name fragments (English + Spanish).
+	domainKeywords := map[string][]string{
+		"partner":     {"partner", "cliente", "contact", "empresa", "acme"},
+		"product":     {"product", "producto", "stock", "almacen", "inventario"},
+		"sale":        {"sale", "venta", "orden", "pedido", "so/", "order"},
+		"invoice":     {"invoice", "factura", "facturas", "pago", "pending", "pendiente"},
+		"task":        {"task", "tarea", "proyecto", "project"},
+		"lead":        {"lead", "crm", "oportunidad"},
+		"reconcile":   {"reconcile", "conciliar", "banco", "bank"},
+		"tax":         {"tax", "impuesto", "iva"},
+		"delivery":    {"delivery", "albaran", "receipt", "recepcion"},
+		"inventory":   {"inventory", "ajuste", "adjustment", "valuation"},
+		"activity":    {"activity", "actividad", "reunion", "meeting"},
+		"chatter":     {"chatter", "mensaje", "message", "nota", "note"},
+		"purchase":    {"purchase", "compra", "po/"},
+		"account":     {"account", "cuenta", "contab"},
+		"migration":   {"migration", "migra"},
+		"report":      {"report", "informe"},
+	}
+
+	score := func(name string) int {
+		s := 0
+		lower := strings.ToLower(name)
+		for _, kw := range domainKeywords["partner"] {
+			if strings.Contains(queryLower, kw) {
+				if strings.Contains(lower, "partner") {
+					s += 3
+				}
+			}
+		}
+		for domain, kws := range domainKeywords {
+			if domain == "partner" {
+				continue
+			}
+			for _, kw := range kws {
+				if strings.Contains(queryLower, kw) && strings.Contains(lower, domain) {
+					s += 3
+				}
+			}
+		}
+		// Token overlap bonus
+		for _, tok := range strings.FieldsFunc(queryLower, func(r rune) bool {
+			return !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'))
+		}) {
+			if len(tok) >= 4 && strings.Contains(lower, tok) {
+				s += 2
+			}
+		}
+		return s
+	}
+
+	type scored struct {
+		def providers.ToolDefinition
+		s   int
+	}
+	scoredDefs := make([]scored, 0, len(defs))
+	for _, d := range defs {
+		scoredDefs = append(scoredDefs, scored{def: d, s: score(d.Function.Name)})
+	}
+	// Stable sort by score desc
+	sort.SliceStable(scoredDefs, func(i, j int) bool { return scoredDefs[i].s > scoredDefs[j].s })
+
+	out := make([]providers.ToolDefinition, 0, k)
+	seen := map[string]bool{}
+	for _, sd := range scoredDefs {
+		name := sd.def.Function.Name
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, sd.def)
+		if len(out) >= k {
+			break
+		}
+	}
+	return out
 }
