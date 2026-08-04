@@ -67,20 +67,32 @@ class ModelSession:
         return self._extract_tool(text), latency
 
     def _extract_tool(self, text: str) -> tuple:
-        """Extrae (tool_name, arguments) del texto generado."""
-        # Qwen format: <tool_call>\n{"name": "...", "arguments": "..."}\n</tool_call>
+        """Extrae (tool_name, arguments) del texto generado.
+        Soporta múltiples formatos:
+        1. Qwen: <tool_call>\n{"name": "...", "arguments": "..."}\n</tool_call>
+        2. Dataset legacy: {"id": "mcp_odoo-mcp_odoo_...", "input": "{...}"}
+        3. OpenAI: {"name": "...", "arguments": "..."}
+        """
+        # 1. Qwen format
         m = re.search(r'<tool_call>\s*({.*?})\s*</tool_call>', text, re.DOTALL)
         if m:
             try:
                 obj = json.loads(m.group(1))
-                return obj.get("name"), obj.get("arguments")
+                name = obj.get("name") or obj.get("id") or obj.get("function", {}).get("name")
+                args = obj.get("arguments") or obj.get("input")
+                if name and name.startswith("mcp_"):
+                    return name, args
             except json.JSONDecodeError:
                 pass
-        # OpenAI JSON format
-        m2 = re.search(r'"name":\s*"([^"]+)"', text)
+        # 2. Legacy/dataset format: {"id": "mcp_...", "input": "..."}
+        m2 = re.search(r'\{"id":\s*"(mcp_[^"]+)"[^}]*\}', text, re.DOTALL)
         if m2:
-            m3 = re.search(r'"arguments":\s*"([^"]+)"', text)
-            return m2.group(1), m3.group(1) if m3 else None
+            return m2.group(1), None
+        # 3. OpenAI JSON format
+        m3 = re.search(r'"name":\s*"(mcp_[^"]+)"', text)
+        if m3:
+            m4 = re.search(r'"arguments":\s*"([^"]+)"', text)
+            return m3.group(1), m4.group(1) if m4 else None
         return None, None
 
 
