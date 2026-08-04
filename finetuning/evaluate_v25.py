@@ -105,12 +105,12 @@ def build_system_prompt(tools_available: list[str]) -> str:
 
 
 TEST_CASES = [
-    # Lectura (5)
+    # Lectura (5) — names verificados contra odooclaw_tool_manifest.json
     {"prompt": "Busca el partner ACME", "expected_tool": "mcp_odoo-mcp_odoo_find_partner", "category": "read"},
-    {"prompt": "Dime el saldo de la cuenta contable 430000", "expected_tool": "mcp_odoo-mcp_odoo_get_account_balance", "category": "read"},
-    {"prompt": "¿Cuántos productos hay en el almacén principal?", "expected_tool": "mcp_odoo-mcp_odoo_search_product", "category": "read"},
-    {"prompt": "Busca la orden de venta SO/2026/00150", "expected_tool": "mcp_odoo-mcp_odoo_search_sale_order", "category": "read"},
-    {"prompt": "¿Qué facturas están pendientes de pago?", "expected_tool": "mcp_odoo-mcp_odoo_search_invoice", "category": "read"},
+    {"prompt": "Dime el saldo de la cuenta contable 430000", "expected_tool": "mcp_odoo-mcp_odoo_get_invoice_summary", "category": "read"},
+    {"prompt": "¿Cuántos productos hay en el almacén principal?", "expected_tool": "mcp_odoo-mcp_odoo_find_product", "category": "read"},
+    {"prompt": "Busca la orden de venta SO/2026/00150", "expected_tool": "mcp_odoo-mcp_odoo_find_sale_order", "category": "read"},
+    {"prompt": "¿Qué facturas están pendientes de pago?", "expected_tool": "mcp_odoo-mcp_odoo_find_pending_invoices", "category": "read"},
     # Creación (3)
     {"prompt": "Crea una factura de proveedor para el partner 42", "expected_tool": "mcp_odoo-mcp_odoo_create_vendor_invoice", "category": "create"},
     {"prompt": "Registra un nuevo lead en CRM para la empresa XYZ", "expected_tool": "mcp_odoo-mcp_odoo_create_lead", "category": "create"},
