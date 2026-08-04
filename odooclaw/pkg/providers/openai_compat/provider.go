@@ -117,8 +117,7 @@ func (p *Provider) Chat(
 	model = normalizeModel(model, p.apiBase)
 
 	requestBody := map[string]any{
-		"model":    model,
-		"messages": serializeMessages(messages),
+		"model": model,
 	}
 
 	promptToolsInText := false
@@ -140,6 +139,9 @@ func (p *Provider) Chat(
 			requestBody["tool_choice"] = "auto"
 		}
 	}
+
+	// Serialize messages AFTER injectToolsAsText may have modified them
+	requestBody["messages"] = serializeMessages(messages)
 
 	if maxTokens, ok := asInt(options["max_tokens"]); ok {
 		// Use configured maxTokensField if specified, otherwise fallback to model-based detection
@@ -1260,9 +1262,9 @@ func extractQwenContentToolCalls(text string) []ToolCall {
 
 func parseQwenToolCallJSON(body string, index int) *ToolCall {
 	var obj struct {
-		Name      string `json:"name"`
-		ID        string `json:"id"`
-		Arguments string `json:"arguments"`
+		Name      string          `json:"name"`
+		ID        string          `json:"id"`
+		Arguments json.RawMessage `json:"arguments"`
 	}
 	if err := json.Unmarshal([]byte(body), &obj); err != nil {
 		return nil
@@ -1276,13 +1278,19 @@ func parseQwenToolCallJSON(body string, index int) *ToolCall {
 	}
 	argsMap := map[string]any{}
 	argsJSON := "{}"
-	if obj.Arguments != "" {
-		argsJSON = obj.Arguments
-		if err := json.Unmarshal([]byte(obj.Arguments), &argsMap); err != nil {
-			// arguments may be a JSON object directly
-			var nested map[string]any
-			if err2 := json.Unmarshal([]byte(obj.Arguments), &nested); err2 == nil {
-				argsMap = nested
+	if len(obj.Arguments) > 0 && string(obj.Arguments) != "null" {
+		argsJSON = string(obj.Arguments)
+		// arguments puede ser string JSON ("{\"name\":...}") o objeto directo ({"name":...})
+		var raw string
+		if err := json.Unmarshal(obj.Arguments, &raw); err == nil {
+			// Era string — parsear el contenido
+			if err2 := json.Unmarshal([]byte(raw), &argsMap); err2 == nil {
+				argsJSON = raw
+			}
+		} else {
+			// Era objeto directo
+			if err2 := json.Unmarshal(obj.Arguments, &argsMap); err2 == nil {
+				argsJSON = string(obj.Arguments)
 			}
 		}
 	}
