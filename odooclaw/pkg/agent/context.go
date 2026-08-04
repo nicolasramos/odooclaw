@@ -26,6 +26,7 @@ type ContextBuilder struct {
 	browser      browserContextResolver
 	contextWindowTokens int // max estimated tokens to keep from history (0 = unlimited)
 	toolResultMaxChars  int // max chars per tool result content (0 = unlimited)
+	model               string // agent model name, used to gate a minimal system prompt for local small models
 
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.
@@ -78,6 +79,46 @@ func NewContextBuilder(workspace string, contextWindowTokens, toolResultMaxChars
 	}
 }
 
+// SetModel records the agent model name. Small local fine-tuned models
+// (llama.cpp/ollama, e.g. odooclaw-v25e) are trained on minimal prompts and
+// degrade when handed the full 18K-char system prompt (identity + AGENTS.md +
+// skills + memory). Setting the model lets BuildSystemPrompt switch to a
+// compact prompt for those models. InvalidateCache must be called if the model
+// is set after the cache has been populated.
+func (cb *ContextBuilder) SetModel(model string) {
+	cb.model = model
+}
+
+// isLocalSmallModel reports whether the model name refers to a small local
+// fine-tuned model that needs a minimal system prompt.
+func (cb *ContextBuilder) isLocalSmallModel() bool {
+	lower := strings.ToLower(cb.model)
+	return strings.Contains(lower, "odooclaw") ||
+		strings.Contains(lower, "local") ||
+		strings.Contains(lower, "qwen") ||
+		strings.Contains(lower, "llama") ||
+		strings.Contains(lower, "0.5b") ||
+		strings.Contains(lower, "1.5b")
+}
+
+// buildMinimalSystemPrompt returns a compact system prompt tailored to small
+// local fine-tuned models. It keeps only the essential instructions: the agent
+// acts on Odoo via the available tools, emits <tool_call> blocks, and must not
+// invent fields. The list of available tools is appended separately as plain
+// text by the provider (injectToolsAsText) to match the training format.
+func buildMinimalSystemPrompt() string {
+	return `Eres odooclaw, un asistente que gestiona Odoo ERP.
+
+Instrucciones:
+- Usa SIEMPRE una herramienta para realizar cualquier acción. No la describas ni la finjas.
+- Emite las tool calls con el formato <tool_call>{"name":"<herramienta>","arguments":"<JSON con los argumentos>"}</tool_call>.
+- Usa EXACTAMENTE el nombre de herramienta proporcionado. No inventes nombres.
+- No inventes campos ni datos: usa únicamente la información que el usuario te da o que ya existe en Odoo.
+- Si una operación es destructiva o requiere confirmación, pregunta primero antes de ejecutarla.
+- Responde en el mismo idioma que el usuario.
+- Mantén las respuestas breves y directas.`
+}
+
 func (cb *ContextBuilder) getIdentity() string {
 	workspacePath, _ := filepath.Abs(filepath.Join(cb.workspace))
 
@@ -104,6 +145,15 @@ Your workspace is at: %s
 }
 
 func (cb *ContextBuilder) BuildSystemPrompt() string {
+	// Small local fine-tuned models (llama.cpp/ollama, e.g. odooclaw-v25e)
+	// are trained with a minimal system prompt (~500 chars). Sending the full
+	// context (identity + AGENTS.md + skills + memory, ~18K chars) confuses
+	// them and they stop emitting tool calls. For those models emit a compact
+	// prompt: the tools are injected separately as plain text by the provider.
+	if cb.isLocalSmallModel() {
+		return buildMinimalSystemPrompt()
+	}
+
 	parts := []string{}
 
 	// Core identity section
