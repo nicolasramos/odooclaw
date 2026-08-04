@@ -121,9 +121,24 @@ func (p *Provider) Chat(
 		"messages": serializeMessages(messages),
 	}
 
+	promptToolsInText := false
+	if v, ok := options["prompt_tools_in_text"]; ok {
+		if b, ok := v.(bool); ok {
+			promptToolsInText = b
+		}
+	}
+
 	if len(tools) > 0 {
-		requestBody["tools"] = tools
-		requestBody["tool_choice"] = "auto"
+		if promptToolsInText {
+			// Small local models (Qwen 0.5B fine-tuned) are trained with tools
+			// listed as plain text in the system prompt ("HERRAMIENTAS DISPONIBLES:")
+			// and hallucinate when tools arrive as OpenAI JSON function schemas.
+			// Inject them into the last system message instead.
+			messages = injectToolsAsText(messages, tools)
+		} else {
+			requestBody["tools"] = tools
+			requestBody["tool_choice"] = "auto"
+		}
 	}
 
 	if maxTokens, ok := asInt(options["max_tokens"]); ok {
@@ -1285,4 +1300,30 @@ func stripQwenContentToolCalls(text string) string {
 	re2 := regexp.MustCompile(`\{"name":\s*"(mcp_[^"]+)"[^}]*\}`)
 	cleaned = re2.ReplaceAllString(cleaned, "")
 	return strings.TrimSpace(cleaned)
+}
+
+// injectToolsAsText appends the available tools as plain text to the last
+// system message. Small fine-tuned local models (Qwen 0.5B) were trained with
+// tools listed as "HERRAMIENTAS DISPONIBLES:" in the system prompt and
+// hallucinate when tools arrive as OpenAI JSON function schemas.
+func injectToolsAsText(messages []Message, tools []ToolDefinition) []Message {
+	var sb strings.Builder
+	sb.WriteString("\n\nTienes acceso a las siguientes herramientas. Cuando necesites ejecutar una operación, usa el formato <tool_call> con el nombre exacto de la herramienta y sus argumentos.\n\nHERRAMIENTAS DISPONIBLES:\n")
+	for _, t := range tools {
+		sb.WriteString("- " + t.Function.Name + "\n")
+	}
+	toolBlock := sb.String()
+
+	out := make([]Message, 0, len(messages))
+	for i, m := range messages {
+		if m.Role == "system" {
+			m.Content = m.Content + toolBlock
+		}
+		out = append(out, m)
+		_ = i
+	}
+	if len(out) == 0 {
+		out = append(out, Message{Role: "system", Content: toolBlock})
+	}
+	return out
 }
