@@ -13,8 +13,9 @@ import (
 )
 
 type ToolRegistry struct {
-	tools map[string]Tool
-	mu    sync.RWMutex
+	tools    map[string]Tool
+	retrieval *RetrievalEngine
+	mu       sync.RWMutex
 }
 
 func NewToolRegistry() *ToolRegistry {
@@ -232,4 +233,108 @@ func (r *ToolRegistry) GetSummaries() []string {
 		summaries = append(summaries, fmt.Sprintf("- `%s` - %s", tool.Name(), tool.Description()))
 	}
 	return summaries
+}
+
+// --- Tool Retrieval Integration ---
+
+// SetRetrievalEngine attaches a RetrievalEngine for dynamic tool filtering.
+func (r *ToolRegistry) SetRetrievalEngine(engine *RetrievalEngine) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.retrieval = engine
+}
+
+// GetRetrievalEngine returns the attached retrieval engine, if any.
+func (r *ToolRegistry) GetRetrievalEngine() *RetrievalEngine {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.retrieval
+}
+
+// ClearDetrievalEngine detaches the retrieval engine.
+func (r *ToolRegistry) ClearDetrievalEngine() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.retrieval = nil
+}
+
+// RetrieveRelevant returns the most relevant tool names for a query.
+// Returns nil when no engine is attached.
+func (r *ToolRegistry) RetrieveRelevant(query string, module string, limit int) []string {
+	r.mu.RLock()
+	engine := r.retrieval
+	r.mu.RUnlock()
+
+	if engine == nil {
+		return nil
+	}
+
+	names, err := engine.Retrieve(query, module, limit)
+	if err != nil {
+		logger.WarnCF("tools", "Tool retrieval failed", map[string]any{
+			"error": err.Error(),
+		})
+		return nil
+	}
+	return names
+}
+
+// ToProviderDefsWithRetrieval returns tool definitions filtered by retrieval.
+// Always includes core tools (native, memory, system) with full schemas.
+// Retrieved tools get compact schemas to reduce token count.
+func (r *ToolRegistry) ToProviderDefsWithRetrieval(query string, module string, limit int) []providers.ToolDefinition {
+	retrieved := r.RetrieveRelevant(query, module, limit)
+	retrievedSet := make(map[string]bool, len(retrieved))
+	for _, name := range retrieved {
+		retrievedSet[name] = true
+	}
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	sorted := r.sortedToolNames()
+	defs := make([]providers.ToolDefinition, 0, len(retrieved)+10)
+
+	for _, name := range sorted {
+		tool := r.tools[name]
+		schema := ToolToSchema(tool)
+
+		fn, ok := schema["function"].(map[string]any)
+		if !ok {
+			continue
+		}
+		tName, _ := fn["name"].(string)
+		desc, _ := fn["description"].(string)
+		params, _ := fn["parameters"].(map[string]any)
+
+		// Core tools always included with full schema
+		isCore := isCoreTool(name)
+		if isCore || retrievedSet[name] {
+			defs = append(defs, providers.ToolDefinition{
+				Type: "function",
+				Function: providers.ToolFunctionDefinition{
+					Name:        tName,
+					Description: desc,
+					Parameters:  params,
+				},
+			})
+		}
+	}
+
+	return defs
+}
+
+// isCoreTool determines if a tool is a "core" tool that should always be included.
+func isCoreTool(name string) bool {
+	corePrefixes := []string{
+		"memory", "session", "web_search", "web_extract",
+		"navigate", "read_note", "write_note", "search_notes",
+		"skill_view", "skills_list", "skill_manage",
+	}
+	for _, prefix := range corePrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
 }
