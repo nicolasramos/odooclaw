@@ -1165,6 +1165,13 @@ func (al *AgentLoop) runLLMIteration(
 			if agent.PromptToolsInText != nil {
 				useTextInjection = *agent.PromptToolsInText
 			}
+			// NRA-413: Force temperature=0.0 for local small models to ensure
+			// deterministic tool calling. Fine-tuned 0.5B/1.5B models degrade
+			// quickly with non-zero temperature — even 0.1 introduces enough
+			// stochasticity to produce malformed JSON or wrong tool names.
+			if isLocalSmallModel(agent.Model) {
+				opts["temperature"] = 0.0
+			}
 			if useTextInjection {
 				opts["prompt_tools_in_text"] = true
 			}
