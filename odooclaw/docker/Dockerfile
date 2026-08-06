@@ -71,6 +71,16 @@ RUN chmod +x /usr/local/bin/edge-tts-mcp.py
 COPY workspace/skills/whisper-stt/server.py /usr/local/bin/whisper-stt-mcp.py
 RUN chmod +x /usr/local/bin/whisper-stt-mcp.py
 
+# Copy OCR-invoice MCP server script (PDF/document tools)
+COPY workspace/skills/ocr-invoice/server.py /usr/local/bin/ocr-invoice-mcp.py
+RUN chmod +x /usr/local/bin/ocr-invoice-mcp.py
+
+# Copy RLM-utils MCP server script (needs shebang for exec format)
+COPY workspace/skills/rlm-utils/server.py /usr/local/bin/rlm-utils-mcp.py
+RUN printf '#!/usr/bin/env python3\n' | cat - /usr/local/bin/rlm-utils-mcp.py > /tmp/rlm-utils-mcp.py && \
+    mv /tmp/rlm-utils-mcp.py /usr/local/bin/rlm-utils-mcp.py && \
+    chmod +x /usr/local/bin/rlm-utils-mcp.py
+
 # Create cache directory for whisper models
 RUN mkdir -p /home/odooclaw/.cache && \
     chown -R odooclaw:odooclaw /home/odooclaw
