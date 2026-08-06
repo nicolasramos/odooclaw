@@ -1596,60 +1596,81 @@ func formatMessagesForLog(messages []providers.Message) string {
 // addOdooRecordLinks appends clickable Odoo links to the final assistant
 // response when a tool call returned record ids. Small local models (350M)
 // cannot reliably emit markdown links, so the gateway does it
-// deterministically: it scans the tool-call arguments and tool results for
-// known record shapes (find_partner → id, get_partner_summary → partner_id)
-// and appends markdown links to the response.
+// deterministically.
+//
+// IMPORTANT: it only looks at TOOL RESULTS (role=="tool") produced AFTER the
+// last user message (the current turn). It NEVER reads partner_id from tool
+// call ARGUMENTS — the 350M invents those (partner_id:99, sender_id:...),
+// which caused links to point at records from previous turns (e.g. always
+// /odoo/contacts/10 after any "Busca el cliente Acme" earlier in the chat).
 func addOdooRecordLinks(messages []providers.Message, content string) string {
 	if strings.Contains(content, "/odoo/") {
 		// Already contains a link; don't double-append.
 		return content
 	}
 
-	// Collect record references from tool calls and their results.
-	// key: model path in Odoo web client, e.g. "contacts" for res.partner
+	// Find the index of the LAST user message. Only tool results after it
+	// belong to the current turn.
+	start := 0
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			start = i + 1
+			break
+		}
+	}
+	if start >= len(messages) {
+		return content
+	}
+
+	// Collect record ids from TOOL RESULTS of the current turn only.
+	// The MCP server returns the real record id; the model's own arguments
+	// are untrusted (it hallucinates partner_id / sender_id values).
 	type odooLink struct {
 		id    int
 		label string
 	}
 	var found []odooLink
+	seen := map[int]bool{}
 
-	for i := len(messages) - 1; i >= 0; i-- {
+	for i := start; i < len(messages); i++ {
 		msg := messages[i]
-
-		// Tool results carry the JSON returned by the MCP server.
-		if msg.Role == "tool" {
-			contentStr := strings.TrimSpace(msg.Content)
-			// find_partner returns a bare partner id (int) or {"partner_id": N}
-			if id, err := strconv.Atoi(contentStr); err == nil && id > 0 {
-				found = append(found, odooLink{id: id, label: ""})
-				continue
-			}
-			var parsed map[string]any
-			if err := json.Unmarshal([]byte(contentStr), &parsed); err == nil {
-				if pid, ok := parsed["partner_id"].(float64); ok && pid > 0 {
-					found = append(found, odooLink{id: int(pid), label: ""})
-				}
-			}
+		if msg.Role != "tool" {
+			continue
+		}
+		contentStr := strings.TrimSpace(msg.Content)
+		if contentStr == "" || strings.Contains(contentStr, "error") {
 			continue
 		}
 
-		// Tool calls carry the tool name + arguments. We only handle
-		// partner lookups for now; extend per tool as needed.
-		if msg.Role == "assistant" {
-			for _, tc := range msg.ToolCalls {
-				name := tc.Name
-				if !strings.Contains(name, "find_partner") &&
-					!strings.Contains(name, "get_partner_summary") {
-					continue
-				}
-				var args map[string]any
-				if tc.Function != nil {
-					_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
-				}
-				if pid, ok := args["partner_id"].(float64); ok && pid > 0 {
-					found = append(found, odooLink{id: int(pid), label: ""})
+		var ids []int
+		// find_partner returns a bare partner id (int), e.g. "10".
+		if id, err := strconv.Atoi(contentStr); err == nil && id > 0 {
+			ids = append(ids, id)
+		} else {
+			// get_partner_summary returns {"partner_id": N, ...}; search_read
+			// returns [{"id": N, ...}].
+			var parsed map[string]any
+			if err := json.Unmarshal([]byte(contentStr), &parsed); err == nil {
+				if pid, ok := parsed["partner_id"].(float64); ok && pid > 0 {
+					ids = append(ids, int(pid))
 				}
 			}
+			var arr []map[string]any
+			if err := json.Unmarshal([]byte(contentStr), &arr); err == nil {
+				for _, rec := range arr {
+					if rid, ok := rec["id"].(float64); ok && rid > 0 {
+						ids = append(ids, int(rid))
+					}
+				}
+			}
+		}
+
+		for _, id := range ids {
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			found = append(found, odooLink{id: id, label: ""})
 		}
 	}
 
@@ -1659,14 +1680,9 @@ func addOdooRecordLinks(messages []providers.Message, content string) string {
 
 	// Build unique links. Partner records live at /odoo/contacts/{id} in
 	// Odoo 17/18 web client.
-	seen := map[int]bool{}
 	var sb strings.Builder
 	sb.WriteString(content)
 	for _, l := range found {
-		if seen[l.id] {
-			continue
-		}
-		seen[l.id] = true
 		label := l.label
 		if label == "" {
 			label = fmt.Sprintf("Ver el registro %d", l.id)
