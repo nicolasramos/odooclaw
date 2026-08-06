@@ -14,7 +14,7 @@ def odoo_read(client: OdooClient, user_id: int, model: str, ids: List[int], fiel
     """Read fields for a list of record IDs."""
     kwargs = {"fields": fields} if fields else {}
     records = client.call_kw(model, "read", args=[ids], kwargs=kwargs, sender_id=user_id)
-    return serialize_records(records)
+    return serialize_records(records, model=model, base_url=client.odoo_session.url)
 
 def odoo_search_read(client: OdooClient, user_id: int, model: str, domain: List[Any], fields: Optional[List[str]] = None, limit: int = 80) -> List[Dict[str, Any]]:
     """Search and read in a single call."""
@@ -22,7 +22,7 @@ def odoo_search_read(client: OdooClient, user_id: int, model: str, domain: List[
     kwargs = {"limit": limit}
     if fields: kwargs["fields"] = fields
     records = client.call_kw(model, "search_read", args=[domain], kwargs=kwargs, sender_id=user_id)
-    return serialize_records(records)
+    return serialize_records(records, model=model, base_url=client.odoo_session.url)
 
 def odoo_create(client: OdooClient, user_id: int, model: str, values: Dict[str, Any]) -> int:
     """Create a new record after checking allowlist."""
