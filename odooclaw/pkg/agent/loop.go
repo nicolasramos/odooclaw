@@ -1157,8 +1157,15 @@ func (al *AgentLoop) runLLMIteration(
 			}
 			// Small local models (llama.cpp/ollama) are fine-tuned with tools
 			// listed as plain text in the system prompt. Inject them there
-			// instead of sending OpenAI JSON function schemas.
-			if isLocalSmallModel(agent.Model) {
+			// instead of sending OpenAI JSON function schemas. A per-model
+			// config override (prompt_tools_in_text) wins over the heuristic:
+			// native-tool-calling fine-tunes (v26-native) need the native
+			// "tools" array to reach 100% exact-match tool calling.
+			useTextInjection := isLocalSmallModel(agent.Model)
+			if agent.PromptToolsInText != nil {
+				useTextInjection = *agent.PromptToolsInText
+			}
+			if useTextInjection {
 				opts["prompt_tools_in_text"] = true
 			}
 			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, opts)

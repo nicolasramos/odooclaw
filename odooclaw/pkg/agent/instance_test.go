@@ -160,3 +160,62 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 		})
 	}
 }
+
+func TestNewAgentInstance_PromptToolsInTextOverride(t *testing.T) {
+	tests := []struct {
+		name        string
+		cfgFlag     *bool
+		wantFlag    *bool
+	}{
+		{name: "flag false (native tools) is honored", cfgFlag: boolPtr(false), wantFlag: boolPtr(false)},
+		{name: "flag true (text injection) is honored", cfgFlag: boolPtr(true), wantFlag: boolPtr(true)},
+		{name: "unset flag stays nil (heuristic wins)", cfgFlag: nil, wantFlag: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir, err := os.MkdirTemp("", "agent-instance-prompt-tools-*")
+			if err != nil {
+				t.Fatalf("Failed to create temp dir: %v", err)
+			}
+			defer os.RemoveAll(tmpDir)
+
+			cfg := &config.Config{
+				Agents: config.AgentsConfig{
+					Defaults: config.AgentDefaults{
+						Workspace: tmpDir,
+						Model:     "odooclaw-v25e",
+					},
+				},
+				ModelList: []config.ModelConfig{
+					{
+						ModelName:         "odooclaw-v25e",
+						Model:             "odooclaw-v26",
+						APIBase:           "http://192.168.1.14:8081/v1",
+						PromptToolsInText: tt.cfgFlag,
+					},
+				},
+			}
+
+			provider := &mockProvider{}
+			agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, provider)
+
+			if tt.wantFlag == nil {
+				if agent.PromptToolsInText != nil {
+					t.Fatalf("PromptToolsInText = %v, want nil", *agent.PromptToolsInText)
+				}
+			} else {
+				if agent.PromptToolsInText == nil {
+					t.Fatalf("PromptToolsInText = nil, want %v", *tt.wantFlag)
+				}
+				if *agent.PromptToolsInText != *tt.wantFlag {
+					t.Fatalf("PromptToolsInText = %v, want %v", *agent.PromptToolsInText, *tt.wantFlag)
+				}
+			}
+		})
+	}
+}
+
+func boolPtr(b bool) *bool {
+	return &b
+}
