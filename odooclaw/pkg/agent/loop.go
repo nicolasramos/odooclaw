@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -975,6 +976,11 @@ func (al *AgentLoop) runAgentLoop(
 		finalContent = opts.DefaultResponse
 	}
 
+	// 5b. Post-process: append clickable Odoo links when tools returned records
+	// The 350M model cannot reliably emit markdown links, so the gateway does
+	// it deterministically: scan tool results for record ids and append links.
+	finalContent = addOdooRecordLinks(messages, finalContent)
+
 	// 6. Save final assistant message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
 	agent.Sessions.Save(opts.SessionKey)
@@ -1587,6 +1593,89 @@ func formatMessagesForLog(messages []providers.Message) string {
 	return sb.String()
 }
 
+// addOdooRecordLinks appends clickable Odoo links to the final assistant
+// response when a tool call returned record ids. Small local models (350M)
+// cannot reliably emit markdown links, so the gateway does it
+// deterministically: it scans the tool-call arguments and tool results for
+// known record shapes (find_partner → id, get_partner_summary → partner_id)
+// and appends markdown links to the response.
+func addOdooRecordLinks(messages []providers.Message, content string) string {
+	if strings.Contains(content, "/odoo/") {
+		// Already contains a link; don't double-append.
+		return content
+	}
+
+	// Collect record references from tool calls and their results.
+	// key: model path in Odoo web client, e.g. "contacts" for res.partner
+	type odooLink struct {
+		id    int
+		label string
+	}
+	var found []odooLink
+
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+
+		// Tool results carry the JSON returned by the MCP server.
+		if msg.Role == "tool" {
+			contentStr := strings.TrimSpace(msg.Content)
+			// find_partner returns a bare partner id (int) or {"partner_id": N}
+			if id, err := strconv.Atoi(contentStr); err == nil && id > 0 {
+				found = append(found, odooLink{id: id, label: ""})
+				continue
+			}
+			var parsed map[string]any
+			if err := json.Unmarshal([]byte(contentStr), &parsed); err == nil {
+				if pid, ok := parsed["partner_id"].(float64); ok && pid > 0 {
+					found = append(found, odooLink{id: int(pid), label: ""})
+				}
+			}
+			continue
+		}
+
+		// Tool calls carry the tool name + arguments. We only handle
+		// partner lookups for now; extend per tool as needed.
+		if msg.Role == "assistant" {
+			for _, tc := range msg.ToolCalls {
+				name := tc.Name
+				if !strings.Contains(name, "find_partner") &&
+					!strings.Contains(name, "get_partner_summary") {
+					continue
+				}
+				var args map[string]any
+				if tc.Function != nil {
+					_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
+				}
+				if pid, ok := args["partner_id"].(float64); ok && pid > 0 {
+					found = append(found, odooLink{id: int(pid), label: ""})
+				}
+			}
+		}
+	}
+
+	if len(found) == 0 {
+		return content
+	}
+
+	// Build unique links. Partner records live at /odoo/contacts/{id} in
+	// Odoo 17/18 web client.
+	seen := map[int]bool{}
+	var sb strings.Builder
+	sb.WriteString(content)
+	for _, l := range found {
+		if seen[l.id] {
+			continue
+		}
+		seen[l.id] = true
+		label := l.label
+		if label == "" {
+			label = fmt.Sprintf("Ver el registro %d", l.id)
+		}
+		sb.WriteString(fmt.Sprintf("\n\n🔗 [%s](/odoo/contacts/%d)", label, l.id))
+	}
+	return sb.String()
+}
+
 // formatToolsForLog formats tool definitions for logging
 func formatToolsForLog(toolDefs []providers.ToolDefinition) string {
 	if len(toolDefs) == 0 {
@@ -1986,6 +2075,12 @@ func retrieveRelevantTools(defs []providers.ToolDefinition, query string, k int)
 			{"impuesto", "tax"}, {"iva", "tax"}, {"informe", "report"},
 			{"mensaje", "chatter"}, {"nota", "note"}, {"reunion", "activity"}, {"actividad", "activity"},
 			{"reconcili", "reconcile"}, {"conciliar", "reconcile"},
+			// Counting queries: "cuántos/cuantos/total" must prefer search/count
+			// tools (odoo_search_read, odoo_search) over single-record summaries.
+			{"cuantos", "search_read"}, {"cuantos", "search"}, {"cuantos", "count"},
+			{"cuantas", "search_read"}, {"cuantas", "search"}, {"cuantas", "count"},
+			{"total", "search_read"}, {"total", "search"}, {"total", "count"},
+			{"numero", "search_read"}, {"numero", "search"}, {"cuenta de", "search"},
 		}
 		for _, pair := range queryToolPairs {
 			if strings.Contains(queryLower, pair[0]) && strings.Contains(lower, pair[1]) {
