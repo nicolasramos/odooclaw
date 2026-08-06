@@ -2067,6 +2067,11 @@ func retrieveRelevantTools(defs []providers.ToolDefinition, query string, k int)
 			{"producto", "product"}, {"productos", "product"},
 			{"factura", "invoice"}, {"facturas", "invoice"}, {"pendientes", "pending"},
 			{"cliente", "partner"}, {"clientes", "partner"}, {"empresa", "partner"},
+			// Search-intent verbs must favor find_* tools over get_*_summary
+			{"busca", "find"}, {"buscar", "find"}, {"busqueda", "find"}, {"busqued", "find"},
+			{"encuentra", "find"}, {"encontrar", "find"}, {"localiza", "find"}, {"localizar", "find"},
+			{"consulta", "find"}, {"consultar", "find"}, {"dame", "find"}, {"muestrame", "find"}, {"muestra", "find"},
+			{"quien es", "find"}, {"quien es", "summary"},
 			{"tarea", "task"}, {"tareas", "task"}, {"proyecto", "project"},
 			{"venta", "sale"}, {"pedido", "order"}, {"orden", "order"}, {"ventas", "sale"},
 			{"cuenta", "account"}, {"contab", "account"}, {"banco", "bank"}, {"bancar", "bank"},
