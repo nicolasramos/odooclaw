@@ -58,6 +58,12 @@
       "api_base": "http://localhost:11434/v1"
     },
     {
+      "model_name": "odooclaw-v25e",
+      "model": "odooclaw-v26",
+      "api_base": "http://192.168.1.14:8081/v1",
+      "prompt_tools_in_text": false
+    },
+    {
       "model_name": "local-mlx",
       "model": "openai/mlx-community/llama3",
       "api_base": "http://localhost:8000/v1"
