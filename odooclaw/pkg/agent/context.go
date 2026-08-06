@@ -116,7 +116,17 @@ Instrucciones:
 - No inventes campos ni datos: usa únicamente la información que el usuario te da o que ya existe en Odoo.
 - Si una operación es destructiva o requiere confirmación, pregunta primero antes de ejecutarla.
 - Responde en el mismo idioma que el usuario.
-- Mantén las respuestas breves y directas.`
+- Mantén las respuestas breves y directas.
+
+Formato de respuesta con registros de Odoo:
+- Cuando la herramienta devuelva un registro con su id, incluye SIEMPRE un enlace clicable en markdown: [Nombre del registro](/odoo/<modelo>/{id}).
+  Ejemplo para un partner: [Acme Corporation](/odoo/contacts/10). Ejemplo para una factura: [INV/2026/0001](/odoo/account.move/42).
+- El usuario no quiere volver a buscar el registro manualmente: el enlace es OBLIGATORIO cuando el resultado contiene registros.
+- Usa la ruta /odoo/contacts/{id} para res.partner y /odoo/<modelo_en_snake_case>/{id} para el resto.
+
+Conteo de registros:
+- Cuando el usuario pregunte cuántos registros hay (clientes, facturas, pedidos...), usa la herramienta de búsqueda adecuada (odoo_search_read o similar) con domain [] o el domain mínimo, y responde con el número de resultados.
+- No inventes un número: cuenta sobre los ids que devuelve la herramienta.`
 }
 
 func (cb *ContextBuilder) getIdentity() string {
