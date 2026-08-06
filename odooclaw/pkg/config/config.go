@@ -564,6 +564,14 @@ type ModelConfig struct {
 	RPM            int    `json:"rpm,omitempty"`              // Requests per minute limit
 	MaxTokensField string `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
 	RequestTimeout int    `json:"request_timeout,omitempty"`
+
+	// PromptToolsInText forces tools to be injected as plain text in the system
+	// prompt instead of being sent as OpenAI JSON function schemas. Defaults to
+	// the automatic heuristic (isLocalSmallModel) when nil: fine-tuned Qwen
+	// 0.5B/1.5B (v25e) need text injection, while native-tool-calling
+	// fine-tunes (v26-native) require the native "tools" array to reach 100%
+	// exact-match. Set explicitly per model when the heuristic is wrong.
+	PromptToolsInText *bool `json:"prompt_tools_in_text,omitempty"`
 }
 
 // Validate checks if the ModelConfig has all required fields.
