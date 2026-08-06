@@ -976,11 +976,6 @@ func (al *AgentLoop) runAgentLoop(
 		finalContent = opts.DefaultResponse
 	}
 
-	// 5b. Post-process: append clickable Odoo links when tools returned records
-	// The 350M model cannot reliably emit markdown links, so the gateway does
-	// it deterministically: scan tool results for record ids and append links.
-	finalContent = addOdooRecordLinks(messages, finalContent)
-
 	// 6. Save final assistant message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
 	agent.Sessions.Save(opts.SessionKey)
@@ -1283,6 +1278,11 @@ func (al *AgentLoop) runLLMIteration(
 		// Check if no tool calls - we're done
 		if len(response.ToolCalls) == 0 {
 			finalContent = response.Content
+			// Post-process: append clickable Odoo links when tools returned
+			// records. Done HERE (inside the loop) because messages at this
+			// point include the tool results; the caller's copy does not
+			// (append may reallocate the backing array).
+			finalContent = addOdooRecordLinks(messages, finalContent)
 			logger.InfoCF("agent", "LLM response without tool calls (direct answer)",
 				map[string]any{
 					"agent_id":      agent.ID,
