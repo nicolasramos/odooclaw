@@ -29,7 +29,7 @@ def odoo_read(
     records = client.call_kw(
         model, "read", args=[ids], kwargs=kwargs, sender_id=user_id
     )
-    return serialize_records(records)
+    return serialize_records(records, model=model, base_url=client.odoo_session.url)
 
 
 def odoo_search_read(
@@ -48,7 +48,7 @@ def odoo_search_read(
     records = client.call_kw(
         model, "search_read", args=[domain], kwargs=kwargs, sender_id=user_id
     )
-    return serialize_records(records)
+    return serialize_records(records, model=model, base_url=client.odoo_session.url)
 
 
 def odoo_create(

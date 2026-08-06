@@ -6,6 +6,10 @@ Un Servidor MCP modular, tipado y seguro para interactuar con el ORM de Odoo 18,
 Reemplaza el antiguo enfoque monolítico con tools granulares (búsqueda, lectura, escritura con denylist estricta, acciones seguras).
 Las operaciones Odoo se ejecutan bajo el contexto de seguridad nativo del identificador de usuario invocante, previniendo cualquier escalada de privilegios accidental.
 
+## Enlaces clicables a registros (NRA-425)
+
+`odoo_read` y `odoo_search_read` devuelven, además de los campos solicitados, un campo sintético `__url` por registro que apunta a la vista form del registro en el cliente web (`{ODOO_URL}/web#id={id}&model={model}&view_type=form`). El prefijo `__` evita colisionar con campos reales del modelo. El bot responde con enlaces markdown `[Nombre](url)` que `mail_bot_odooclaw` renderiza clicables (target=_blank) en el chat.
+
 ## Novedades principales
 
 ### 1) Workforce / RRHH y tareas
