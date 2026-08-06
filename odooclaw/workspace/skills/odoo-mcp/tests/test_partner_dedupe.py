@@ -21,7 +21,7 @@ def test_find_partner_returns_existing_id_without_create(mock_client):
     mock_client.call_kw.assert_called_once_with(
         "res.partner",
         "search_read",
-        args=[[("name", "=", "Julio Iglesias")]],
+        args=[[("name", "=ilike", "Julio Iglesias")]],
         kwargs={"fields": ["id", "name", "email", "vat"], "limit": 1},
         sender_id=7,
     )
@@ -38,7 +38,7 @@ def test_find_partner_falls_back_to_fuzzy_name(mock_client):
             call(
                 "res.partner",
                 "search_read",
-                args=[[("name", "=", "Julio Iglesias")]],
+                args=[[("name", "=ilike", "Julio Iglesias")]],
                 kwargs={"fields": ["id", "name", "email", "vat"], "limit": 1},
                 sender_id=7,
             ),
@@ -83,9 +83,68 @@ def test_odoo_create_partner_reuses_existing_exact_match(mock_client):
     mock_client.call_kw.assert_called_once_with(
         "res.partner",
         "search_read",
-        args=[[("name", "=", "Julio Iglesias")]],
+        args=[[("name", "=ilike", "Julio Iglesias")]],
         kwargs={"fields": ["id", "name", "email", "vat"], "limit": 1},
         sender_id=5,
+    )
+
+
+def test_odoo_create_partner_reuses_existing_name_different_case(mock_client):
+    mock_client.call_kw.return_value = [{"id": 179, "name": "Acme SL"}]
+
+    partner_id = odoo_create(
+        mock_client,
+        5,
+        "res.partner",
+        {"name": "acme sl"},
+    )
+
+    assert partner_id == 179
+    mock_client.call_kw.assert_called_once_with(
+        "res.partner",
+        "search_read",
+        args=[[("name", "=ilike", "acme sl")]],
+        kwargs={"fields": ["id", "name", "email", "vat"], "limit": 1},
+        sender_id=5,
+    )
+
+
+def test_find_or_create_partner_reuses_existing_name_different_case(mock_client):
+    mock_client.call_kw.return_value = [{"id": 179, "name": "Acme SL"}]
+
+    partner_id = find_or_create_partner(mock_client, 5, "ACME SL")
+
+    assert partner_id == 179
+
+
+def test_find_existing_partner_id_does_not_match_substring_only(mock_client):
+    """=ilike must match the full normalized name, not partial substrings."""
+    mock_client.call_kw.side_effect = [[], 180]
+
+    partner_id = odoo_create(
+        mock_client,
+        5,
+        "res.partner",
+        {"name": "Acme SL"},
+    )
+
+    assert partner_id == 180
+    mock_client.call_kw.assert_has_calls(
+        [
+            call(
+                "res.partner",
+                "search_read",
+                args=[[("name", "=ilike", "Acme SL")]],
+                kwargs={"fields": ["id", "name", "email", "vat"], "limit": 1},
+                sender_id=5,
+            ),
+            call(
+                "res.partner",
+                "create",
+                args=[{"name": "Acme SL"}],
+                sender_id=5,
+            ),
+        ]
     )
 
 
@@ -105,7 +164,7 @@ def test_odoo_create_partner_creates_when_no_match(mock_client):
             call(
                 "res.partner",
                 "search_read",
-                args=[[("name", "=", "Julio Iglesias")]],
+                args=[[("name", "=ilike", "Julio Iglesias")]],
                 kwargs={"fields": ["id", "name", "email", "vat"], "limit": 1},
                 sender_id=5,
             ),
