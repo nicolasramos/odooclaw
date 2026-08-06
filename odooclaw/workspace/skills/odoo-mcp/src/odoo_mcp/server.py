@@ -844,10 +844,6 @@ def odoo_create_vendor_invoice(
         )
 
 
-if __name__ == "__main__":
-    mcp.run()
-
-
 @mcp.tool()
 def odoo_find_pending_invoices(
     partner_id: int | None = None,
@@ -2646,3 +2642,7 @@ def odoo_batch_assist_report_migration(
             strict=strict,
             continue_on_error=continue_on_error,
         )
+
+
+if __name__ == "__main__":
+    mcp.run()
