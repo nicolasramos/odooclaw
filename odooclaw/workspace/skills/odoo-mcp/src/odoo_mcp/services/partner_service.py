@@ -46,8 +46,12 @@ def find_existing_partner_id(
             return partner_id
 
     if normalized_name:
+        # Case-insensitive match on the FULL normalized name only (=ilike is
+        # ILIKE without surrounding wildcards): "Acme SL" matches "acme sl",
+        # but NOT "Acme SL Holdings". Deliberately not accent-folding, to avoid
+        # colliding distinct partners ("César" vs "Cesar" stay separate).
         partner_id = _search_partner_id(
-            client, user_id, [("name", "=", normalized_name)]
+            client, user_id, [("name", "=ilike", normalized_name)]
         )
         if partner_id:
             return partner_id
