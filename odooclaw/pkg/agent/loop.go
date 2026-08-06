@@ -1157,8 +1157,22 @@ func (al *AgentLoop) runLLMIteration(
 			}
 			// Small local models (llama.cpp/ollama) are fine-tuned with tools
 			// listed as plain text in the system prompt. Inject them there
-			// instead of sending OpenAI JSON function schemas.
+			// instead of sending OpenAI JSON function schemas. A per-model
+			// config override (prompt_tools_in_text) wins over the heuristic:
+			// native-tool-calling fine-tunes (v26-native) need the native
+			// "tools" array to reach 100% exact-match tool calling.
+			useTextInjection := isLocalSmallModel(agent.Model)
+			if agent.PromptToolsInText != nil {
+				useTextInjection = *agent.PromptToolsInText
+			}
+			// NRA-413: Force temperature=0.0 for local small models to ensure
+			// deterministic tool calling. Fine-tuned 0.5B/1.5B models degrade
+			// quickly with non-zero temperature — even 0.1 introduces enough
+			// stochasticity to produce malformed JSON or wrong tool names.
 			if isLocalSmallModel(agent.Model) {
+				opts["temperature"] = 0.0
+			}
+			if useTextInjection {
 				opts["prompt_tools_in_text"] = true
 			}
 			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, opts)
