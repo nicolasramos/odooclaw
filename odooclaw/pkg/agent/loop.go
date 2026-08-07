@@ -2369,6 +2369,16 @@ func retrieveRelevantTools(defs []providers.ToolDefinition, query string, k int)
 		{"pedido de venta", "sale"},
 		{"factura de proveedor", "vendor_invoice"}, {"factura de compra", "vendor_invoice"},
 		{"tarea de", "task"}, {"to-do", "task"},
+		// OCR-invoice MCP: when a message mentions an attached document/invoice
+		// (the addon injects "🧾 [Factura/Documento: name (ID: N)]"), the
+		// ocr-create-vendor-bill / ocr-invoice tools must reach the top-5.
+		{"adjunto", "ocr"}, {"adjunta", "ocr"}, {"adjuntar", "ocr"},
+		{"factura/documento", "ocr"}, {"documento", "ocr"}, {"pdf", "ocr"},
+		{"factura de proveedor", "ocr"}, {"factura de compra", "ocr"},
+		{"crear factura", "ocr"}, {"crea factura", "ocr"},
+		{"extrae", "ocr"}, {"extraer", "ocr"}, {"lee la factura", "ocr"},
+		{"factura adjunta", "ocr"}, {"factura adjunto", "ocr"},
+		{"vendor bill", "ocr"}, {"extract", "ocr"},
 	}
 
 	// createIntentTerms mark creation queries — they activate the generic
