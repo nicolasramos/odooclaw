@@ -908,6 +908,34 @@ func (al *AgentLoop) runAgentLoop(
 	// 3. Save user message to session
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
 
+	// 3b. Deterministic OCR path: if the message carries an attached invoice
+	// marker ("🧾 [Factura/Documento: name (ID: N)]" injected by the
+	// mail_bot_odooclaw addon), call the OCR MCP tool directly with the REAL
+	// attachment id. The small model cannot route this (the ocr-* tools are
+	// not in its training set — it hallucinates attachment ids and loops), so
+	// the gateway decides deterministically, same as addOdooRecordLinks.
+	if attID, ok := findInvoiceAttachment(opts.UserMessage); ok {
+		if hasOCRInvoiceTools(agent) {
+			reply, err := handleInvoiceAttachment(ctx, agent, attID, opts)
+			if err == nil {
+				logger.InfoCF("agent", "OCR deterministic path completed",
+					map[string]any{
+						"attachment_id": attID,
+						"content_len":   len(reply),
+					})
+				// Persist the assistant reply in the session so follow-ups
+				// have context.
+				agent.Sessions.AddMessage(opts.SessionKey, "assistant", reply)
+				return reply, nil
+			}
+			logger.WarnCF("agent", "OCR deterministic path failed, falling back to LLM",
+				map[string]any{
+					"attachment_id": attID,
+					"error":         err.Error(),
+				})
+		}
+	}
+
 	// 4. Multi-model pipeline pre-processing
 	// If the pipeline can handle this request directly (greeting, escalation),
 	// return the response immediately without calling the main LLM.
