@@ -122,7 +122,7 @@ Formato de respuesta con registros de Odoo:
 - Cuando la herramienta devuelva un registro con su id, incluye SIEMPRE un enlace clicable en markdown: [Nombre del registro](/odoo/<modelo>/{id}).
   Ejemplo para un partner: [Acme Corporation](/odoo/contacts/10). Ejemplo para una factura: [INV/2026/0001](/odoo/account.move/42).
 - El usuario no quiere volver a buscar el registro manualmente: el enlace es OBLIGATORIO cuando el resultado contiene registros.
-- Usa la ruta /odoo/contacts/{id} para res.partner y /odoo/<modelo_en_snake_case>/{id} para el resto.
+- Usa /odoo/contacts/{id} para res.partner y /odoo/<modelo>/{id} (puntos, p.ej. /odoo/account.move/42) para el resto.
 
 Conteo de registros:
 - Cuando el usuario pregunte cuántos registros hay (clientes, facturas, pedidos...), usa la herramienta de búsqueda adecuada (odoo_search_read o similar) con domain [] o el domain mínimo, y responde con el número de resultados.

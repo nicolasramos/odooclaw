@@ -1697,6 +1697,19 @@ func recordFromMap(rec map[string]any) (int, string) {
 	return int(id), ""
 }
 
+// odooLink is an Odoo record parsed from a tool result.
+type odooLink struct {
+	model string
+	id    int
+	label string
+}
+
+// recordHit is an (id, label) pair extracted from one tool result.
+type recordHit struct {
+	id    int
+	label string
+}
+
 // addOdooRecordLinks appends clickable Odoo links to the final assistant
 // response when a tool call returned record ids, and converts any bare
 // /odoo/<model>/<id> URLs the model wrote in plain text into links. Small
@@ -1724,7 +1737,11 @@ func addOdooRecordLinks(messages []providers.Message, content string) string {
 
 	// Index assistant tool calls by ID so each tool result can be attributed
 	// to the tool that produced it (the tool name determines the Odoo model).
-	toolNameByCallID := map[string]string{}
+	type toolCallInfo struct {
+		name string
+		args string
+	}
+	toolCallByID := map[string]toolCallInfo{}
 	for i := start; i < len(messages); i++ {
 		msg := messages[i]
 		if msg.Role != "assistant" {
@@ -1735,24 +1752,24 @@ func addOdooRecordLinks(messages []providers.Message, content string) string {
 			if name == "" && tc.Function != nil {
 				name = tc.Function.Name
 			}
-			if name != "" && tc.ID != "" {
-				toolNameByCallID[tc.ID] = name
+			if name == "" || tc.ID == "" {
+				continue
 			}
+			info := toolCallInfo{name: name}
+			if tc.Function != nil && tc.Function.Arguments != "" {
+				info.args = tc.Function.Arguments
+			} else if len(tc.Arguments) > 0 {
+				if b, err := json.Marshal(tc.Arguments); err == nil {
+					info.args = string(b)
+				}
+			}
+			toolCallByID[tc.ID] = info
 		}
 	}
 
 	// Collect record links from TOOL RESULTS of the current turn only.
 	// The MCP server returns the real record id; the model's own arguments
 	// are untrusted (it hallucinates partner_id / sender_id values).
-	type odooLink struct {
-		model string
-		id    int
-		label string
-	}
-	type recordHit struct {
-		id    int
-		label string
-	}
 	var found []odooLink
 	seen := map[string]bool{}
 
@@ -1765,35 +1782,19 @@ func addOdooRecordLinks(messages []providers.Message, content string) string {
 		if contentStr == "" || strings.Contains(contentStr, "error") {
 			continue
 		}
-		model := toolModelForName(toolNameByCallID[msg.ToolCallID])
+		call := toolCallByID[msg.ToolCallID]
+		model := toolModelForName(call.name)
+		// Generic search/read tools have no fixed model: the model the
+		// search ran against is taken from the tool call arguments (the
+		// entity being searched, never a record id).
+		if model == "" && isGenericSearchTool(call.name) {
+			model = modelFromArgs(call.args)
+		}
 		if model == "" {
 			continue
 		}
 
-		var records []recordHit
-		// find_partner returns a bare partner id (int), e.g. "10".
-		if id, err := strconv.Atoi(contentStr); err == nil && id > 0 {
-			records = append(records, recordHit{id: id})
-		} else {
-			// get_partner_summary returns {"id": N, "name": ...};
-			// search_read results are [{"id": N, "name": ...}] with real
-			// names like INV/2026/0001.
-			var single map[string]any
-			if err := json.Unmarshal([]byte(contentStr), &single); err == nil {
-				if id, label := recordFromMap(single); id > 0 {
-					records = append(records, recordHit{id: id, label: label})
-				}
-			}
-			var arr []map[string]any
-			if err := json.Unmarshal([]byte(contentStr), &arr); err == nil {
-				for _, rec := range arr {
-					if id, label := recordFromMap(rec); id > 0 {
-						records = append(records, recordHit{id: id, label: label})
-					}
-				}
-			}
-		}
-
+		records := extractRecordHits(contentStr)
 		for _, r := range records {
 			key := fmt.Sprintf("%s:%d", model, r.id)
 			if seen[key] {
@@ -1804,12 +1805,28 @@ func addOdooRecordLinks(messages []providers.Message, content string) string {
 		}
 	}
 
-	// Only append when the model did not already emit a markdown link —
-	// otherwise the link would be duplicated (regression).
-	if len(found) > 0 && !strings.Contains(content, "](/odoo/") {
+	// Convert any bare /odoo/<model>/<id> URLs the model wrote in plain text
+	// into clickable markdown links (acceptance requirement #3), reusing the
+	// real record name from the current turn as the label when available.
+	knownLabels := map[string]string{}
+	for _, l := range found {
+		knownLabels[odooRecordURL(l.model, l.id)] = l.label
+	}
+	content = convertPlainURLsToLinks(content, knownLabels)
+
+	// Append links for records not already present in the answer (as markdown
+	// or as a plain-text URL the model already emitted) — no duplication.
+	var missing []odooLink
+	for _, l := range found {
+		if strings.Contains(content, odooRecordURL(l.model, l.id)) {
+			continue
+		}
+		missing = append(missing, l)
+	}
+	if len(missing) > 0 {
 		var sb strings.Builder
 		sb.WriteString(content)
-		for _, l := range found {
+		for _, l := range missing {
 			label := l.label
 			if label == "" {
 				label = odooLinkLabel(l.model, l.id)
@@ -1818,10 +1835,82 @@ func addOdooRecordLinks(messages []providers.Message, content string) string {
 		}
 		content = sb.String()
 	}
+	return content
+}
 
-	// Convert any bare /odoo/<model>/<id> URLs the model wrote in plain text
-	// into clickable markdown links (acceptance requirement #3).
-	return convertPlainURLsToLinks(content)
+// isGenericSearchTool reports whether the tool searches/reads an arbitrary
+// model passed as an argument (odoo_search / odoo_read / variants).
+func isGenericSearchTool(toolName string) bool {
+	n := strings.ToLower(toolName)
+	return strings.Contains(n, "odoo_search") || strings.Contains(n, "odoo_read")
+}
+
+// modelFromArgs extracts the "model" field from a tool call's JSON arguments.
+// Only the model name is read — never record ids (those are hallucinated by
+// small models and must come from tool results only).
+func modelFromArgs(args string) string {
+	if args == "" {
+		return ""
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(args), &parsed); err != nil {
+		return ""
+	}
+	if m, ok := parsed["model"].(string); ok && m != "" {
+		return m
+	}
+	return ""
+}
+
+// extractRecordHits parses a tool result string into (id, label) hits.
+// Supported shapes:
+//   - bare int: "10" (find_partner)
+//   - single object: {"id": N, "name": ...} (get_partner_summary)
+//   - array of objects: [{"id": N, "name": ...}] (search_read results)
+//   - wrapper object with nested record arrays: find_product →
+//     {"ok": true, "products": [{"id": N, "display_name": ...}], ...}
+func extractRecordHits(contentStr string) []recordHit {
+	var hits []recordHit
+	if id, err := strconv.Atoi(contentStr); err == nil && id > 0 {
+		return append(hits, recordHit{id: id})
+	}
+	var parsed any
+	if err := json.Unmarshal([]byte(contentStr), &parsed); err != nil {
+		return nil
+	}
+	var walk func(m map[string]any)
+	walk = func(m map[string]any) {
+		if id, label := recordFromMap(m); id > 0 {
+			hits = append(hits, recordHit{id: id, label: label})
+		}
+		// Nested record arrays produced by wrapper tools (find_product →
+		// {"products": [...]}, search wrappers → {"records": [...]}). One
+		// level deep to avoid unbounded recursion.
+		for _, key := range []string{"products", "records", "result", "data", "moves", "invoices", "orders", "partners"} {
+			arr, ok := m[key].([]any)
+			if !ok {
+				continue
+			}
+			for _, item := range arr {
+				if rec, ok := item.(map[string]any); ok {
+					if id, label := recordFromMap(rec); id > 0 {
+						hits = append(hits, recordHit{id: id, label: label})
+					}
+				}
+			}
+		}
+	}
+	switch v := parsed.(type) {
+	case []any:
+		for _, item := range v {
+			if m, ok := item.(map[string]any); ok {
+				walk(m)
+			}
+		}
+	case map[string]any:
+		walk(v)
+	}
+	return hits
 }
 
 // odooPlainURLRe matches a bare Odoo web-client URL: /odoo/<model>/<id>.
@@ -1830,8 +1919,9 @@ var odooPlainURLRe = regexp.MustCompile(`/odoo/[a-z][a-z0-9_.]*/\d+`)
 // convertPlainURLsToLinks rewrites every bare /odoo/<model>/<id> occurrence
 // in the final assistant text into a clickable markdown link. Occurrences
 // that are already the target of a markdown link (preceded by "](") are left
-// untouched.
-func convertPlainURLsToLinks(content string) string {
+// untouched. knownLabels maps an /odoo/... URL to the real record name from
+// the current turn's tool results, used as the link label when available.
+func convertPlainURLsToLinks(content string, knownLabels map[string]string) string {
 	idxs := odooPlainURLRe.FindAllStringIndex(content, -1)
 	if len(idxs) == 0 {
 		return content
@@ -1845,8 +1935,12 @@ func convertPlainURLsToLinks(content string) string {
 			continue
 		}
 		url := content[start:end]
+		label := knownLabels[url]
+		if label == "" {
+			label = plainURLLabel(url)
+		}
 		sb.WriteString(content[prev:start])
-		sb.WriteString(fmt.Sprintf("[%s](%s)", plainURLLabel(url), url))
+		sb.WriteString(fmt.Sprintf("[%s](%s)", label, url))
 		prev = end
 	}
 	sb.WriteString(content[prev:])
