@@ -6,7 +6,7 @@ import re
 import subprocess
 import sys
 import tempfile
-from datetime import datetime
+from datetime import date as date_cls, datetime
 from typing import Any
 
 import requests
@@ -275,28 +275,15 @@ class OdooOCRSkill:
             return {"isError": True, "content": f"External OCR call failed: {str(exc)}"}
 
     def _call_vision(self, attachment):
+        # IMPORTANTE: para modelos locales pequeños (450M), el prompt NO puede
+        # incluir el schema JSON inline — el modelo regurgita la plantilla vacia.
+        # El normalizador (_normalize_invoice) mapea los campos alternativos.
         prompt = (
-            "You are an OCR+Accounting extractor for supplier invoices. "
-            "Return ONLY valid JSON, no markdown, no explanations.\n\n"
-            "JSON schema:\n"
-            "{\n"
-            '  "partner_name": "",\n'
-            '  "partner_vat": "",\n'
-            '  "customer_name": "",\n'
-            '  "customer_vat": "",\n'
-            '  "invoice_date": "",\n'
-            '  "invoice_date_due": "",\n'
-            '  "ref": "",\n'
-            '  "currency": "EUR",\n'
-            '  "amount_untaxed": 0,\n'
-            '  "amount_tax": 0,\n'
-            '  "amount_total": 0,\n'
-            '  "notes": "",\n'
-            '  "invoice_line_ids": [\n'
-            '    {"name": "", "quantity": 1, "price_unit": 0, "tax_percentage": 21}\n'
-            "  ]\n"
-            "}\n\n"
-            "Rules: dates must be YYYY-MM-DD, numbers as numeric values, tax_percentage as number (0,4,10,21...)."
+            "Extract supplier invoice data from the image as JSON only. "
+            "Return JSON with: vendor_name, vendor_vat, invoice_number, invoice_date, "
+            "invoice_date_due, customer_name, subtotal, tax_amount, total_amount, "
+            "currency, and invoice_line_ids as a list of {name, quantity, price_unit, tax_percentage}. "
+            "Dates as YYYY-MM-DD, numbers as numeric values."
         )
 
         content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
@@ -528,9 +515,9 @@ class OdooOCRSkill:
             return res["result"][0]["id"]
         return None
 
-    def _attach_original_file(self, move_id, attachment):
+    def _attach_original_file(self, record_model, record_id, attachment):
         datas_b64 = base64.b64encode(attachment["data"]).decode("utf-8")
-        name = attachment["name"] or f"invoice_{move_id}.pdf"
+        name = attachment["name"] or f"attachment_{record_id}.pdf"
         create_res = self._odoo_call(
             "ir.attachment",
             "create",
@@ -540,8 +527,8 @@ class OdooOCRSkill:
                     "datas_fname": name,
                     "type": "binary",
                     "datas": datas_b64,
-                    "res_model": "account.move",
-                    "res_id": move_id,
+                    "res_model": record_model,
+                    "res_id": record_id,
                     "mimetype": attachment.get("mimetype")
                     or "application/octet-stream",
                 }
@@ -554,11 +541,11 @@ class OdooOCRSkill:
         attach_id = create_res.get("result")
         if attach_id:
             post_res = self._odoo_call(
-                "account.move",
+                record_model,
                 "message_post",
-                [[move_id]],
+                [[record_id]],
                 {
-                    "body": "Original invoice document attached by OCR.",
+                    "body": "Original document attached by OCR.",
                     "attachment_ids": [[4, attach_id]],
                     "message_type": "comment",
                 },
@@ -615,7 +602,7 @@ class OdooOCRSkill:
             return create_res
 
         move_id = create_res.get("result")
-        attach_res = self._attach_original_file(move_id, attachment)
+        attach_res = self._attach_original_file("account.move", move_id, attachment)
         if attach_res.get("isError"):
             return {
                 "isError": True,
@@ -630,6 +617,374 @@ class OdooOCRSkill:
             "partner_id": partner_id,
             "attachment_linked": not attach_res.get("isError"),
         }
+
+    def _call_vision_expense(self, attachment):
+        prompt = (
+            "You are an OCR extractor for employee expense receipts. "
+            "Return ONLY valid JSON, no markdown, no explanations.\n\n"
+            "JSON schema:\n"
+            "{\n"
+            '  "merchant": "",\n'
+            '  "description": "",\n'
+            '  "expense_date": "",\n'
+            '  "total_amount": 0,\n'
+            '  "currency": "EUR",\n'
+            '  "notes": ""\n'
+            "}\n\n"
+            "Rules: expense_date must be YYYY-MM-DD and total_amount must be numeric."
+        )
+
+        content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        mime = attachment["mimetype"]
+        if "pdf" in mime or attachment["name"].lower().endswith(".pdf"):
+            pages = self._pdf_to_images(attachment["data"])
+            if pages.get("isError"):
+                return pages
+            for image_bytes, image_mime in pages["images"]:
+                content.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": self._to_data_url(image_bytes, image_mime)
+                        },
+                    }
+                )
+        else:
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": self._to_data_url(attachment["data"], mime)},
+                }
+            )
+
+        payload = {
+            "model": self.vision_model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a strict OCR extractor. Return only valid JSON.",
+                },
+                {"role": "user", "content": content},
+            ],
+            "temperature": 0,
+        }
+
+        headers = {"Content-Type": "application/json"}
+        if self.openai_api_key:
+            headers["Authorization"] = f"Bearer {self.openai_api_key}"
+
+        try:
+            r = requests.post(
+                f"{self.vision_api_base}/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=self.ocr_timeout,
+            )
+            r.raise_for_status()
+            body = r.json()
+            text = body.get("choices", [{}])[0].get("message", {}).get("content", "")
+            parsed = self._extract_first_json(text)
+            return {"parsed": parsed, "raw_text": text}
+        except Exception as exc:
+            return {
+                "isError": True,
+                "content": f"Vision extraction for expense failed: {str(exc)}",
+            }
+
+    def _normalize_expense(self, data):
+        return {
+            "merchant": str(data.get("merchant") or "").strip(),
+            "description": str(data.get("description") or "").strip(),
+            "expense_date": str(data.get("expense_date") or "").strip(),
+            "total_amount": self._num(data.get("total_amount"), 0),
+            "currency": str(data.get("currency") or "EUR").strip() or "EUR",
+            "notes": str(data.get("notes") or "").strip(),
+        }
+
+    def _resolve_employee_for_expense(self, sender_id, explicit_employee_id=None):
+        if explicit_employee_id:
+            return explicit_employee_id
+        if not sender_id:
+            return None
+
+        res = self._odoo_call(
+            "hr.employee",
+            "search_read",
+            [[[("user_id", "=", int(sender_id))]]],
+            {"fields": ["id"], "limit": 1},
+        )
+        if res.get("isError"):
+            return None
+        rows = res.get("result") or []
+        if not rows:
+            return None
+        return rows[0].get("id")
+
+    def _find_default_expense_product(self):
+        for domain in (
+            [[("can_be_expensed", "=", True)]],
+            [[]],
+        ):
+            res = self._odoo_call(
+                "product.product",
+                "search_read",
+                domain,
+                {"fields": ["id", "name"], "limit": 1},
+            )
+            if not res.get("isError") and res.get("result"):
+                return res["result"][0].get("id")
+        return None
+
+    def _create_employee_expense(
+        self,
+        expense_data,
+        attachment,
+        sender_id=None,
+        employee_id=None,
+        product_id=None,
+        quantity=None,
+        unit_amount=None,
+        name_override=None,
+    ):
+        fields_res = self._odoo_call("hr.expense", "fields_get", [], {})
+        if fields_res.get("isError"):
+            return {
+                "isError": True,
+                "content": "Model hr.expense is not available or not accessible for this user",
+            }
+
+        fields = fields_res.get("result") or {}
+        resolved_employee_id = self._resolve_employee_for_expense(
+            sender_id, employee_id
+        )
+        if "employee_id" in fields and not resolved_employee_id:
+            return {
+                "isError": True,
+                "content": "Could not resolve employee_id for expense creation",
+            }
+
+        resolved_product_id = product_id
+        if "product_id" in fields and not resolved_product_id:
+            resolved_product_id = self._find_default_expense_product()
+
+        if "product_id" in fields and not resolved_product_id:
+            return {
+                "isError": True,
+                "content": "Could not resolve product_id for hr.expense creation",
+            }
+
+        description = name_override or (
+            expense_data.get("description")
+            or expense_data.get("merchant")
+            or "OCR Expense"
+        )
+        resolved_quantity = self._num(quantity, 1.0) if quantity is not None else 1.0
+        resolved_unit_amount = (
+            self._num(unit_amount, 0.0)
+            if unit_amount is not None
+            else self._num(expense_data.get("total_amount"), 0)
+        )
+        total_amount = self._num(expense_data.get("total_amount"), 0)
+        if total_amount <= 0:
+            total_amount = round(resolved_quantity * resolved_unit_amount, 2)
+        expense_date = expense_data.get("expense_date") or date_cls.today().isoformat()
+
+        vals = {}
+        if "name" in fields:
+            vals["name"] = description
+        if "employee_id" in fields and resolved_employee_id:
+            vals["employee_id"] = resolved_employee_id
+        if "product_id" in fields and resolved_product_id:
+            vals["product_id"] = resolved_product_id
+        if "date" in fields:
+            vals["date"] = expense_date
+        if "quantity" in fields:
+            vals["quantity"] = resolved_quantity
+        if "unit_amount" in fields:
+            vals["unit_amount"] = resolved_unit_amount
+        if "total_amount" in fields:
+            vals["total_amount"] = total_amount
+        if "payment_mode" in fields:
+            selection = fields.get("payment_mode", {}).get("selection") or []
+            allowed = [code for code, _label in selection]
+            if "own_account" in allowed:
+                vals["payment_mode"] = "own_account"
+        if "description" in fields and expense_data.get("notes"):
+            vals["description"] = expense_data.get("notes")
+
+        currency_id = self._find_currency_id(expense_data.get("currency"))
+        if currency_id and "currency_id" in fields:
+            vals["currency_id"] = currency_id
+
+        create_res = self._odoo_call("hr.expense", "create", [vals], {})
+        if create_res.get("isError"):
+            return create_res
+
+        expense_id = create_res.get("result")
+        attach_res = self._attach_original_file("hr.expense", expense_id, attachment)
+        if attach_res.get("isError"):
+            return {
+                "isError": True,
+                "content": (
+                    f"Expense {expense_id} was created, but attaching the original document failed: "
+                    f"{attach_res.get('content')}"
+                ),
+            }
+
+        return {
+            "expense_id": expense_id,
+            "employee_id": resolved_employee_id,
+            "product_id": resolved_product_id,
+            "attachment_linked": not attach_res.get("isError"),
+        }
+
+    def _call_vision_mileage(self, attachment):
+        prompt = (
+            "You are an OCR extractor for mileage expense documents. "
+            "Return ONLY valid JSON, no markdown, no explanations.\n\n"
+            "JSON schema:\n"
+            "{\n"
+            '  "description": "",\n'
+            '  "trip_date": "",\n'
+            '  "origin": "",\n'
+            '  "destination": "",\n'
+            '  "distance_km": 0,\n'
+            '  "rate_per_km": 0,\n'
+            '  "total_amount": 0,\n'
+            '  "currency": "EUR",\n'
+            '  "notes": ""\n'
+            "}\n\n"
+            "Rules: trip_date must be YYYY-MM-DD, numbers must be numeric."
+        )
+
+        content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        mime = attachment["mimetype"]
+        if "pdf" in mime or attachment["name"].lower().endswith(".pdf"):
+            pages = self._pdf_to_images(attachment["data"])
+            if pages.get("isError"):
+                return pages
+            for image_bytes, image_mime in pages["images"]:
+                content.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": self._to_data_url(image_bytes, image_mime)
+                        },
+                    }
+                )
+        else:
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": self._to_data_url(attachment["data"], mime)},
+                }
+            )
+
+        payload = {
+            "model": self.vision_model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a strict OCR extractor. Return only valid JSON.",
+                },
+                {"role": "user", "content": content},
+            ],
+            "temperature": 0,
+        }
+
+        headers = {"Content-Type": "application/json"}
+        if self.openai_api_key:
+            headers["Authorization"] = f"Bearer {self.openai_api_key}"
+
+        try:
+            r = requests.post(
+                f"{self.vision_api_base}/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=self.ocr_timeout,
+            )
+            r.raise_for_status()
+            body = r.json()
+            text = body.get("choices", [{}])[0].get("message", {}).get("content", "")
+            parsed = self._extract_first_json(text)
+            return {"parsed": parsed, "raw_text": text}
+        except Exception as exc:
+            return {
+                "isError": True,
+                "content": f"Vision extraction for mileage failed: {str(exc)}",
+            }
+
+    def _normalize_mileage(self, data):
+        distance_km = self._num(data.get("distance_km"), 0)
+        rate_per_km = self._num(data.get("rate_per_km"), 0)
+        total_amount = self._num(data.get("total_amount"), 0)
+        if total_amount <= 0 and distance_km > 0 and rate_per_km > 0:
+            total_amount = round(distance_km * rate_per_km, 2)
+
+        return {
+            "description": str(data.get("description") or "Mileage").strip()
+            or "Mileage",
+            "trip_date": str(
+                data.get("trip_date") or data.get("expense_date") or ""
+            ).strip(),
+            "origin": str(data.get("origin") or "").strip(),
+            "destination": str(data.get("destination") or "").strip(),
+            "distance_km": distance_km,
+            "rate_per_km": rate_per_km,
+            "total_amount": total_amount,
+            "currency": str(data.get("currency") or "EUR").strip() or "EUR",
+            "notes": str(data.get("notes") or "").strip(),
+        }
+
+    def _create_mileage_employee_expense(
+        self,
+        mileage_data,
+        attachment,
+        sender_id=None,
+        employee_id=None,
+        product_id=None,
+    ):
+        distance_km = self._num(mileage_data.get("distance_km"), 0)
+        rate_per_km = self._num(mileage_data.get("rate_per_km"), 0)
+        total_amount = self._num(mileage_data.get("total_amount"), 0)
+
+        quantity = distance_km if distance_km > 0 else 1.0
+        unit_amount = rate_per_km if rate_per_km > 0 else total_amount
+        if unit_amount <= 0:
+            unit_amount = total_amount
+        if unit_amount <= 0:
+            unit_amount = 0.0
+
+        route_parts = [
+            part
+            for part in [mileage_data.get("origin"), mileage_data.get("destination")]
+            if part
+        ]
+        route_text = " -> ".join(route_parts)
+        base_name = mileage_data.get("description") or "Mileage"
+        name = f"{base_name}: {route_text}" if route_text else str(base_name)
+
+        expense_payload = {
+            "description": name,
+            "merchant": "Mileage",
+            "expense_date": mileage_data.get("trip_date"),
+            "total_amount": total_amount
+            if total_amount > 0
+            else quantity * unit_amount,
+            "currency": mileage_data.get("currency") or "EUR",
+            "notes": mileage_data.get("notes") or "",
+        }
+
+        return self._create_employee_expense(
+            expense_data=expense_payload,
+            attachment=attachment,
+            sender_id=sender_id,
+            employee_id=employee_id,
+            product_id=product_id,
+            quantity=quantity,
+            unit_amount=unit_amount,
+            name_override=name,
+        )
 
     def extract_invoice(
         self,
@@ -732,6 +1087,120 @@ class OdooOCRSkill:
             )
         }
 
+    def extract_and_create_employee_expense(
+        self,
+        attachment_id: int,
+        dry_run: bool = False,
+        sender_id=None,
+        company_id=None,
+        allowed_company_ids=None,
+        employee_id=None,
+        product_id=None,
+    ):
+        self.runtime_sender_id = self._to_int(sender_id)
+        self.runtime_rpc_context = self._build_rpc_context(
+            company_id=company_id, allowed_company_ids=allowed_company_ids
+        )
+
+        attachment = self._download_attachment(attachment_id)
+        if attachment.get("isError"):
+            return attachment
+
+        vision_res = self._call_vision_expense(attachment)
+        if vision_res.get("isError"):
+            return vision_res
+
+        expense_data = self._normalize_expense(vision_res.get("parsed") or {})
+
+        if dry_run:
+            return {
+                "content": json.dumps(
+                    {"success": True, "dry_run": True, "expense_data": expense_data},
+                    ensure_ascii=False,
+                )
+            }
+
+        create_res = self._create_employee_expense(
+            expense_data,
+            attachment,
+            sender_id=self.runtime_sender_id,
+            employee_id=self._to_int(employee_id),
+            product_id=self._to_int(product_id),
+        )
+        if create_res.get("isError"):
+            return create_res
+
+        return {
+            "content": json.dumps(
+                {
+                    "success": True,
+                    "expense_id": create_res["expense_id"],
+                    "employee_id": create_res["employee_id"],
+                    "product_id": create_res["product_id"],
+                    "attachment_linked": create_res["attachment_linked"],
+                    "expense_data": expense_data,
+                },
+                ensure_ascii=False,
+            )
+        }
+
+    def extract_and_create_mileage_expense(
+        self,
+        attachment_id: int,
+        dry_run: bool = False,
+        sender_id=None,
+        company_id=None,
+        allowed_company_ids=None,
+        employee_id=None,
+        product_id=None,
+    ):
+        self.runtime_sender_id = self._to_int(sender_id)
+        self.runtime_rpc_context = self._build_rpc_context(
+            company_id=company_id, allowed_company_ids=allowed_company_ids
+        )
+
+        attachment = self._download_attachment(attachment_id)
+        if attachment.get("isError"):
+            return attachment
+
+        vision_res = self._call_vision_mileage(attachment)
+        if vision_res.get("isError"):
+            return vision_res
+
+        mileage_data = self._normalize_mileage(vision_res.get("parsed") or {})
+
+        if dry_run:
+            return {
+                "content": json.dumps(
+                    {"success": True, "dry_run": True, "mileage_data": mileage_data},
+                    ensure_ascii=False,
+                )
+            }
+
+        create_res = self._create_mileage_employee_expense(
+            mileage_data,
+            attachment,
+            sender_id=self.runtime_sender_id,
+            employee_id=self._to_int(employee_id),
+            product_id=self._to_int(product_id),
+        )
+        if create_res.get("isError"):
+            return create_res
+
+        return {
+            "content": json.dumps(
+                {
+                    "success": True,
+                    "expense_id": create_res["expense_id"],
+                    "employee_id": create_res["employee_id"],
+                    "product_id": create_res["product_id"],
+                    "attachment_linked": create_res["attachment_linked"],
+                    "mileage_data": mileage_data,
+                },
+                ensure_ascii=False,
+            )
+        }
+
 
 ocr = OdooOCRSkill()
 
@@ -796,6 +1265,84 @@ def build_tools():
                 "required": ["attachment_id"],
             },
         },
+        {
+            "name": "ocr-create-employee-expense",
+            "description": "Extract expense receipt data from attachment and create an employee expense in Odoo (hr.expense).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "attachment_id": {
+                        "type": "integer",
+                        "description": "ir.attachment ID of expense receipt PDF/image",
+                    },
+                    "dry_run": {
+                        "type": "boolean",
+                        "description": "If true, only extract and normalize data without creating expense",
+                    },
+                    "sender_id": {
+                        "type": "integer",
+                        "description": "res.users ID of the message author (for permission/company inheritance)",
+                    },
+                    "company_id": {
+                        "type": "integer",
+                        "description": "Active company ID from Odoo context",
+                    },
+                    "allowed_company_ids": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Allowed company IDs from Odoo context",
+                    },
+                    "employee_id": {
+                        "type": "integer",
+                        "description": "Optional employee ID override",
+                    },
+                    "product_id": {
+                        "type": "integer",
+                        "description": "Optional product ID override for hr.expense",
+                    },
+                },
+                "required": ["attachment_id"],
+            },
+        },
+        {
+            "name": "ocr-create-mileage-expense",
+            "description": "Extract mileage data from attachment and create a mileage expense in Odoo (hr.expense).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "attachment_id": {
+                        "type": "integer",
+                        "description": "ir.attachment ID of mileage receipt/trip document",
+                    },
+                    "dry_run": {
+                        "type": "boolean",
+                        "description": "If true, only extract and normalize mileage data without creating expense",
+                    },
+                    "sender_id": {
+                        "type": "integer",
+                        "description": "res.users ID of the message author (for permission/company inheritance)",
+                    },
+                    "company_id": {
+                        "type": "integer",
+                        "description": "Active company ID from Odoo context",
+                    },
+                    "allowed_company_ids": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Allowed company IDs from Odoo context",
+                    },
+                    "employee_id": {
+                        "type": "integer",
+                        "description": "Optional employee ID override",
+                    },
+                    "product_id": {
+                        "type": "integer",
+                        "description": "Optional product ID override for hr.expense",
+                    },
+                },
+                "required": ["attachment_id"],
+            },
+        },
     ]
 
 
@@ -810,7 +1357,7 @@ def handle_request(request):
             "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "ocr-invoice-mcp", "version": "3.0.0"},
+                "serverInfo": {"name": "ocr-invoice-mcp", "version": "3.1.0"},
             },
         }
 
@@ -835,9 +1382,13 @@ def handle_request(request):
     sender_id_raw = arguments.get("sender_id")
     company_id_raw = arguments.get("company_id")
     allowed_company_ids = arguments.get("allowed_company_ids")
+    employee_id_raw = arguments.get("employee_id")
+    product_id_raw = arguments.get("product_id")
     attachment_id = None
     sender_id = None
     company_id = None
+    employee_id = None
+    product_id = None
     try:
         if attachment_id_raw is not None:
             attachment_id = int(attachment_id_raw)
@@ -855,6 +1406,18 @@ def handle_request(request):
             company_id = int(company_id_raw)
     except Exception:
         company_id = None
+
+    try:
+        if employee_id_raw is not None:
+            employee_id = int(employee_id_raw)
+    except Exception:
+        employee_id = None
+
+    try:
+        if product_id_raw is not None:
+            product_id = int(product_id_raw)
+    except Exception:
+        product_id = None
 
     if not attachment_id:
         res = {
@@ -877,6 +1440,28 @@ def handle_request(request):
             company_id=company_id,
             allowed_company_ids=allowed_company_ids,
         )
+    elif name == "ocr-create-employee-expense":
+        dry_run = bool(arguments.get("dry_run", False))
+        res = ocr.extract_and_create_employee_expense(
+            attachment_id,
+            dry_run=dry_run,
+            sender_id=sender_id,
+            company_id=company_id,
+            allowed_company_ids=allowed_company_ids,
+            employee_id=employee_id,
+            product_id=product_id,
+        )
+    elif name == "ocr-create-mileage-expense":
+        dry_run = bool(arguments.get("dry_run", False))
+        res = ocr.extract_and_create_mileage_expense(
+            attachment_id,
+            dry_run=dry_run,
+            sender_id=sender_id,
+            company_id=company_id,
+            allowed_company_ids=allowed_company_ids,
+            employee_id=employee_id,
+            product_id=product_id,
+        )
     else:
         return {
             "jsonrpc": "2.0",
@@ -895,7 +1480,7 @@ def handle_request(request):
 
 
 def main():
-    log("OCR Invoice MCP server v3.0 started")
+    log("OCR Invoice MCP server v3.1 started")
     for line in sys.stdin:
         line = line.strip()
         if not line:

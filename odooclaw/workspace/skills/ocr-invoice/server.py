@@ -275,31 +275,15 @@ class OdooOCRSkill:
             return {"isError": True, "content": f"External OCR call failed: {str(exc)}"}
 
     def _call_vision(self, attachment):
+        # IMPORTANTE: para modelos locales pequeños (450M), el prompt NO puede
+        # incluir el schema JSON inline — el modelo regurgita la plantilla vacia.
+        # El normalizador (_normalize_invoice) mapea los campos alternativos.
         prompt = (
-            "You are an OCR+Accounting extractor for supplier invoices. "
-            "Return ONLY valid JSON, no markdown, no explanations.\n\n"
-            "JSON schema:\n"
-            "{\n"
-            '  "partner_name": "",\n'
-            '  "partner_vat": "",\n'
-            '  "customer_name": "",\n'
-            '  "customer_vat": "",\n'
-            '  "invoice_date": "",\n'
-            '  "invoice_date_due": "",\n'
-            '  "ref": "",\n'
-            '  "currency": "EUR",\n'
-            '  "amount_untaxed": 0,\n'
-            '  "amount_tax": 0,\n'
-            '  "amount_total": 0,\n'
-            '  "notes": "",\n'
-            '  "invoice_line_ids": [\n'
-            '    {"name": "", "quantity": 1, "price_unit": 0, "tax_percentage": 21}\n'
-            "  ]\n"
-            "}\n\n"
-            "Rules: dates must be YYYY-MM-DD, numbers as numeric values, tax_percentage as number (0,4,10,21...)."
+            "Extract invoice data as JSON only. "
+            "Return JSON with vendor_name, invoice_number, date, total, tax."
         )
 
-        content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        content: list[dict[str, Any]] = []
 
         mime = attachment["mimetype"]
         if "pdf" in mime or attachment["name"].lower().endswith(".pdf"):
@@ -323,6 +307,10 @@ class OdooOCRSkill:
                 }
             )
 
+        # IMPORTANTE: la imagen SIEMPRE primero; el texto de instrucciones al final.
+        # Verificado en N100 (2026-08-07): con texto primero el 450M regurgita basura.
+        content.append({"type": "text", "text": prompt})
+
         payload = {
             "model": self.vision_model,
             "messages": [
@@ -333,13 +321,18 @@ class OdooOCRSkill:
                 {"role": "user", "content": content},
             ],
             "temperature": 0,
+            "max_tokens": 150,
         }
 
         headers = {"Content-Type": "application/json"}
         if self.openai_api_key:
             headers["Authorization"] = f"Bearer {self.openai_api_key}"
 
-        try:
+        # El 450M es no-determinista en CPU: a veces entra en bucle de repeticion.
+        # 3 intentos con el mismo prompt (temp 0.0) resuelve la mayoria.
+        last_exc = None
+        for _attempt in range(3):
+          try:
             r = requests.post(
                 f"{self.vision_api_base}/chat/completions",
                 json=payload,
@@ -350,14 +343,58 @@ class OdooOCRSkill:
             body = r.json()
             text = body.get("choices", [{}])[0].get("message", {}).get("content", "")
             parsed = self._extract_first_json(text)
-            return {"parsed": parsed, "raw_text": text}
-        except Exception as exc:
-            return {"isError": True, "content": f"Vision extraction failed: {str(exc)}"}
+            if parsed is not None:
+                return {"parsed": parsed, "raw_text": text}
+            last_exc = ValueError("No valid JSON found in model response")
+          except Exception as exc:
+            last_exc = exc
+        return {"isError": True, "content": f"Vision extraction failed: {last_exc}"}
+
+    def _norm_date(self, value, default=""):
+        import re as _re
+        if not value:
+            return default
+        value = str(value).strip()
+        # ya ISO
+        if _re.match(r"\d{4}-\d{2}-\d{2}", value):
+            return value[:10]
+        m = _re.match(r"(\d{1,2})[/.](\d{1,2})[/.](\d{2,4})", value)
+        if m:
+            a, b, y = m.groups()
+            y = "20" + y if len(y) == 2 else y
+            # Heuristica: si el primero >12 -> dia/mes (europeo); si el segundo >12 -> mes/dia (US)
+            if int(a) > 12:
+                d, mo = int(a), int(b)
+            elif int(b) > 12:
+                mo, d = int(a), int(b)
+            else:
+                # ambiguo (ambos <=12): asumir mes/dia (US, comun en facturas inglesas)
+                mo, d = int(a), int(b)
+            return f"{int(y):04d}-{mo:02d}-{d:02d}"
+        # formato largo "May 7th, 2025" etc -> best effort
+        from datetime import datetime
+        for fmt in ("%b %d, %Y", "%B %d, %Y", "%d %b %Y", "%d %B %Y"):
+            try:
+                return datetime.strptime(value, fmt).strftime("%Y-%m-%d")
+            except Exception:
+                continue
+        return default
 
     def _num(self, value, default=0.0):
         try:
             if isinstance(value, str):
-                value = value.replace(" ", "").replace(",", ".")
+                # limpiar simbolos de moneda y separadores europeos (1.234,56 -> 1234.56)
+                value = (
+                    value.replace("€", "").replace("EUR", "")
+                    .replace("$", "").replace("GBP", "").replace("USD", "")
+                    .replace(" ", "").replace("\u00a0", "")
+                )
+                if "," in value and "." in value:
+                    # formato europeo 1.234,56
+                    if value.rfind(",") > value.rfind("."):
+                        value = value.replace(".", "").replace(",", ".")
+                elif "," in value:
+                    value = value.replace(",", ".")
             return float(value)
         except Exception:
             return float(default)
@@ -428,20 +465,22 @@ class OdooOCRSkill:
             ).strip(),
             "customer_name": str(data.get("customer_name") or "").strip(),
             "customer_vat": str(data.get("customer_vat") or "").strip(),
-            "invoice_date": str(data.get("invoice_date") or "").strip(),
-            "invoice_date_due": str(
+            "invoice_date": self._norm_date(data.get("invoice_date") or data.get("date") or ""),
+            "invoice_date_due": self._norm_date(
                 data.get("invoice_date_due") or data.get("due_date") or ""
-            ).strip(),
+            ),
             "ref": str(data.get("ref") or data.get("invoice_number") or "").strip(),
             "currency": str(data.get("currency") or "EUR").strip() or "EUR",
             "amount_untaxed": self._num(
                 data.get("amount_untaxed") or data.get("subtotal"), 0
             ),
             "amount_tax": self._num(
-                data.get("amount_tax") or data.get("tax_amount"), 0
+                data.get("amount_tax") or data.get("tax_amount")
+                or data.get("tax"), 0
             ),
             "amount_total": self._num(
-                data.get("amount_total") or data.get("total_amount"), 0
+                data.get("amount_total") or data.get("total_amount")
+                or data.get("total"), 0
             ),
             "notes": str(data.get("notes") or "").strip(),
             "invoice_line_ids": normalized_lines,
@@ -537,7 +576,6 @@ class OdooOCRSkill:
             [
                 {
                     "name": name,
-                    "datas_fname": name,
                     "type": "binary",
                     "datas": datas_b64,
                     "res_model": record_model,
@@ -670,6 +708,10 @@ class OdooOCRSkill:
                 }
             )
 
+        # IMPORTANTE: la imagen SIEMPRE primero; el texto de instrucciones al final.
+        # Verificado en N100 (2026-08-07): con texto primero el 450M regurgita basura.
+        content.append({"type": "text", "text": prompt})
+
         payload = {
             "model": self.vision_model,
             "messages": [
@@ -680,6 +722,7 @@ class OdooOCRSkill:
                 {"role": "user", "content": content},
             ],
             "temperature": 0,
+            "max_tokens": 150,
         }
 
         headers = {"Content-Type": "application/json"}
@@ -893,6 +936,10 @@ class OdooOCRSkill:
                 }
             )
 
+        # IMPORTANTE: la imagen SIEMPRE primero; el texto de instrucciones al final.
+        # Verificado en N100 (2026-08-07): con texto primero el 450M regurgita basura.
+        content.append({"type": "text", "text": prompt})
+
         payload = {
             "model": self.vision_model,
             "messages": [
@@ -903,6 +950,7 @@ class OdooOCRSkill:
                 {"role": "user", "content": content},
             ],
             "temperature": 0,
+            "max_tokens": 150,
         }
 
         headers = {"Content-Type": "application/json"}
