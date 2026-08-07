@@ -2026,30 +2026,86 @@ func retrieveRelevantTools(defs []providers.ToolDefinition, query string, k int)
 	queryLower = accentReplacer.Replace(queryLower)
 	// Domain keywords map to tool name fragments (English + Spanish).
 	domainKeywords := map[string][]string{
-		"partner":     {"partner", "cliente", "contact", "empresa", "acme"},
-		"product":     {"product", "producto", "productos"},
-		"sale":        {"sale", "venta", "orden", "pedido", "so/", "order"},
-		"invoice":     {"invoice", "factura", "facturas", "pago", "pending", "pendiente"},
-		"task":        {"task", "tarea", "proyecto", "project"},
-		"lead":        {"lead", "crm", "oportunidad"},
-		"reconcile":   {"reconcile", "conciliar", "banco", "bank"},
-		"tax":         {"tax", "impuesto", "iva"},
-		"delivery":    {"delivery", "entrega", "entregas"},
-		"inventory":   {"inventory", "ajuste", "adjustment", "valuation", "inventario", "almacen", "stock"},
-		"activity":    {"activity", "actividad", "reunion", "meeting"},
-		"chatter":     {"chatter", "mensaje", "message", "nota", "note"},
-		"purchase":    {"purchase", "compra", "po/"},
-		"account":     {"account", "cuenta", "contab", "saldo"},
-		"aging":       {"aging", "antiguedad", "ar_ap", "ar/ap"},
-		"migration":   {"migration", "migra"},
-		"report":      {"report", "informe"},
-		"expense":     {"expense", "gasto", "gastos"},
-		"timesheet":   {"timesheet", "hoja de tiempos", "tiempos"},
-		"attendance":  {"attendance", "fichar", "asistencia"},
-		"shipment":    {"shipment", "envio", "envíos"},
+		"partner":    {"partner", "cliente", "contact", "empresa", "acme"},
+		"product":    {"product", "producto", "productos"},
+		"sale":       {"sale", "venta", "orden", "pedido", "so/", "order"},
+		"invoice":    {"invoice", "factura", "facturas", "pago", "pending", "pendiente"},
+		"task":       {"task", "tarea", "proyecto", "project"},
+		"lead":       {"lead", "crm", "oportunidad"},
+		"reconcile":  {"reconcile", "conciliar", "banco", "bank"},
+		"tax":        {"tax", "impuesto", "iva"},
+		"delivery":   {"delivery", "entrega", "entregas"},
+		"inventory":  {"inventory", "ajuste", "adjustment", "valuation", "inventario", "almacen", "stock"},
+		"activity":   {"activity", "actividad", "reunion", "meeting"},
+		"chatter":    {"chatter", "mensaje", "message", "nota", "note"},
+		"purchase":   {"purchase", "compra", "po/"},
+		"account":    {"account", "cuenta", "contab", "saldo"},
+		"aging":      {"aging", "antiguedad", "ar_ap", "ar/ap"},
+		"migration":  {"migration", "migra"},
+		"report":     {"report", "informe"},
+		"expense":    {"expense", "gasto", "gastos"},
+		"timesheet":  {"timesheet", "hoja de tiempos", "tiempos"},
+		"attendance": {"attendance", "fichar", "asistencia"},
+		"shipment":   {"shipment", "envio", "envíos"},
 	}
 
-	score := func(name string) int {
+	// Direct query-term → tool-fragment pairs (Spanish ↔ English tool names).
+	// Fixes: "saldo"→aging/balance, "albaran"/"recepcion"→receipt, "ajuste"→adjustment,
+	// "entrega(s)"→delivery, "gasto(s)"→expense, "tiempos"→timesheet, "fichar"→attendance.
+	// NRA-445: creation-intent pairs + specific create-domain pairs (sale_order,
+	// vendor_invoice, task) so "Crea un presupuesto" → odoo_create_sale_order,
+	// not the generic odoo_create.
+	queryToolPairs := [][2]string{
+		{"saldo", "aging"}, {"saldo", "balance"}, {"saldo", "ar_ap"},
+		{"albaran", "receipt"}, {"recepcion", "receipt"}, {"receipt", "receipt"},
+		{"entrega", "delivery"}, {"entregas", "delivery"},
+		{"gasto", "expense"}, {"gastos", "expense"},
+		{"tiempos", "timesheet"}, {"fichar", "attendance"}, {"asistencia", "attendance"},
+		{"envio", "shipment"}, {"envios", "shipment"},
+		{"ajuste", "adjustment"}, {"inventario", "inventory"}, {"stock", "stock"},
+		{"producto", "product"}, {"productos", "product"},
+		{"factura", "invoice"}, {"facturas", "invoice"}, {"pendientes", "pending"},
+		{"cliente", "partner"}, {"clientes", "partner"}, {"empresa", "partner"},
+		// Search-intent verbs must favor find_* tools over get_*_summary
+		{"busca", "find"}, {"buscar", "find"}, {"busqueda", "find"}, {"busqued", "find"},
+		{"encuentra", "find"}, {"encontrar", "find"}, {"localiza", "find"}, {"localizar", "find"},
+		{"consulta", "find"}, {"consultar", "find"}, {"dame", "find"}, {"muestrame", "find"}, {"muestra", "find"},
+		{"quien es", "find"}, {"quien es", "summary"},
+		{"tarea", "task"}, {"tareas", "task"}, {"proyecto", "project"},
+		{"venta", "sale"}, {"pedido", "order"}, {"orden", "order"}, {"ventas", "sale"},
+		{"cuenta", "account"}, {"contab", "account"}, {"banco", "bank"}, {"bancar", "bank"},
+		{"compra", "purchase"}, {"compras", "purchase"},
+		{"crm", "lead"}, {"oportunidad", "lead"},
+		{"impuesto", "tax"}, {"iva", "tax"}, {"informe", "report"},
+		{"mensaje", "chatter"}, {"nota", "note"}, {"reunion", "activity"}, {"actividad", "activity"},
+		{"reconcili", "reconcile"}, {"conciliar", "reconcile"},
+		// Counting queries: "cuántos/cuantos/total" must prefer search/count
+		// tools (odoo_search_read, odoo_search) over single-record summaries.
+		{"cuantos", "search_read"}, {"cuantos", "search"}, {"cuantos", "count"},
+		{"cuantas", "search_read"}, {"cuantas", "search"}, {"cuantas", "count"},
+		{"total", "search_read"}, {"total", "search"}, {"total", "count"},
+		{"numero", "search_read"}, {"numero", "search"}, {"cuenta de", "search"},
+		// NRA-445: creation intent — these pairs feed the generic-create
+		// penalization below and boost ALL odoo_create_* tools equally.
+		{"crea", "create"}, {"crear", "create"}, {"creame", "create"}, {"creame una", "create"},
+		{"nueva", "create"}, {"nuevo", "create"}, {"nuevo cliente", "create"},
+		{"alta", "create"}, {"registra", "create"}, {"registrar", "create"}, {"registrame", "create"},
+		// NRA-445: specific create domains (so the specific tool beats the generic).
+		{"presupuesto", "sale_order"}, {"presupuesto", "quotation"}, {"cotizacion", "quotation"},
+		{"pedido de venta", "sale"},
+		{"factura de proveedor", "vendor_invoice"}, {"factura de compra", "vendor_invoice"},
+		{"tarea de", "task"}, {"to-do", "task"},
+	}
+
+	// createIntentTerms mark creation queries — they activate the generic
+	// odoo_create penalization below.
+	createIntentTerms := []string{"crea", "crear", "creame", "nueva", "nuevo", "alta",
+		"registra", "registrar", "registrame", "presupuesto", "cotizacion",
+		"factura de proveedor", "factura de compra", "tarea de", "to-do",
+		"pedido de venta", "oportunidad"}
+
+	// baseScore is the raw domain+pair+token overlap score (no NRA-445 adjustments).
+	baseScore := func(name string) int {
 		s := 0
 		lower := strings.ToLower(name)
 		for _, kw := range domainKeywords["partner"] {
@@ -2069,40 +2125,6 @@ func retrieveRelevantTools(defs []providers.ToolDefinition, query string, k int)
 				}
 			}
 		}
-		// Direct query-term → tool-fragment pairs (Spanish ↔ English tool names).
-		// Fixes: "saldo"→aging/balance, "albaran"/"recepcion"→receipt, "ajuste"→adjustment,
-		// "entrega(s)"→delivery, "gasto(s)"→expense, "tiempos"→timesheet, "fichar"→attendance.
-		queryToolPairs := [][2]string{
-			{"saldo", "aging"}, {"saldo", "balance"}, {"saldo", "ar_ap"},
-			{"albaran", "receipt"}, {"recepcion", "receipt"}, {"receipt", "receipt"},
-			{"entrega", "delivery"}, {"entregas", "delivery"},
-			{"gasto", "expense"}, {"gastos", "expense"},
-			{"tiempos", "timesheet"}, {"fichar", "attendance"}, {"asistencia", "attendance"},
-			{"envio", "shipment"}, {"envios", "shipment"},
-			{"ajuste", "adjustment"}, {"inventario", "inventory"}, {"stock", "stock"},
-			{"producto", "product"}, {"productos", "product"},
-			{"factura", "invoice"}, {"facturas", "invoice"}, {"pendientes", "pending"},
-			{"cliente", "partner"}, {"clientes", "partner"}, {"empresa", "partner"},
-			// Search-intent verbs must favor find_* tools over get_*_summary
-			{"busca", "find"}, {"buscar", "find"}, {"busqueda", "find"}, {"busqued", "find"},
-			{"encuentra", "find"}, {"encontrar", "find"}, {"localiza", "find"}, {"localizar", "find"},
-			{"consulta", "find"}, {"consultar", "find"}, {"dame", "find"}, {"muestrame", "find"}, {"muestra", "find"},
-			{"quien es", "find"}, {"quien es", "summary"},
-			{"tarea", "task"}, {"tareas", "task"}, {"proyecto", "project"},
-			{"venta", "sale"}, {"pedido", "order"}, {"orden", "order"}, {"ventas", "sale"},
-			{"cuenta", "account"}, {"contab", "account"}, {"banco", "bank"}, {"bancar", "bank"},
-			{"compra", "purchase"}, {"compras", "purchase"},
-			{"crm", "lead"}, {"oportunidad", "lead"},
-			{"impuesto", "tax"}, {"iva", "tax"}, {"informe", "report"},
-			{"mensaje", "chatter"}, {"nota", "note"}, {"reunion", "activity"}, {"actividad", "activity"},
-			{"reconcili", "reconcile"}, {"conciliar", "reconcile"},
-			// Counting queries: "cuántos/cuantos/total" must prefer search/count
-			// tools (odoo_search_read, odoo_search) over single-record summaries.
-			{"cuantos", "search_read"}, {"cuantos", "search"}, {"cuantos", "count"},
-			{"cuantas", "search_read"}, {"cuantas", "search"}, {"cuantas", "count"},
-			{"total", "search_read"}, {"total", "search"}, {"total", "count"},
-			{"numero", "search_read"}, {"numero", "search"}, {"cuenta de", "search"},
-		}
 		for _, pair := range queryToolPairs {
 			if strings.Contains(queryLower, pair[0]) && strings.Contains(lower, pair[1]) {
 				s += 3
@@ -2115,6 +2137,107 @@ func retrieveRelevantTools(defs []providers.ToolDefinition, query string, k int)
 			if len(tok) >= 4 && strings.Contains(lower, tok) {
 				s += 2
 			}
+		}
+		return s
+	}
+
+	// nonPartnerScore excludes partner-domain contributions. Used to keep the
+	// generic odoo_create for partner/contact creation (no odoo_create_partner
+	// tool exists) while still penalizing it for other creation domains.
+	nonPartnerScore := func(name string) int {
+		s := 0
+		lower := strings.ToLower(name)
+		for domain, kws := range domainKeywords {
+			if domain == "partner" {
+				continue
+			}
+			for _, kw := range kws {
+				if strings.Contains(queryLower, kw) && strings.Contains(lower, domain) {
+					s += 3
+				}
+			}
+		}
+		for _, pair := range queryToolPairs {
+			if pair[1] == "partner" {
+				continue
+			}
+			if strings.Contains(queryLower, pair[0]) && strings.Contains(lower, pair[1]) {
+				s += 3
+			}
+		}
+		// Token overlap bonus (same tokens as baseScore)
+		for _, tok := range strings.FieldsFunc(queryLower, func(r rune) bool {
+			return !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'))
+		}) {
+			if len(tok) >= 4 && strings.Contains(lower, tok) {
+				s += 2
+			}
+		}
+		return s
+	}
+
+	// genericCreatePenalty pushes a tool out of the top-k (the small fine-tuned
+	// model picks the generic odoo_create — "sounds safer" — even when the
+	// specific tool is present, so the generic must NOT be offered).
+	const genericCreatePenalty = 1000
+
+	score := func(name string) int {
+		s := baseScore(name)
+		lower := strings.ToLower(name)
+		// NRA-445: penalize the generic odoo_create when a specific odoo_create_*
+		// tool clearly outranks it. Carve-out: if the only outranking create tool
+		// is partner-driven, keep the generic (creating a partner uses it).
+		if name == "odoo_create" {
+			createIntent := false
+			for _, term := range createIntentTerms {
+				if strings.Contains(queryLower, term) {
+					createIntent = true
+					break
+				}
+			}
+			if createIntent {
+				bestSpecific := -1
+				for _, d := range defs {
+					n := d.Function.Name
+					if strings.HasPrefix(n, "odoo_create_") && n != "odoo_create" {
+						if bs := baseScore(n); bs > bestSpecific {
+							bestSpecific = bs
+						}
+					}
+				}
+				if bestSpecific > s {
+					penalize := false
+					for _, d := range defs {
+						n := d.Function.Name
+						if !strings.HasPrefix(n, "odoo_create_") || n == "odoo_create" {
+							continue
+						}
+						if baseScore(n) <= s {
+							continue
+						}
+						if nonPartnerScore(n) > s {
+							penalize = true
+							break
+						}
+					}
+					if penalize {
+						s -= genericCreatePenalty
+					}
+				}
+			}
+		}
+		// NRA-445: "oportunidad" is the canonical CRM/lead term — boost lead
+		// tools so lead beats sale ("venta" drags queries toward sale_order).
+		if strings.Contains(queryLower, "oportunidad") && strings.Contains(lower, "lead") {
+			s += 6
+		}
+		// NRA-445: when "oportunidad" is present the lead domain WINS over sale:
+		// drop sale tools and create_helpdesk_ticket_from_partner out of the
+		// top-k (the 1.2B model over-indexes on "venta"→create_sale_order and on
+		// partner params→helpdesk even when lead ranks #1 — verified vs model).
+		if strings.Contains(queryLower, "oportunidad") &&
+			(strings.Contains(lower, "sale") || strings.Contains(lower, "helpdesk")) {
+			s -= genericCreatePenalty
 		}
 		return s
 	}
