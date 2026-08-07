@@ -27,12 +27,15 @@ FROM python:3.11-slim
 # ffmpeg: required for audio processing
 # curl: for healthcheck
 # ca-certificates: for HTTPS
+# poppler-utils: pdftoppm — required by ocr-invoice MCP to render PDF pages
+#   to images before sending them to the local vision model
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     curl \
     git \
     ca-certificates \
     tzdata \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
