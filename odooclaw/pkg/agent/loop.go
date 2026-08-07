@@ -2523,6 +2523,27 @@ func retrieveRelevantTools(defs []providers.ToolDefinition, query string, k int)
 			(strings.Contains(lower, "sale") || strings.Contains(lower, "helpdesk")) {
 			s -= genericCreatePenalty
 		}
+		// OCR routing: attached-document queries MUST prefer the ocr-invoice MCP
+		// tools (ocr-create-vendor-bill / ocr-invoice). The odoo-mcp
+		// *_from_ocr_validated tools are intermediate validation steps that the
+		// small model cannot fill correctly (it hallucinates attachment_ids and
+		// loops for 20 iterations) — push them out of the top-k entirely.
+		ocrIntent := false
+		for _, term := range []string{"adjunto", "adjunta", "adjuntar", "documento",
+			"pdf", "factura adjunta", "factura adjunto", "factura de proveedor",
+			"factura de compra", "crear factura", "crea factura", "extrae", "extraer",
+			"lee la factura", "vendor bill", "extract"} {
+			if strings.Contains(queryLower, term) {
+				ocrIntent = true
+				break
+			}
+		}
+		if ocrIntent && strings.Contains(lower, "from_ocr_validated") {
+			s -= genericCreatePenalty
+		}
+		if ocrIntent && strings.Contains(lower, "ocr-invoice") {
+			s += 8 // boost the real OCR MCP tools above everything else
+		}
 		return s
 	}
 
