@@ -1593,22 +1593,125 @@ func formatMessagesForLog(messages []providers.Message) string {
 	return sb.String()
 }
 
+// odooToolModel maps Odoo MCP tool names (as registered in the odoo-mcp
+// server, e.g. "odoo_find_partner") to their underlying Odoo model. Runtime
+// names arrive prefixed ("mcp_odoo-mcp_odoo_find_partner");
+// normalizeToolName strips that prefix before the lookup.
+var odooToolModel = map[string]string{
+	// Partner tools
+	"odoo_find_partner":        "res.partner",
+	"odoo_get_partner_summary": "res.partner",
+	// Invoice / accounting tools
+	"odoo_find_pending_invoices": "account.move",
+	"odoo_get_invoice_summary":   "account.move",
+	"odoo_create_journal_entry":  "account.move",
+	"odoo_post_journal_entry":    "account.move",
+	// Product tools
+	"odoo_find_product":        "product.product",
+	"odoo_get_product_summary": "product.product",
+	// Sale order tools
+	"odoo_find_sale_order":        "sale.order",
+	"odoo_get_sale_order_summary": "sale.order",
+	"odoo_confirm_sale_order":     "sale.order",
+	"odoo_create_sale_order":      "sale.order",
+	// Purchase order tools
+	"odoo_find_purchase_order":        "purchase.order",
+	"odoo_get_purchase_order_summary": "purchase.order",
+	// CRM tools
+	"odoo_create_lead": "crm.lead",
+	// Project tools
+	"odoo_find_task":          "project.task",
+	"odoo_find_my_tasks":      "project.task",
+	"odoo_create_task":        "project.task",
+	"odoo_update_task":        "project.task",
+	"odoo_update_task_status": "project.task",
+}
+
+// normalizeToolName extracts the registered MCP tool name from a runtime tool
+// name. The gateway prefixes MCP tools as "mcp_<server>_<tool>", e.g.
+// "mcp_odoo-mcp_odoo_find_partner" → "odoo_find_partner". Names without that
+// prefix are returned unchanged.
+func normalizeToolName(name string) string {
+	if i := strings.Index(name, "odoo-"); i >= 0 {
+		if j := strings.Index(name[i:], "_"); j >= 0 {
+			return name[i+j+1:]
+		}
+	}
+	return name
+}
+
+// toolModelForName returns the Odoo model for a runtime tool name, or "" when
+// the tool is not mapped (generic read/search/write tools have no single
+// model, so they never produce links).
+func toolModelForName(name string) string {
+	return odooToolModel[normalizeToolName(name)]
+}
+
+// odooRecordURL builds the web-client URL for an Odoo record. res.partner
+// records live under /odoo/contacts/{id}; every other model uses its real
+// dotted name (/odoo/account.move/42), matching the Odoo 17/18 web client.
+func odooRecordURL(model string, id int) string {
+	if model == "res.partner" {
+		return fmt.Sprintf("/odoo/contacts/%d", id)
+	}
+	return fmt.Sprintf("/odoo/%s/%d", model, id)
+}
+
+// odooLinkLabel returns a human-readable fallback label for a record id when
+// the tool result carried no name/display_name/number.
+func odooLinkLabel(model string, id int) string {
+	switch model {
+	case "res.partner":
+		return fmt.Sprintf("Cliente %d", id)
+	case "account.move":
+		return fmt.Sprintf("Factura %d", id)
+	case "sale.order":
+		return fmt.Sprintf("Pedido %d", id)
+	case "purchase.order":
+		return fmt.Sprintf("Pedido de compra %d", id)
+	case "product.product":
+		return fmt.Sprintf("Producto %d", id)
+	case "crm.lead":
+		return fmt.Sprintf("Oportunidad %d", id)
+	case "project.task":
+		return fmt.Sprintf("Tarea %d", id)
+	}
+	return fmt.Sprintf("Registro %d", id)
+}
+
+// recordFromMap extracts the id and a display label from a parsed Odoo
+// record. The label prefers name, then display_name, then number. Returns
+// id == 0 when the record carries no usable id.
+func recordFromMap(rec map[string]any) (int, string) {
+	id, _ := rec["id"].(float64)
+	if id <= 0 {
+		return 0, ""
+	}
+	for _, key := range []string{"name", "display_name", "number"} {
+		if v, ok := rec[key]; ok && v != nil {
+			if s := strings.TrimSpace(fmt.Sprintf("%v", v)); s != "" {
+				return int(id), s
+			}
+		}
+	}
+	return int(id), ""
+}
+
 // addOdooRecordLinks appends clickable Odoo links to the final assistant
-// response when a tool call returned record ids. Small local models (350M)
-// cannot reliably emit markdown links, so the gateway does it
-// deterministically.
+// response when a tool call returned record ids, and converts any bare
+// /odoo/<model>/<id> URLs the model wrote in plain text into links. Small
+// local models (350M) cannot reliably emit markdown links, so the gateway
+// does it deterministically.
 //
 // IMPORTANT: it only looks at TOOL RESULTS (role=="tool") produced AFTER the
-// last user message (the current turn). It NEVER reads partner_id from tool
-// call ARGUMENTS — the 350M invents those (partner_id:99, sender_id:...),
-// which caused links to point at records from previous turns (e.g. always
+// last user message (the current turn). It NEVER reads ids from tool call
+// ARGUMENTS — the 350M invents those (partner_id:99, sender_id:...), which
+// caused links to point at records from previous turns (e.g. always
 // /odoo/contacts/10 after any "Busca el cliente Acme" earlier in the chat).
+// The Odoo model of each result is derived from the tool that produced it
+// (matched through the assistant's ToolCalls by ToolCallID), never from the
+// model's own arguments.
 func addOdooRecordLinks(messages []providers.Message, content string) string {
-	if strings.Contains(content, "/odoo/") {
-		// Already contains a link; don't double-append.
-		return content
-	}
-
 	// Find the index of the LAST user message. Only tool results after it
 	// belong to the current turn.
 	start := 0
@@ -1618,19 +1721,40 @@ func addOdooRecordLinks(messages []providers.Message, content string) string {
 			break
 		}
 	}
-	if start >= len(messages) {
-		return content
+
+	// Index assistant tool calls by ID so each tool result can be attributed
+	// to the tool that produced it (the tool name determines the Odoo model).
+	toolNameByCallID := map[string]string{}
+	for i := start; i < len(messages); i++ {
+		msg := messages[i]
+		if msg.Role != "assistant" {
+			continue
+		}
+		for _, tc := range msg.ToolCalls {
+			name := tc.Name
+			if name == "" && tc.Function != nil {
+				name = tc.Function.Name
+			}
+			if name != "" && tc.ID != "" {
+				toolNameByCallID[tc.ID] = name
+			}
+		}
 	}
 
-	// Collect record ids from TOOL RESULTS of the current turn only.
+	// Collect record links from TOOL RESULTS of the current turn only.
 	// The MCP server returns the real record id; the model's own arguments
 	// are untrusted (it hallucinates partner_id / sender_id values).
 	type odooLink struct {
+		model string
+		id    int
+		label string
+	}
+	type recordHit struct {
 		id    int
 		label string
 	}
 	var found []odooLink
-	seen := map[int]bool{}
+	seen := map[string]bool{}
 
 	for i := start; i < len(messages); i++ {
 		msg := messages[i]
@@ -1641,55 +1765,111 @@ func addOdooRecordLinks(messages []providers.Message, content string) string {
 		if contentStr == "" || strings.Contains(contentStr, "error") {
 			continue
 		}
+		model := toolModelForName(toolNameByCallID[msg.ToolCallID])
+		if model == "" {
+			continue
+		}
 
-		var ids []int
+		var records []recordHit
 		// find_partner returns a bare partner id (int), e.g. "10".
 		if id, err := strconv.Atoi(contentStr); err == nil && id > 0 {
-			ids = append(ids, id)
+			records = append(records, recordHit{id: id})
 		} else {
-			// get_partner_summary returns {"partner_id": N, ...}; search_read
-			// returns [{"id": N, ...}].
-			var parsed map[string]any
-			if err := json.Unmarshal([]byte(contentStr), &parsed); err == nil {
-				if pid, ok := parsed["partner_id"].(float64); ok && pid > 0 {
-					ids = append(ids, int(pid))
+			// get_partner_summary returns {"id": N, "name": ...};
+			// search_read results are [{"id": N, "name": ...}] with real
+			// names like INV/2026/0001.
+			var single map[string]any
+			if err := json.Unmarshal([]byte(contentStr), &single); err == nil {
+				if id, label := recordFromMap(single); id > 0 {
+					records = append(records, recordHit{id: id, label: label})
 				}
 			}
 			var arr []map[string]any
 			if err := json.Unmarshal([]byte(contentStr), &arr); err == nil {
 				for _, rec := range arr {
-					if rid, ok := rec["id"].(float64); ok && rid > 0 {
-						ids = append(ids, int(rid))
+					if id, label := recordFromMap(rec); id > 0 {
+						records = append(records, recordHit{id: id, label: label})
 					}
 				}
 			}
 		}
 
-		for _, id := range ids {
-			if seen[id] {
+		for _, r := range records {
+			key := fmt.Sprintf("%s:%d", model, r.id)
+			if seen[key] {
 				continue
 			}
-			seen[id] = true
-			found = append(found, odooLink{id: id, label: ""})
+			seen[key] = true
+			found = append(found, odooLink{model: model, id: r.id, label: r.label})
 		}
 	}
 
-	if len(found) == 0 {
+	// Only append when the model did not already emit a markdown link —
+	// otherwise the link would be duplicated (regression).
+	if len(found) > 0 && !strings.Contains(content, "](/odoo/") {
+		var sb strings.Builder
+		sb.WriteString(content)
+		for _, l := range found {
+			label := l.label
+			if label == "" {
+				label = odooLinkLabel(l.model, l.id)
+			}
+			sb.WriteString(fmt.Sprintf("\n\n🔗 [%s](%s)", label, odooRecordURL(l.model, l.id)))
+		}
+		content = sb.String()
+	}
+
+	// Convert any bare /odoo/<model>/<id> URLs the model wrote in plain text
+	// into clickable markdown links (acceptance requirement #3).
+	return convertPlainURLsToLinks(content)
+}
+
+// odooPlainURLRe matches a bare Odoo web-client URL: /odoo/<model>/<id>.
+var odooPlainURLRe = regexp.MustCompile(`/odoo/[a-z][a-z0-9_.]*/\d+`)
+
+// convertPlainURLsToLinks rewrites every bare /odoo/<model>/<id> occurrence
+// in the final assistant text into a clickable markdown link. Occurrences
+// that are already the target of a markdown link (preceded by "](") are left
+// untouched.
+func convertPlainURLsToLinks(content string) string {
+	idxs := odooPlainURLRe.FindAllStringIndex(content, -1)
+	if len(idxs) == 0 {
 		return content
 	}
-
-	// Build unique links. Partner records live at /odoo/contacts/{id} in
-	// Odoo 17/18 web client.
 	var sb strings.Builder
-	sb.WriteString(content)
-	for _, l := range found {
-		label := l.label
-		if label == "" {
-			label = fmt.Sprintf("Ver el registro %d", l.id)
+	prev := 0
+	for _, m := range idxs {
+		start, end := m[0], m[1]
+		// Skip URLs already used as link targets: "[label](/odoo/...)".
+		if start >= 2 && content[start-2:start] == "](" {
+			continue
 		}
-		sb.WriteString(fmt.Sprintf("\n\n🔗 [%s](/odoo/contacts/%d)", label, l.id))
+		url := content[start:end]
+		sb.WriteString(content[prev:start])
+		sb.WriteString(fmt.Sprintf("[%s](%s)", plainURLLabel(url), url))
+		prev = end
 	}
+	sb.WriteString(content[prev:])
 	return sb.String()
+}
+
+// plainURLLabel derives a readable label for a bare URL like
+// /odoo/account.move/42, naming the entity by its model. The special
+// /odoo/contacts/{id} path is the res.partner web-client URL.
+func plainURLLabel(url string) string {
+	parts := strings.Split(strings.TrimPrefix(url, "/odoo/"), "/")
+	if len(parts) != 2 {
+		return url
+	}
+	model := parts[0]
+	if model == "contacts" {
+		model = "res.partner"
+	}
+	id, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return url
+	}
+	return odooLinkLabel(model, id)
 }
 
 // formatToolsForLog formats tool definitions for logging
