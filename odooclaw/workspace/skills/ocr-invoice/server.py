@@ -130,12 +130,23 @@ class OdooOCRSkill:
             }
 
     def _download_attachment(self, attachment_id: int):
-        res = self._odoo_call(
-            "ir.attachment",
-            "read",
-            [[attachment_id]],
-            {"fields": ["id", "name", "mimetype", "datas"]},
-        )
+        # IMPORTANTE: la lectura del attachment debe hacerse como ADMIN, no como
+        # el sender del mensaje. Con sender_id el MCP usa /odooclaw/call_kw_as_user
+        # (user_id=sender) y los attachments sueltos (res_model=False, creados por
+        # message_post) NO son visibles para el usuario del chat → "Attachment N
+        # not found" aunque exista. El download es infraestructura, no una accion
+        # del usuario: preservamos sender solo si ya estaba seteado.
+        saved_sender = self.runtime_sender_id
+        self.runtime_sender_id = None
+        try:
+            res = self._odoo_call(
+                "ir.attachment",
+                "read",
+                [[attachment_id]],
+                {"fields": ["id", "name", "mimetype", "datas"]},
+            )
+        finally:
+            self.runtime_sender_id = saved_sender
         if res.get("isError"):
             return res
 
