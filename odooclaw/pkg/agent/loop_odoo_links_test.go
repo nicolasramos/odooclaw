@@ -116,7 +116,7 @@ func TestAddOdooRecordLinksDedupe(t *testing.T) {
 // del modelo se convierte a markdown clicable.
 func TestConvertPlainURLsToLinks(t *testing.T) {
 	content := "La factura está en URL: /odoo/account.move/42"
-	got := convertPlainURLsToLinks(content)
+	got := convertPlainURLsToLinks(content, nil)
 
 	if !strings.Contains(got, "[Factura 42](/odoo/account.move/42)") {
 		t.Fatalf("esperaba [Factura 42](/odoo/account.move/42), got: %q", got)
@@ -126,7 +126,7 @@ func TestConvertPlainURLsToLinks(t *testing.T) {
 // La conversión respeta el caso especial res.partner → contacts.
 func TestConvertPlainURLsToLinksPartner(t *testing.T) {
 	content := "El cliente está en URL: /odoo/contacts/10"
-	got := convertPlainURLsToLinks(content)
+	got := convertPlainURLsToLinks(content, nil)
 
 	if !strings.Contains(got, "[Cliente 10](/odoo/contacts/10)") {
 		t.Fatalf("esperaba [Cliente 10](/odoo/contacts/10), got: %q", got)
@@ -136,7 +136,7 @@ func TestConvertPlainURLsToLinksPartner(t *testing.T) {
 // Un URL que ya es target de un enlace markdown NO se toca ni se duplica.
 func TestConvertPlainURLsToLinksSkipsLinked(t *testing.T) {
 	content := "Mira [aquí](/odoo/account.move/42) por favor"
-	got := convertPlainURLsToLinks(content)
+	got := convertPlainURLsToLinks(content, nil)
 
 	if strings.Count(got, "/odoo/account.move/42") != 1 {
 		t.Fatalf("no debe duplicar enlaces: %q", got)
@@ -146,8 +146,23 @@ func TestConvertPlainURLsToLinksSkipsLinked(t *testing.T) {
 	}
 }
 
-// Integración: tool result + URL desnuda del modelo en el mismo turno —
-// ambos se convierten, sin duplicar el enlace del tool result.
+// La conversión usa el label REAL del tool result del turno cuando la URL
+// coincide (nunca duplica el enlace con dos labels distintos).
+func TestConvertPlainURLsToLinksKnownLabel(t *testing.T) {
+	content := "La factura está en URL: /odoo/account.move/42"
+	known := map[string]string{"/odoo/account.move/42": "INV/2026/0001"}
+	got := convertPlainURLsToLinks(content, known)
+
+	if !strings.Contains(got, "[INV/2026/0001](/odoo/account.move/42)") {
+		t.Fatalf("label real no usado: %q", got)
+	}
+	if strings.Count(got, "/odoo/account.move/42") != 1 {
+		t.Fatalf("enlace duplicado: %q", got)
+	}
+}
+
+// Integración: tool result + URL desnuda del modelo en el mismo turno — la
+// URL se convierte con el label real y NO se añade un segundo enlace.
 func TestAddOdooRecordLinksPlainTextModelURL(t *testing.T) {
 	messages := odooLinkTestMessages("odoo_find_pending_invoices",
 		`[{"id": 42, "name": "INV/2026/0001"}]`)
@@ -155,13 +170,46 @@ func TestAddOdooRecordLinksPlainTextModelURL(t *testing.T) {
 	got := addOdooRecordLinks(messages, content)
 
 	if !strings.Contains(got, "[INV/2026/0001](/odoo/account.move/42)") {
-		t.Fatalf("el enlace del tool result no se añadió: %q", got)
+		t.Fatalf("la URL desnuda no se convirtió con label real: %q", got)
 	}
-	if !strings.Contains(got, "[Factura 42](/odoo/account.move/42)") {
-		t.Fatalf("la URL desnuda no se convirtió: %q", got)
+	if strings.Count(got, "/odoo/account.move/42") != 1 {
+		t.Fatalf("enlace duplicado (tool result + conversión): %q", got)
 	}
-	if strings.Count(got, "/odoo/account.move/42") != 2 {
-		t.Fatalf("esperaba 2 menciones (tool result + conversión), got: %q", got)
+}
+
+// odoo_search genérico: el modelo de la búsqueda viene de los ARGS de la tool
+// call (la entidad consultada, nunca un id) — aceptación del issue NRA-434.
+func TestAddOdooRecordLinksGenericSearch(t *testing.T) {
+	messages := []providers.Message{
+		{Role: "user", Content: "Busca pedidos de venta recientes"},
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{
+				{ID: "call_so", Name: "mcp_odoo-mcp_odoo_search", Function: &providers.FunctionCall{Name: "mcp_odoo-mcp_odoo_search", Arguments: `{"model":"sale.order","domain":[],"limit":5}`}},
+			},
+		},
+		{Role: "tool", ToolCallID: "call_so", Content: `[{"id": 3, "name": "SO/2026/0001", "amount_total": 250.0}]`},
+	}
+
+	got := addOdooRecordLinks(messages, "Encontré el pedido SO/2026/0001.")
+
+	if !strings.Contains(got, "[SO/2026/0001](/odoo/sale.order/3)") {
+		t.Fatalf("modelo de args no usado en odoo_search. got: %q", got)
+	}
+}
+
+// find_product real devuelve un wrapper {"ok": true, "products": [...]} —
+// los records anidados también generan enlaces.
+func TestAddOdooRecordLinksFindProductWrapper(t *testing.T) {
+	messages := odooLinkTestMessages("mcp_odoo-mcp_odoo_find_product",
+		`{"ok": true, "status": "ok", "capability": "inventory.find_product", "count": 2, "products": [{"id": 7, "display_name": "Portatil HP", "default_code": "HP-X1"}, {"id": 8, "name": "Monitor LG"}]}`)
+	got := addOdooRecordLinks(messages, "He encontrado 2 productos.")
+
+	if !strings.Contains(got, "[Portatil HP](/odoo/product.product/7)") {
+		t.Fatalf("wrapper products no parseado (1): %q", got)
+	}
+	if !strings.Contains(got, "[Monitor LG](/odoo/product.product/8)") {
+		t.Fatalf("wrapper products no parseado (2): %q", got)
 	}
 }
 
