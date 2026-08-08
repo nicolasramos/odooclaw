@@ -1,9 +1,20 @@
 from typing import Dict, Any, List
 from odoo_mcp.core.exceptions import OdooSecurityError
-from .policy import get_allowed_models, get_denied_write_fields
+from .policy import get_allowed_models, get_denied_write_fields, DEFAULT_DENIED_MODELS
 
 def guard_model_access(model_name: str) -> None:
-    """Raises OdooSecurityError if the model is not in the allowlist."""
+    """Raises OdooSecurityError if the model is not authorized.
+    
+    Authorization check order:
+    1. Blacklist check (DEFAULT_DENIED_MODELS) - ALWAYS blocks
+    2. Allowlist check (get_allowed_models()) - must be present
+    """
+    # Blacklist always wins - even if model is in escape hatch
+    if model_name in DEFAULT_DENIED_MODELS:
+        raise OdooSecurityError(
+            f"Model '{model_name}' is not authorized (denied by security policy)."
+        )
+    
     if model_name not in get_allowed_models():
         raise OdooSecurityError(f"Model '{model_name}' is not in the ALLOWED_MODELS list.")
 
