@@ -4,6 +4,6 @@ from odoo_mcp.security.audit import audit_action
 from odoo_mcp.security.guards import guard_model_access
 
 def odoo_get_record_summary(client: OdooClient, user_id: int, model: str, res_id: int) -> dict:
-    guard_model_access(model)
+    guard_model_access(model, client, sender_id=user_id)
     audit_action("GET_RECORD_SUMMARY", user_id, model, [res_id], {})
     return get_record_summary(client, user_id, model, res_id)
