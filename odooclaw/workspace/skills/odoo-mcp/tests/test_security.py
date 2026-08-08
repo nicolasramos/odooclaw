@@ -119,8 +119,8 @@ def test_blacklist_wins_over_escape_hatch():
             validate_model_access("res.users")
 
 
-def test_escape_hatch_allows_extra_models():
-    """Escape hatch debe permitir modelos adicionales."""
+def test_escape_hatch_env_allows_extra_models():
+    """Escape hatch via env var debe permitir modelos adicionales."""
     with patch.dict(os.environ, {"ODOOCLAW_EXTRA_ALLOWED_MODELS": "custom.model,another.model"}):
         from odoo_mcp.security import policy
         policy._allowed_models_cache = None
@@ -128,6 +128,57 @@ def test_escape_hatch_allows_extra_models():
         # Should not raise
         validate_model_access("custom.model")
         validate_model_access("another.model")
+
+
+def test_escape_hatch_config_parameter_allows_extra_models():
+    """Escape hatch via ir.config_parameter debe permitir modelos adicionales."""
+    from odoo_mcp.security import policy
+    
+    # Create mock client
+    mock_client = MagicMock()
+    mock_client.try_call_kw.return_value = "custom.model,another.model"
+    
+    # Clear cache and get allowed models with client
+    policy._allowed_models_cache = None
+    allowed = policy.get_allowed_models(mock_client)
+    
+    # Should include models from config parameter
+    assert "custom.model" in allowed
+    assert "another.model" in allowed
+
+
+def test_escape_hatch_config_parameter_fallback_to_env():
+    """Si config_parameter no devuelve valor, debe usar env var."""
+    from odoo_mcp.security import policy
+    
+    # Create mock client that returns None
+    mock_client = MagicMock()
+    mock_client.try_call_kw.return_value = None
+    
+    with patch.dict(os.environ, {"ODOOCLAW_EXTRA_ALLOWED_MODELS": "env.model"}):
+        policy._allowed_models_cache = None
+        allowed = policy.get_allowed_models(mock_client)
+        
+        # Should include model from env var
+        assert "env.model" in allowed
+
+
+def test_blacklist_wins_over_config_parameter():
+    """La blacklist gana incluso si el modelo viene de config_parameter."""
+    from odoo_mcp.security import policy
+    
+    # Create mock client that returns a denied model
+    mock_client = MagicMock()
+    mock_client.try_call_kw.return_value = "ir.model,res.users"
+    
+    policy._allowed_models_cache = None
+    
+    # Should still be blocked
+    with pytest.raises(OdooSecurityError):
+        validate_model_access("ir.model", mock_client)
+    
+    with pytest.raises(OdooSecurityError):
+        validate_model_access("res.users", mock_client)
 
 
 def test_denied_models_constant_defined():
