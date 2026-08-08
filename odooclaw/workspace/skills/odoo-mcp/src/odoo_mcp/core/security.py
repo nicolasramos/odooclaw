@@ -7,8 +7,8 @@ from odoo_mcp.security.guards import (
 )
 
 
-def validate_model_access(model_name: str, client=None) -> None:
-    guard_model_access(model_name, client)
+def validate_model_access(model_name: str) -> None:
+    guard_model_access(model_name)
 
 
 def validate_write_fields(values: Dict[str, Any]) -> None:
