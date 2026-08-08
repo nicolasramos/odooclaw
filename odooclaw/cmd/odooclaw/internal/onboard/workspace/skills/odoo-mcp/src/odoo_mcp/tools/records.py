@@ -26,13 +26,13 @@ def odoo_search_read(client: OdooClient, user_id: int, model: str, domain: List[
 
 def odoo_create(client: OdooClient, user_id: int, model: str, values: Dict[str, Any]) -> int:
     """Create a new record after checking allowlist."""
-    guard_model_access(model)
+    guard_model_access(model, client, sender_id=user_id)
     audit_action("CREATE", user_id, model, [], values)
     return client.call_kw(model, "create", args=[values], sender_id=user_id)
 
 def odoo_write(client: OdooClient, user_id: int, model: str, ids: List[int], values: Dict[str, Any]) -> bool:
     """Update records, respecting denylists and allowlists."""
-    guard_model_access(model)
+    guard_model_access(model, client, sender_id=user_id)
     guard_write_fields(values)
     audit_action("WRITE", user_id, model, ids, values)
     return client.call_kw(model, "write", args=[ids, values], sender_id=user_id)

@@ -71,7 +71,7 @@ def odoo_create_activity_summary(
     note: str = None,
     assign_to: int = None,
 ) -> dict:
-    guard_model_access(model)
+    guard_model_access(model, client, sender_id=user_id)
     audit_action(
         "CREATE_ACTIVITY_SUMMARY", user_id, model, [res_id], {"summary": summary}
     )
