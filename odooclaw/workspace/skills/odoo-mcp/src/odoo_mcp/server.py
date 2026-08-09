@@ -562,6 +562,40 @@ def odoo_post_chatter_message(
 
 
 @mcp.tool()
+def odoo_get_task_stats(
+    project_id: int | None = None,
+    user_ids: list[int] | None = None,
+    sender_id: int | None = None,
+) -> dict:
+    """Get task statistics (open/closed, by stage). Use for "cuántas tareas pendientes/abiertas/cerradas", optionally filtered by project or users."""
+    with measure_time("odoo_get_task_stats"):
+        client = get_odoo_client()
+        return projects.odoo_get_task_stats(
+            client,
+            sender_id or client.odoo_session.uid,
+            project_id,
+            user_ids,
+        )
+
+
+@mcp.tool()
+def odoo_find_tasks_for_user(
+    user_name: str,
+    limit: int = 20,
+    sender_id: int | None = None,
+) -> dict:
+    """Find tasks assigned to a user by name (e.g. "tareas de Juan Pérez"). Resolves the user and returns their tasks."""
+    with measure_time("odoo_find_tasks_for_user"):
+        client = get_odoo_client()
+        return projects.odoo_find_tasks_for_user(
+            client,
+            sender_id or client.odoo_session.uid,
+            user_name,
+            limit,
+        )
+
+
+@mcp.tool()
 def odoo_find_task(
     name: str | None = None,
     project_id: int | None = None,
@@ -2073,6 +2107,23 @@ def odoo_get_ar_ap_aging(
             sender_id=sender_id or client.odoo_session.uid,
             report_type=report_type,
             as_of=as_of,
+            company_id=company_id,
+            limit=limit,
+        )
+
+
+@mcp.tool()
+def odoo_get_financial_snapshot(
+    company_id: int | None = None,
+    limit: int = 100,
+    sender_id: int | None = None,
+) -> dict:
+    """Financial situation snapshot: month sales/purchases + AR/AP aging + pending invoices. Use for "situación financiera del mes", "como estamos de dinero", "que me deben los clientes"."""
+    with measure_time("odoo_get_financial_snapshot"):
+        client = get_odoo_client()
+        return accounting.odoo_get_financial_snapshot(
+            client=client,
+            user_id=sender_id or client.odoo_session.uid,
             company_id=company_id,
             limit=limit,
         )

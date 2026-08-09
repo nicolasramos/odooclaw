@@ -16,6 +16,7 @@ from odoo_mcp.services.accounting_service import (
     validate_vendor_bill_duplicate,
     suggest_expense_account_and_taxes,
     create_vendor_bill_from_ocr_validated,
+    get_financial_snapshot,
 )
 
 
@@ -331,3 +332,13 @@ def odoo_create_vendor_bill_from_ocr_validated(
         vendor_create_policy=vendor_create_policy,
         confirm_partner_create=confirm_partner_create,
     )
+
+
+def odoo_get_financial_snapshot(
+    client: OdooClient,
+    user_id: int,
+    company_id: Optional[int] = None,
+    limit: int = 100,
+) -> dict:
+    guard_model_access("account.move")
+    return get_financial_snapshot(client, user_id, company_id, limit)
