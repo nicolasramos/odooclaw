@@ -1058,6 +1058,31 @@ class OdooOCRSkill:
             name_override=name,
         )
 
+    def _call_rapidocr(self, attachment):
+        """Extracción con RapidOCR local (100% CPU): texto + coordenadas +
+        parser posicional + lógica de negocio. No necesita modelo de visión."""
+        try:
+            from rapidocr_extractor import extract_invoice_rapidocr
+        except ImportError:
+            return {
+                "isError": True,
+                "content": "rapidocr_extractor no disponible (pip install rapidocr-onnxruntime)",
+            }
+        pdf_data = attachment.get("data")
+        if not pdf_data:
+            return {"isError": True, "content": "Attachment sin datos binarios"}
+        mime = attachment.get("mimetype", "")
+        if "pdf" not in mime and not attachment.get("name", "").lower().endswith(".pdf"):
+            return {"isError": True, "content": "RapidOCR solo procesa PDFs"}
+        res = extract_invoice_rapidocr(
+            pdf_data,
+            dpi=self.ocr_image_dpi,
+            max_pages=self.ocr_max_pages,
+            known_vendors=None,
+            company_vats=os.environ.get("COMPANY_VATS", "").split(",") if os.environ.get("COMPANY_VATS") else None,
+        )
+        return res
+
     def extract_invoice(
         self,
         attachment_id: int,
@@ -1077,20 +1102,32 @@ class OdooOCRSkill:
         extracted = None
         raw_text = None
 
-        ext_res = self._call_external_ocr(attachment)
-        if isinstance(ext_res, dict) and not ext_res.get("isError"):
-            extracted = ext_res
-        else:
-            vision_res = self._call_vision(attachment)
-            if vision_res.get("isError"):
-                if isinstance(ext_res, dict) and ext_res.get("isError"):
-                    return {
-                        "isError": True,
-                        "content": f"External OCR failed: {ext_res.get('content')} | Vision fallback failed: {vision_res.get('content')}",
-                    }
-                return vision_res
-            extracted = vision_res.get("parsed")
-            raw_text = vision_res.get("raw_text")
+        # 1) Motor preferente: RapidOCR local (100% CPU, extrae líneas y cabecera)
+        ocr_mode = os.environ.get("OCR_MODE", "auto").strip().lower()
+        if ocr_mode in ("rapidocr", "auto"):
+            rapid_res = self._call_rapidocr(attachment)
+            if isinstance(rapid_res, dict) and not rapid_res.get("isError"):
+                extracted = rapid_res.get("invoice_data") or {}
+                raw_text = rapid_res.get("raw_text")
+            elif ocr_mode == "rapidocr":
+                return rapid_res
+
+        # 2) Fallback: OCR externo (si está configurado) y visión VL
+        if not extracted:
+            ext_res = self._call_external_ocr(attachment)
+            if isinstance(ext_res, dict) and not ext_res.get("isError"):
+                extracted = ext_res
+            else:
+                vision_res = self._call_vision(attachment)
+                if vision_res.get("isError"):
+                    if isinstance(ext_res, dict) and ext_res.get("isError"):
+                        return {
+                            "isError": True,
+                            "content": f"External OCR failed: {ext_res.get('content')} | Vision fallback failed: {vision_res.get('content')}",
+                        }
+                    return vision_res
+                extracted = vision_res.get("parsed")
+                raw_text = vision_res.get("raw_text")
 
         invoice_data = self._normalize_invoice(extracted or {})
         return {
