@@ -2407,6 +2407,27 @@ func retrieveRelevantTools(defs []providers.ToolDefinition, query string, k int)
 		{"extrae", "ocr"}, {"extraer", "ocr"}, {"lee la factura", "ocr"},
 		{"factura adjunta", "ocr"}, {"factura adjunto", "ocr"},
 		{"vendor bill", "ocr"}, {"extract", "ocr"},
+		// NRA-4xx: synthesis tools — intent recognition, the MCP builds the domain.
+		// "tareas de <persona>" / "tareas de <usuario>" → find_tasks_for_user
+		{"tareas de", "tasks_for_user"}, {"tareas del usuario", "tasks_for_user"},
+		{"tareas asignadas a", "tasks_for_user"}, {"tareas de juan", "tasks_for_user"},
+		{"tareas de maria", "tasks_for_user"}, {"tareas de ana", "tasks_for_user"},
+		{"tareas de carlos", "tasks_for_user"}, {"tareas de pedro", "tasks_for_user"},
+		{"tareas de laura", "tasks_for_user"}, {"tareas de luis", "tasks_for_user"},
+		{"que hace", "tasks_for_user"}, {"esta haciendo", "tasks_for_user"},
+		{"le quedan", "tasks_for_user"}, {"tiene asignadas", "tasks_for_user"},
+		// "pendientes de cerrar" / "sin cerrar" / "etapa cerrada" → get_task_stats
+		{"pendientes de cerrar", "task_stats"}, {"sin cerrar", "task_stats"},
+		{"etapa cerrada", "task_stats"}, {"abiertas", "task_stats"},
+		{"en progreso", "task_stats"}, {"sin finalizar", "task_stats"},
+		{"sin terminar", "task_stats"}, {"por hacer", "task_stats"},
+		{"quedan por", "task_stats"}, {"en curso", "task_stats"},
+		// "situación financiera" / "como estamos de dinero" → get_financial_snapshot
+		{"situacion financiera", "financial_snapshot"}, {"situacion economica", "financial_snapshot"},
+		{"como estamos de dinero", "financial_snapshot"}, {"resumen financiero", "financial_snapshot"},
+		{"panorama financiero", "financial_snapshot"}, {"como vamos de dinero", "financial_snapshot"},
+		{"estado financiero", "financial_snapshot"}, {"situacion del mes", "financial_snapshot"},
+		{"que me deben", "financial_snapshot"}, {"cuanto me deben", "financial_snapshot"},
 	}
 
 	// createIntentTerms mark creation queries — they activate the generic
