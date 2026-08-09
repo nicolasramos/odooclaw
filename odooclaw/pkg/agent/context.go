@@ -89,6 +89,14 @@ func (cb *ContextBuilder) SetModel(model string) {
 	cb.model = model
 }
 
+// SaveRecipe stores a successful query→tool+args resolution in the
+// recipe store (always-on local memory) for reuse as few-shot context.
+func (cb *ContextBuilder) SaveRecipe(query, tool, args, channel, chatID, senderID string) {
+	if cb.memory != nil {
+		cb.memory.SaveRecipe(query, tool, args, channel, chatID, senderID)
+	}
+}
+
 // isLocalSmallModel reports whether the model name refers to a small local
 // fine-tuned model that needs a minimal system prompt.
 func (cb *ContextBuilder) isLocalSmallModel() bool {

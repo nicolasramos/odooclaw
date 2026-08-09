@@ -1409,6 +1409,15 @@ func (al *AgentLoop) runLLMIteration(
 				asyncCallback,
 			)
 
+			// Recipe memory: on SUCCESSFUL tool execution, store the
+			// resolved query → tool + args pattern for reuse as few-shot.
+			// Only successful executions are saved so the store stays clean.
+			if !toolResult.IsError && agent.ContextBuilder != nil && opts.UserMessage != "" {
+				agent.ContextBuilder.SaveRecipe(opts.UserMessage, tc.Name, string(argsJSON), opts.Channel, opts.ChatID, opts.SenderID)
+				logger.DebugCF("agent", "recipe saved",
+					map[string]any{"tool": tc.Name, "query": opts.UserMessage})
+			}
+
 			// Send ForUser content to user immediately if not Silent
 			if !toolResult.Silent && toolResult.ForUser != "" && opts.SendResponse {
 				al.bus.PublishOutbound(ctx, bus.OutboundMessage{
@@ -2407,6 +2416,27 @@ func retrieveRelevantTools(defs []providers.ToolDefinition, query string, k int)
 		{"extrae", "ocr"}, {"extraer", "ocr"}, {"lee la factura", "ocr"},
 		{"factura adjunta", "ocr"}, {"factura adjunto", "ocr"},
 		{"vendor bill", "ocr"}, {"extract", "ocr"},
+		// Enterprise yes/no & number questions — the "silly" daily questions.
+		// "¿existe X?" / "¿hay X?" → search (existence check on any model)
+		{"existe", "search"}, {"existe el producto", "search"},
+		{"hay un pedido", "search"}, {"hay alguna", "search"}, {"hay algun", "search"},
+		{"existe el cliente", "search"}, {"existe la factura", "search"},
+		// "¿cuánto debe?" / "deuda" / "estado contable" → aging / partner balance
+		{"cuanto debe", "aging"}, {"cuanta deuda", "aging"}, {"deuda", "aging"},
+		{"estado contable", "aging"}, {"balance", "aging"}, {"balance del mes", "aging"},
+		{"me debe", "aging"}, {"deben", "aging"}, {"adeuda", "aging"}, {"adeudado", "aging"},
+		{"pendiente de cobro", "pending"}, {"pendientes de cobro", "pending"},
+		{"pendiente de pago", "pending"}, {"sin pagar", "pending"}, {"impagada", "pending"},
+		// "¿el pedido entró? / generó albarán?" → receipts/deliveries
+		{"genero albaran", "receipt"}, {"generado albaran", "receipt"}, {"entro el pedido", "receipt"},
+		{"llegó el pedido", "receipt"}, {"ha llegado", "receipt"}, {"recibido", "receipt"},
+		{"esta entregado", "delivery"}, {"se entrego", "delivery"}, {"entregado", "delivery"},
+		// "¿estas tareas están asignadas a X?" → tasks_for_user / task_stats
+		{"asignada a", "tasks_for_user"}, {"asignadas a", "tasks_for_user"},
+		{"quien tiene asignada", "tasks_for_user"}, {"a quien esta asignada", "tasks_for_user"},
+		// "¿cuántas tareas abiertas tengo?" → task_stats (mine)
+		{"tareas abiertas", "task_stats"}, {"tareas pendientes", "task_stats"},
+		{"mis tareas", "task_stats"}, {"tareas que tengo", "task_stats"},
 		// NRA-4xx: synthesis tools — intent recognition, the MCP builds the domain.
 		// "tareas de <persona>" / "tareas de <usuario>" → find_tasks_for_user
 		{"tareas de", "tasks_for_user"}, {"tareas del usuario", "tasks_for_user"},
