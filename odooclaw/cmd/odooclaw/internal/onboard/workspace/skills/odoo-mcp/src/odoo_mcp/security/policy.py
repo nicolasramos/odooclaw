@@ -13,10 +13,17 @@ _CLIENT_CACHE_TTL_SECONDS = 60.0
 def get_allowed_models(client=None, sender_id: Optional[int] = None) -> Set[str]:
     """Returns the set of models the MCP is authorized to interact with in write mode.
 
-    Includes DEFAULT_ALLOWED_MODELS plus any models from the escape hatch.
+    With a client: queries ir.model for installed non-transient models as the primary
+    allowlist base, then merges the escape hatch and applies blacklists.
+    Without a client: falls back to DEFAULT_ALLOWED_MODELS plus the escape hatch.
+
     Escape hatch sources (in priority order):
     1. ir.config_parameter 'odooclaw.extra_allowed_models' (when client provided)
     2. Environment variable ODOOCLAW_EXTRA_ALLOWED_MODELS
+
+    Instance denial sources (applied after dynamic allowlist, before escape hatch add):
+    1. ir.config_parameter 'odooclaw.denied_models' (when client provided)
+    2. Environment variable ODOOCLAW_DENIED_MODELS
 
     The blacklist (DEFAULT_DENIED_MODELS) always wins and is applied after merging.
 
@@ -46,9 +53,74 @@ def _get_allowed_models_with_client(client, sender_id: Optional[int] = None) -> 
     return models
 
 
+def _compute_dynamic_allowed_models(client, sender_id: Optional[int] = None) -> Set[str]:
+    """Query ir.model for installed non-transient models as the dynamic allowlist base.
+
+    Returns an empty set on any failure so the caller can fall back to DEFAULT_ALLOWED_MODELS.
+
+    Args:
+        client: OdooClient instance
+        sender_id: Odoo user id for native delegation
+
+    Returns:
+        Set of model names from ir.model, minus DEFAULT_DENIED_MODELS and instance-denied models.
+    """
+    try:
+        results = client.call_kw(
+            "ir.model",
+            "search_read",
+            args=[["transient", "=", False]],
+            kwargs={"fields": ["model"]},
+            sender_id=sender_id,
+        )
+        if not results:
+            return set()
+        candidates = {record.get("model") for record in results if record.get("model")}
+        candidates = candidates - DEFAULT_DENIED_MODELS
+        candidates = candidates - _get_instance_denied_models(client, sender_id)
+        return candidates
+    except Exception:
+        return set()
+
+
+def _get_instance_denied_models(client, sender_id: Optional[int] = None) -> Set[str]:
+    """Read odooclaw.denied_models from ir.config_parameter or ODOOCLAW_DENIED_MODELS env var.
+
+    Args:
+        client: OdooClient instance
+        sender_id: Odoo user id for native delegation
+
+    Returns:
+        Set of model names to deny at the instance level.
+    """
+    try:
+        value = client.try_call_kw(
+            "ir.config_parameter",
+            "get_param",
+            args=["odooclaw.denied_models"],
+            sender_id=sender_id,
+            default=None,
+        )
+        if value:
+            return {m.strip() for m in value.split(",") if m.strip()}
+    except Exception:
+        pass
+    env_value = os.environ.get("ODOOCLAW_DENIED_MODELS", "")
+    if env_value:
+        return {m.strip() for m in env_value.split(",") if m.strip()}
+    return set()
+
+
 def _compute_allowed_models(client=None, sender_id: Optional[int] = None) -> Set[str]:
-    """Merge DEFAULT_ALLOWED_MODELS with the escape hatch and apply the blacklist."""
-    allowed = set(DEFAULT_ALLOWED_MODELS)
+    """Merge dynamic allowlist (or DEFAULT_ALLOWED_MODELS fallback) with escape hatch and apply blacklists."""
+    if client is not None:
+        dynamic = _compute_dynamic_allowed_models(client, sender_id)
+        if dynamic:
+            allowed = dynamic
+        else:
+            allowed = set(DEFAULT_ALLOWED_MODELS)
+    else:
+        allowed = set(DEFAULT_ALLOWED_MODELS)
 
     extra_models = _get_escape_hatch_models(client, sender_id)
     if extra_models:
