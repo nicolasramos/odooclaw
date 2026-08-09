@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // RecipeStore is the local "how-to" memory: it stores resolved
@@ -42,7 +42,7 @@ func NewRecipeStore(memoryDir string) (*RecipeStore, error) {
 		return nil, fmt.Errorf("create memory dir: %w", err)
 	}
 	dbPath := filepath.Join(memoryDir, "recipes.db")
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open recipe db: %w", err)
 	}
