@@ -79,6 +79,19 @@ DEFAULT_ALLOWED_MODELS: Set[str] = {
     "mailing.list",
     "mailing.contact",
     "mailing.mailing",
+    # Event management
+    "event.event",
+    "event.event.type",
+    "event.registration",
+    "event.ticket",
+    # Survey
+    "survey.survey",
+    "survey.question",
+    "survey.user_input",
+    # Blog
+    "blog.post",
+    "blog.blog",
+    "blog.tag",
 }
 
 # Models that are NEVER allowed, even via escape hatch

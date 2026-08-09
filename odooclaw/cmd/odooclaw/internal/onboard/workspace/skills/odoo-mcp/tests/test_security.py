@@ -45,8 +45,7 @@ def test_unlink_blocked():
 
 # ============================================
 # Tests for expanded allowlist (GH #47)
-# ============================================
-
+# =====================================
 def test_new_business_models_allowed():
     """Models core CE que faltaban deben ser permitidos."""
     # Should not raise
@@ -74,6 +73,17 @@ def test_new_business_models_allowed():
     validate_model_access("mail.channel")
     validate_model_access("mail.followers")
     validate_model_access("sale.order.tag")
+    # New models from NRA-464
+    validate_model_access("event.event")
+    validate_model_access("event.event.type")
+    validate_model_access("event.registration")
+    validate_model_access("event.ticket")
+    validate_model_access("survey.survey")
+    validate_model_access("survey.question")
+    validate_model_access("survey.user_input")
+    validate_model_access("blog.post")
+    validate_model_access("blog.blog")
+    validate_model_access("blog.tag")
 
 
 def test_blacklist_blocks_sensitive_models():
@@ -200,6 +210,17 @@ def test_allowed_models_expanded():
         "resource.calendar.leaves",
         "mailing.list",
         "mailing.contact",
+        # NRA-464: new core CE models
+        "event.event",
+        "event.event.type",
+        "event.registration",
+        "event.ticket",
+        "survey.survey",
+        "survey.question",
+        "survey.user_input",
+        "blog.post",
+        "blog.blog",
+        "blog.tag",
     ]
 
     for model in new_models:
@@ -208,8 +229,7 @@ def test_allowed_models_expanded():
 
 # ============================================
 # Tests for dynamic allowlist (NRA-463)
-# ============================================
-
+# =====================================
 def test_dynamic_allowlist_from_ir_model():
     """La allowlist dinámica debe consultar ir.model y excluir DENIED."""
     from odoo_mcp.security import policy
@@ -423,3 +443,12 @@ def test_dynamic_allowlist_no_client_uses_static():
     assert "res.partner" in allowed
     assert "sale.order" in allowed
     assert "ir.model" not in allowed
+
+
+def test_error_message_contains_solution_hint():
+    """El mensaje de error debe indicar cómo habilitar el modelo."""
+    with pytest.raises(OdooSecurityError, match="odooclaw.extra_allowed_models"):
+        validate_model_access("nonexistent.model")
+
+    with pytest.raises(OdooSecurityError, match="ODOOCLAW_EXTRA_ALLOWED_MODELS"):
+        validate_model_access("nonexistent.model")
