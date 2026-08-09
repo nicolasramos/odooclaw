@@ -21,7 +21,11 @@ def guard_model_access(model_name: str, client=None, sender_id: Optional[int] = 
         )
     
     if model_name not in get_allowed_models(client, sender_id):
-        raise OdooSecurityError(f"Model '{model_name}' is not in the ALLOWED_MODELS list.")
+        raise OdooSecurityError(
+            f"Model '{model_name}' is not authorized. "
+            f"Add it to 'odooclaw.extra_allowed_models' (ir.config_parameter) "
+            f"or ODOOCLAW_EXTRA_ALLOWED_MODELS to enable access."
+        )
 
 def guard_write_fields(values: Dict[str, Any]) -> None:
     """Raises OdooSecurityError if attempting to write to a restricted field."""

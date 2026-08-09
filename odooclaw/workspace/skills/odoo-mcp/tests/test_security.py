@@ -74,6 +74,17 @@ def test_new_business_models_allowed():
     validate_model_access("mail.channel")
     validate_model_access("mail.followers")
     validate_model_access("sale.order.tag")
+    # New models from NRA-464
+    validate_model_access("event.event")
+    validate_model_access("event.event.type")
+    validate_model_access("event.registration")
+    validate_model_access("event.ticket")
+    validate_model_access("survey.survey")
+    validate_model_access("survey.question")
+    validate_model_access("survey.user_input")
+    validate_model_access("blog.post")
+    validate_model_access("blog.blog")
+    validate_model_access("blog.tag")
 
 
 def test_blacklist_blocks_sensitive_models():
@@ -200,6 +211,17 @@ def test_allowed_models_expanded():
         "resource.calendar.leaves",
         "mailing.list",
         "mailing.contact",
+        # NRA-464: new core CE models
+        "event.event",
+        "event.event.type",
+        "event.registration",
+        "event.ticket",
+        "survey.survey",
+        "survey.question",
+        "survey.user_input",
+        "blog.post",
+        "blog.blog",
+        "blog.tag",
     ]
 
     for model in new_models:
