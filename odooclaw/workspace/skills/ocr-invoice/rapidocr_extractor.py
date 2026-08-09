@@ -4,7 +4,7 @@
 Pipeline 100% CPU (N100): RapidOCR (texto + coordenadas) -> parser posicional
 -> lógica de negocio (vendors conocidos, impuestos, validaciones).
 
-Portado del flujo n8n "flujo n8n de OCR de facturas"
+Portado de las pautas del flujo n8n de OCR de facturas
 (limpiador universal) + módulo account_dynamic_rules (reglas Odoo).
 Reemplaza al VL 450M en el flujo de facturas: un solo motor, sin modelo de visión.
 """
@@ -24,7 +24,7 @@ def log(msg: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Mapa de empresas / vendors conocidos (del flujo n8n, sin datos especificos)
+# Mapa de vendors conocidos (configurable, sin datos especificos)
 # ---------------------------------------------------------------------------
 KNOWN_VENDORS: dict[str, dict[str, str]] = {}
 
@@ -217,32 +217,40 @@ def parse_invoice(ocr_result, all_text: str) -> dict[str, Any]:
             data["is_reverse_charge"] = True
             break
 
-    # --- Ref: junto a "invoice no", "factura nº", "number" (o la fila siguiente) ---
-    for kw in ("invoice no", "invoice number", "factura nº", "factura n", "number", "invoice"):
-        row = _find_row(rows, kw)
-        if row:
-            y0, cells = row
-            joined = " | ".join(t for _, t in cells)
-            m = re.search(
-                r"\b(?:invoice\s*(?:no\.?|number)|factura\s*(?:nº|n\.?|numero|número)|no\.?|number|nº|n\.?)\s*[:#]?\s*([A-Z0-9/\-_]{3,30})",
-                joined,
-                re.IGNORECASE,
-            )
-            if not m:
-                # El valor suele estar en la fila siguiente (header y valor separados)
-                for y2, cells2 in rows:
-                    if y2 > y0 + 80:
-                        break
-                    if y2 <= y0:
-                        continue
-                    joined2 = " ".join(t for _, t in cells2)
-                    m2 = re.search(r"\b([A-Z0-9/\-_]{3,30})\b", joined2)
-                    if m2 and not re.search(r"(date|fecha|total|amount)", joined2, re.IGNORECASE):
-                        m = m2
-                        break
-            if m:
-                data["ref"] = m.group(1).strip()
-                break
+    # --- Ref: buscar fila con "invoice no"/"invoiceno"/"factura nº" (pegado o no) ---
+    # Normalizar el texto de cada fila (quitar espacios) para tolerar OCR pegado.
+    ref_row = None
+    for y, cells in rows:
+        joined = " ".join(t for _, t in cells)
+        compact = re.sub(r"\s+", "", joined).lower()
+        if re.search(r"(invoiceno\.?|invoicenumber|facturan[ºo]\.?|facturanumero)", compact):
+            ref_row = (y, cells)
+            break
+    if ref_row:
+        y0, cells = ref_row
+        joined = " | ".join(t for _, t in cells)
+        m = re.search(
+            r"\b(?:invoice\s*(?:no\.?|number)|factura\s*(?:nº|n\.?|numero|número)|no\.?|number|nº|n\.?)\s*[:#]?\s*([A-Z0-9/\-_]{3,30})",
+            joined,
+            re.IGNORECASE,
+        )
+        if not m:
+            # El valor suele estar en la fila siguiente (header y valor separados)
+            for y2, cells2 in rows:
+                if y2 <= y0:
+                    continue
+                if y2 > y0 + 120:
+                    break
+                joined2 = " ".join(t for _, t in cells2)
+                m2 = re.search(r"\b([A-Z0-9/\-_]{3,30})\b", joined2)
+                # El candidato debe parecer un ref: contener al menos un dígito
+                if m2 and re.search(r"\d", m2.group(1)) and not re.search(
+                    r"(date|fecha|total|amount)", joined2, re.IGNORECASE
+                ):
+                    m = m2
+                    break
+        if m:
+            data["ref"] = m.group(1).strip()
 
     # --- Fecha: junto a "date" / "fecha" / "data" (o la fila siguiente) ---
     for kw in ("date", "fecha", "data"):
@@ -250,7 +258,7 @@ def parse_invoice(ocr_result, all_text: str) -> dict[str, Any]:
         if row:
             y0, cells = row
             joined = " ".join(t for _, t in cells)
-            m = re.search(r"(\d{1,2}[/.]\d{1,2}[/.]\d{2,4}|[A-Z][a-z]{2}\.?\s+\d{1,2},?\s+\d{4})", joined)
+            m = re.search(r"(\d{1,2}[/.]\d{1,2}[/.]\d{2,4}|[A-Z][a-z]{2}\.?\s+\d{1,2},?\s*\d{4})", joined)
             if not m:
                 for y2, cells2 in rows:
                     if y2 > y0 + 80:
@@ -258,7 +266,7 @@ def parse_invoice(ocr_result, all_text: str) -> dict[str, Any]:
                     if y2 <= y0:
                         continue
                     joined2 = " ".join(t for _, t in cells2)
-                    m = re.search(r"(\d{1,2}[/.]\d{1,2}[/.]\d{2,4}|[A-Z][a-z]{2}\.?\s+\d{1,2},?\s+\d{4})", joined2)
+                    m = re.search(r"(\d{1,2}[/.]\d{1,2}[/.]\d{2,4}|[A-Z][a-z]{2}\.?\s+\d{1,2},?\s*\d{4})", joined2)
                     if m:
                         break
             if m:
@@ -326,38 +334,41 @@ def parse_invoice(ocr_result, all_text: str) -> dict[str, Any]:
                 "tax_rate": 0.0,
             }
             if nums:
-                # asumir [precio, cantidad, total] o [total] — usar el último como total
-                if len(nums) >= 3:
-                    line["price_unit"] = nums[0]
-                    line["quantity"] = nums[1]
-                    line["price_subtotal"] = nums[-1]
-                elif len(nums) == 2:
-                    line["price_unit"] = nums[0]
-                    line["price_subtotal"] = nums[1]
+                # Lógica robusta: el ÚLTIMO número es el subtotal de la línea.
+                # El precio unitario es el mayor divisor entero del subtotal
+                # (descarta el No. de línea, cantidades, etc.).
+                total_line = nums[-1]
+                price = None
+                for cand in sorted(nums[:-1], reverse=True):
+                    if cand <= 0:
+                        continue
+                    if abs(total_line / cand - round(total_line / cand)) < 0.01:
+                        price = cand
+                        break
+                if price is not None:
+                    line["price_unit"] = price
+                    line["quantity"] = round(total_line / price)
+                    line["price_subtotal"] = total_line
                 else:
-                    line["price_subtotal"] = nums[0]
-                    line["price_unit"] = nums[0]
-            # Recalcular qty si subtotal/price no coincide (Office Chair $4.00 x ? = $20.00)
-            if line["price_unit"] > 0 and line["price_subtotal"] > 0 and line["quantity"] == 1.0:
-                implied = line["price_subtotal"] / line["price_unit"]
-                if abs(implied - 1.0) > 0.05 and abs(implied - round(implied)) < 0.01:
-                    line["quantity"] = round(implied)
+                    # Sin relación clara: usar penúltimo como precio
+                    line["price_unit"] = nums[-2] if len(nums) >= 2 else total_line
+                    line["price_subtotal"] = total_line
             # Detectar "GRATIS" / "free" / "0.00" en portes
             if "gratis" in joined.lower() or "free" in joined.lower() or line["price_subtotal"] == 0:
                 line["quantity"] = 0.0
             if line["price_subtotal"] > 0 or line["price_unit"] > 0:
                 data["invoice_line_ids"].append(line)
 
-    # --- Partner: primera fila con nombre (no códigos, no keywords) ---
+    # --- Partner: primera fila con nombre (no códigos, no keywords, sin dígitos) ---
     for y, cells in rows[:8]:
         joined = " ".join(t for _, t in cells)
         if len(joined) < 3:
             continue
-        # Saltar códigos/refs (empiezan con #, $, dígito) y filas vacías
-        if re.match(r"^[\s#\$\d\W]", joined):
+        # Saltar códigos/refs (empiezan con #, $, dígito) y filas con dígitos (direcciones)
+        if re.match(r"^[\s#\$\d\W]", joined) or re.search(r"\d", joined):
             continue
         if re.search(
-            r"invoice|factura|date|fecha|page|tel|email|www|bill|due|balance|no\.?|amount|total|subtotal",
+            r"\b(invoice|factura|date|fecha|page|tel|email|www|bill|due|balance|no|amount|total|subtotal)\b|@",
             joined.lower(),
         ):
             continue

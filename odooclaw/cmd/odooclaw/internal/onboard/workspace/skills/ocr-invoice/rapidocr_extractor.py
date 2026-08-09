@@ -4,7 +4,7 @@
 Pipeline 100% CPU (N100): RapidOCR (texto + coordenadas) -> parser posicional
 -> lógica de negocio (vendors conocidos, impuestos, validaciones).
 
-Portado del flujo n8n "flujo n8n de OCR de facturas"
+Portado de las pautas del flujo n8n de OCR de facturas
 (limpiador universal) + módulo account_dynamic_rules (reglas Odoo).
 Reemplaza al VL 450M en el flujo de facturas: un solo motor, sin modelo de visión.
 """
@@ -24,7 +24,7 @@ def log(msg: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Mapa de empresas / vendors conocidos (del flujo n8n, sin datos especificos)
+# Mapa de vendors conocidos (configurable, sin datos especificos)
 # ---------------------------------------------------------------------------
 KNOWN_VENDORS: dict[str, dict[str, str]] = {}
 
