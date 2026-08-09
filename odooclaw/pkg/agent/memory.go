@@ -26,6 +26,7 @@ type MemoryStore struct {
 	memoryFile string
 	sqlite     *corememory.Store
 	historical *corememory.HistoricalStore
+	recipes    *corememory.RecipeStore
 }
 
 type PromptMemoryOptions struct {
@@ -45,13 +46,18 @@ func NewMemoryStore(workspace string) *MemoryStore {
 	// Ensure memory directory exists
 	os.MkdirAll(memoryDir, 0o755)
 
-	return &MemoryStore{
+	ms := &MemoryStore{
 		workspace:  workspace,
 		memoryDir:  memoryDir,
 		memoryFile: memoryFile,
 		sqlite:     corememory.NewStore(memoryDir),
 		historical: corememory.NewHistoricalStore(memoryDir),
 	}
+	// Recipe store (query→tool+args) is ALWAYS enabled by default.
+	if rs, err := corememory.NewRecipeStore(memoryDir); err == nil {
+		ms.recipes = rs
+	}
+	return ms
 }
 
 // getTodayFile returns the path to today's daily note file (memory/YYYYMM/YYYYMMDD.md).
@@ -208,14 +214,46 @@ func (ms *MemoryStore) GetRelevantContext(opts PromptMemoryOptions) string {
 		}
 	}
 
-	if hotContext == "" {
-		return coldContext
-	}
-	if coldContext == "" {
-		return hotContext
+	// Recipe store: resolved query→tool+args patterns as few-shot.
+	recipeContext := ""
+	if ms.recipes != nil {
+		context, err := ms.recipes.BuildRecipeContext(opts.Query, opts.Channel, opts.ChatID, 3)
+		if err == nil && context != "" {
+			recipeContext = rewriteRelevantHeading(context, "## Known Resolved Patterns")
+		}
 	}
 
-	return hotContext + "\n\n---\n\n" + coldContext
+	parts := make([]string, 0, 3)
+	if hotContext != "" {
+		parts = append(parts, hotContext)
+	}
+	if coldContext != "" {
+		parts = append(parts, coldContext)
+	}
+	if recipeContext != "" {
+		parts = append(parts, recipeContext)
+	}
+	return strings.Join(parts, "\n\n---\n\n")
+}
+
+// SaveRecipe records a successful query→tool+args resolution for reuse.
+func (ms *MemoryStore) SaveRecipe(query, tool, args, channel, chatID, senderID string) {
+	if ms.recipes == nil || query == "" || tool == "" {
+		return
+	}
+	_, _ = ms.recipes.SaveRecipe(query, tool, args, channel, chatID, senderID, true)
+}
+
+// RecipeCount returns the number of stored recipes (diagnostics).
+func (ms *MemoryStore) RecipeCount() int {
+	if ms.recipes == nil {
+		return 0
+	}
+	n, err := ms.recipes.CountRecipes()
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 func rewriteRelevantHeading(context string, heading string) string {
