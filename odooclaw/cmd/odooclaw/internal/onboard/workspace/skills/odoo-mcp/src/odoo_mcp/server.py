@@ -312,6 +312,26 @@ def odoo_search(
 
 
 @mcp.tool()
+def odoo_search_read(
+    model: str,
+    domain: list | None = None,
+    limit: int = 80,
+    fields: list[str] | None = None,
+    sender_id: int | None = None,
+) -> list:
+    with measure_time("odoo_search_read"):
+        client = get_odoo_client()
+        return records.odoo_search_read(
+            client,
+            sender_id or client.odoo_session.uid,
+            model,
+            domain or [],
+            fields,
+            limit,
+        )
+
+
+@mcp.tool()
 def odoo_read(
     model: str,
     ids: list[int],
