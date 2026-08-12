@@ -225,9 +225,10 @@ Models:
 Start the servers:
 
   # Linux (llama.cpp)
-  # Chat + tool calling (port $LLAMA_PORT)
+  # Chat + tool calling (port $LLAMA_PORT) — ngram-mod n=16 benchmarked +49% (NRA-541)
   $LLAMA_DIR/build/bin/llama-server -m $MODELS_DIR/$LLAMA_MODEL_FILE \\
-    --host 127.0.0.1 --port $LLAMA_PORT --ctx-size 4096
+    --host 127.0.0.1 --port $LLAMA_PORT --ctx-size 4096 \\
+    --spec-type ngram-mod --spec-ngram-mod-n-min 4 --spec-ngram-mod-n-max 16 --spec-ngram-mod-n-match 24
 
   # Vision / OCR (port $VISION_PORT)
   $LLAMA_DIR/build/bin/llama-server -m $MODELS_DIR/$VISION_MODEL_FILE \\
