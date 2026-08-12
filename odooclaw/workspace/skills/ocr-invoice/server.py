@@ -1113,11 +1113,19 @@ class OdooOCRSkill:
             ),
             llm_api_key=os.environ.get("OCR_PIPELINE_LLM_KEY", ""),
         )
+        pdf_data = attachment.get("data")
+        if not pdf_data:
+            return {"isError": True, "content": "Attachment sin datos binarios"}
+        mime = attachment.get("mimetype", "")
+        if "pdf" not in mime and not attachment.get("name", "").lower().endswith(".pdf"):
+            return {"isError": True, "content": "Pipeline solo procesa PDFs"}
         try:
-            tmp = attachment.get("tmp_path") or attachment.get("path")
-            if not tmp or not os.path.exists(tmp):
-                return {"isError": True, "content": "attachment temp file not available"}
-            data = run_pipeline(tmp, cfg)
+            import tempfile as _tf
+            with _tf.TemporaryDirectory(prefix="ocr_pipeline_") as _workdir:
+                _pdf = os.path.join(_workdir, "invoice.pdf")
+                with open(_pdf, "wb") as _f:
+                    _f.write(pdf_data)
+                data = run_pipeline(_pdf, cfg)
         except Exception as e:  # noqa: BLE001
             return {"isError": True, "content": f"Pipeline failed: {e}"}
 
@@ -1128,6 +1136,7 @@ class OdooOCRSkill:
             "invoice_number": (data.get("ref") or "").strip(),
             "invoice_date": (data.get("invoice_date") or "").strip(),
             "amount_total": data.get("amount_total"),
+            "subtotal": data.get("amount_total"),
             "amount_tax": data.get("amount_tax"),
             "currency": (data.get("currency") or "EUR").strip(),
             "lines": data.get("invoice_line_ids") or [],

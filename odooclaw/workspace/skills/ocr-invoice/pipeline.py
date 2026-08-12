@@ -115,7 +115,7 @@ def _norm_number(s):
     s = s.strip().replace(" ", "").replace("\u00a0", "")
     if not s or not re.search(r"\d", s):
         return None
-    s = s.replace("€", "").replace("EUR", "").strip()
+    s = s.replace("€", "").replace("EUR", "").replace("$", "").replace("£", "").replace("USD", "").replace("GBP", "").strip()
     if "," in s and "." in s:
         if s.rfind(",") > s.rfind("."):   # 1.013,45 -> thousands dot, decimal comma
             s = s.replace(".", "").replace(",", ".")
@@ -158,15 +158,42 @@ def _parse_fiscal(text):
       'Base al 7%: 100.00'
       'Base: 100.00  Tipo: 21%  Cuota: 21.00'
       '7% : 100.00'
+      'IVA 21% 441.00' / 'USt. 19% 247.10' / 'Tax: 20% 990.00'  (quota after rate)
     """
     pairs = []  # (rate_percent, base_amount)
     num = r"\d[\d.,\s]*\d|\d"
+
+    # Shape 5 runs FIRST: quota-after-rate summary lines — 'IVA 21% 441.00',
+    # 'USt. 19% 247.10', 'Tax: 20% 990.00', 'TVA 20% 488.00'. The number AFTER
+    # the % is the QUOTA; derive base = quota * 100 / rate. The matched spans
+    # are masked so Shape 3/4 cannot double-count the same summary line.
+    quota_spans = []
+    for m in re.finditer(
+        rf"(?:iva|igic|tva|ust|vat|tax|steuer|impuesto|cuota|mehrwertsteuer|m\s?w\s?st)[\s:.]*"
+        rf"(\d+(?:[.,]\d+)?)\s*%\s*[:=]?\s*({num})\b",
+        text, re.IGNORECASE,
+    ):
+        rate = _norm_number(m.group(1))
+        quota = _norm_number(m.group(2))
+        if quota is not None and rate is not None and 0 < rate <= 100 and quota > 0:
+            base = round(quota * 100.0 / rate, 2)
+            if base > 0:
+                pairs.append((rate, base))
+                quota_spans.append(m.span())
+
+    masked = text
+    if quota_spans:
+        masked = list(text)
+        for s, e in quota_spans:
+            for i in range(s, e):
+                masked[i] = " "
+        masked = "".join(masked)
 
     # Shape 1: Base/Subtotal ... (Tipo|al) ... N%  — PaddleOCR output omits '%' after rate
     for m in re.finditer(
         rf"(?:base|subtotal)\s*(?:imponible)?\s*[:=]?\s*({num})\s*"
         rf"(?:-|,|;)?\s*(?:tipo|al|a)\s*[:=]?\s*(\d+(?:[.,]\d+)?)\s*%?",
-        text, re.IGNORECASE,
+        masked, re.IGNORECASE,
     ):
         base = _norm_number(m.group(1))
         rate = _norm_number(m.group(2))
@@ -176,17 +203,18 @@ def _parse_fiscal(text):
     # Shape 2: Base al N% : amount  /  Base al N% = amount
     for m in re.finditer(
         rf"(?:base|subtotal)\s+(?:imponible\s+)?al\s+(\d+(?:[.,]\d+)?)\s*%\s*[:=]?\s*({num})",
-        text, re.IGNORECASE,
+        masked, re.IGNORECASE,
     ):
         rate = _norm_number(m.group(1))
         base = _norm_number(m.group(2))
         if base is not None and rate is not None and base > 0:
             pairs.append((rate, base))
 
-    # Shape 3: rate% alone next to an amount (table cells)
+    # Shape 3: rate% alone next to an amount (table cells) — masked text so
+    # quota-after-rate lines (Shape 5) are not double-counted.
     for m in re.finditer(
         r"(?:^|\s)(\d+(?:[.,]\d+)?)\s*%\s*(?:de\s+)?([\d.,]{2,})\b",
-        text,
+        masked,
     ):
         rate = _norm_number(m.group(1))
         base = _norm_number(m.group(2))
@@ -196,7 +224,7 @@ def _parse_fiscal(text):
     # Shape 4: per-rate cuota lines: '7% ... 100,00 7,00' or 'Base 100,00  Cuota 7,00'
     for m in re.finditer(
         rf"(?:^|\s)(\d+(?:[.,]\d+)?)\s*%\s*[:\s-]+\s*({num})\s*[:\s-]+\s*({num})",
-        text,
+        masked,
     ):
         rate = _norm_number(m.group(1))
         base = _norm_number(m.group(2))
@@ -217,7 +245,7 @@ def _parse_fiscal(text):
 
 def _parse_subtotal(text):
     """Find the SUBTOTAL (before tax) of the invoice."""
-    num = r"\d[\d.,\s]*\d|\d"
+    num = r"[$\u20ac\u00a3]?\s*\d[\d.,\s]*\d|[$\u20ac\u00a3]?\s*\d"
     for m in re.finditer(
         rf"subtotal\s*[:=]?\s*({num})\s*(?:€|eur|usd)?",
         text, re.IGNORECASE,
@@ -243,24 +271,35 @@ def _parse_rate_cuota(text):
 def _parse_total(text):
     """Find the final TOTAL of the invoice (semantic keyword search).
     Uses negative lookbehind to NOT match 'Subtotal'."""
-    num = r"\d[\d.,\s]*\d|\d"
+    num = r"[$\u20ac\u00a3]?\s*\d[\d.,\s]*\d|[$\u20ac\u00a3]?\s*\d"
     patterns = [
         rf"(?<!sub)total\s*(?:a\s+pagar|factura|neto)?\s*[:=]?\s*({num})\s*(?:€|eur|usd)?",
         rf"importe\s+total\s*[:=]?\s*({num})",
         rf"amount\s*(?:due|total)?\s*[:=]?\s*({num})\s*(?:€|eur|usd)?",
     ]
+    best = None
     for pat in patterns:
         for m in re.finditer(pat, text, re.IGNORECASE):
             v = _norm_number(m.group(1))
             if v is not None and 0 < v < 1_000_000:
-                return v
-    return None
+                best = v  # keep last: real total appears after table-header TOTAL
+    return best
 
 
 def _parse_tax_total(text):
     """Find the total tax amount (sum of cuotas)."""
     num = r"\d[\d.,\s]*\d|\d"
-    # Handles 'IGIC: 7,00', 'I.G.I.C. General (7%): 7,00', 'IVA: 21,00', 'Cuota: 4,93'
+    # Handles 'IGIC: 7,00', 'I.G.I.C. General (7%): 7,00', 'IVA: 21,00', 'Cuota: 4,93',
+    # and quota-after-rate: 'IVA 21% 441.00', 'USt. 19% 247.10', 'Tax: 20% 990.00'.
+    # Quota-after-rate wins: the number following '%' is the tax amount, not the rate.
+    for m in re.finditer(
+        rf"(?:i\.?g\.?i\.?c\.?|i\.?v\.?a\.?|igic|iva|tva|ust|vat|tax|steuer|impuesto|cuota|mehrwertsteuer|m\s?w\s?st)"
+        rf"[\s:.]*(\d+(?:[.,]\d+)?)\s*%\s*[:=]?\s*({num})\b",
+        text, re.IGNORECASE,
+    ):
+        v = _norm_number(m.group(2))
+        if v is not None and 0 < v < 1_000_000:
+            return v
     for m in re.finditer(
         rf"(?:i\.?g\.?i\.?c\.?|i\.?v\.?a\.?|igic|iva|impuesto|cuota|tax)"
         rf"\s*(?:general|total|soportado|repercutido)?\s*(?:\(\d+(?:[.,]\d+)?%\))?\s*[:=]?\s*"
@@ -283,6 +322,9 @@ def layer2_fiscal(text):
 
     # Reverse charge / exempt: tax due is ZERO (valid), not missing
     if reverse_charge and tax is None:
+        tax = 0.0
+    # No-tax invoice: subtotal == total and no tax lines found -> tax is zero, not missing
+    if tax is None and total is not None and subtotal is not None and abs(total - subtotal) < 0.01:
         tax = 0.0
 
     lines = []
@@ -387,7 +429,8 @@ def layer4_validate(header, fiscal):
     # Arithmetic: sum of bases should equal total minus tax (when both known)
     if total is not None and tax is not None and lines and fiscal["fiscal_found"]:
         bases_sum = round(sum(l["price_subtotal"] for l in lines), 2)
-        if abs(bases_sum + tax - total) > 1.0:
+        delta = abs(bases_sum + tax - total)
+        if delta > 1.0 and delta / max(total, 1e-9) > 0.01:
             issues.append(
                 f"arithmetic mismatch: bases={bases_sum} + tax={tax} != total={total}"
             )
@@ -402,21 +445,47 @@ def layer4_validate(header, fiscal):
 def run_pipeline(pdf_path, cfg: OCRConfig = None):
     cfg = cfg or OCRConfig()
     import fitz
-    # Layer 1: vision -> text
-    images = pdf_to_images(pdf_path, cfg.dpi, cfg.max_pages)
-    text = ""
-    for img in images:
-        text += layer1_vision(cfg, img) + "\n"
+    # Layer 1: native text layer FIRST (digital PDFs: exact, deterministic, no model).
+    # Vision is only the fallback when the text layer has no usable total
+    # (scanned/image-only PDFs, or layouts where values precede labels).
+    doc = fitz.open(pdf_path)
+    text_layer = "\n".join(p.get_text() for p in doc[: cfg.max_pages])
+    doc.close()
+    text_layer = text_layer.strip()
+    source = "text-layer"
+
+    # Vision fallback: scanned/image-only PDFs, or layouts where the text
+    # layer has no usable total (values precede labels).
+    vision_text = None
+    if len(text_layer) < 60 or layer2_fiscal(text_layer).get("amount_total") is None:
+        images = pdf_to_images(pdf_path, cfg.dpi, cfg.max_pages)
+        vision_text = ""
+        for img in images:
+            vision_text += layer1_vision(cfg, img) + "\n"
+        vision_text = vision_text.strip()
+
+    # Layer 1 decision: fiscal wants a total-bearing text, header wants exact text.
+    fiscal_text = vision_text if (vision_text and layer2_fiscal(text_layer).get("amount_total") is None) else text_layer
+    header_text = text_layer if len(text_layer) >= 60 else (vision_text or text_layer)
+    if vision_text and layer2_fiscal(fiscal_text).get("amount_total") is None:
+        source = "vision"
+    elif not vision_text and fiscal_text == text_layer:
+        source = "text-layer"
+    elif vision_text:
+        source = "hybrid"
+    else:
+        source = "text-layer"
 
     # Layer 2: fiscal block (deterministic)
-    fiscal = layer2_fiscal(text)
+    fiscal = layer2_fiscal(fiscal_text)
 
     # Layer 3: header (LLM)
-    header = layer3_header(cfg, text)
+    header = layer3_header(cfg, header_text)
 
     # Layer 4: validation
     ok, issues, merged = layer4_validate(header, fiscal)
     merged["_ok"] = ok
     merged["_issues"] = issues
-    merged["_raw_text"] = text[:2000]
+    merged["_raw_text"] = (fiscal_text + "\n---HEADER---\n" + header_text)[:2000]
+    merged["_source"] = source
     return merged
