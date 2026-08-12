@@ -39,9 +39,9 @@ class OdooClient:
         # Note: In a fully strict mode, you might force sender_id on all MCP endpoints.
         endpoint = f"{self.odoo_session.url}/web/dataset/call_kw/{model}/{method}"
         
-        # Merge session context into kwargs
+        # Merge session context into kwargs (thread-safe read)
         if "context" not in kwargs:
-            kwargs["context"] = self.odoo_session.context.copy()
+            kwargs["context"] = self.odoo_session.get_context()
             
         payload = {
             "jsonrpc": "2.0",
@@ -65,9 +65,9 @@ class OdooClient:
         """Delegated execution leveraging Odoo's native security via mail_bot_odooclaw endpoint."""
         endpoint = f"{self.odoo_session.url}/odooclaw/call_kw_as_user"
         
-        # Merge session context into kwargs context
+        # Merge session context into kwargs (thread-safe read)
         context = kwargs.pop("context", {})
-        merged_context = self.odoo_session.context.copy()
+        merged_context = self.odoo_session.get_context()
         merged_context.update(context)
         
         payload = {
