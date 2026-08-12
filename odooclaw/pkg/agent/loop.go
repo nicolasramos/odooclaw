@@ -218,6 +218,12 @@ func registerSharedTools(
 		agent.Tools.Register(tools.NewMemoryDebugExplainRetrievalTool(agent.Workspace))
 		agent.Tools.Register(tools.NewMemoryImportHistoryTool(agent.Workspace))
 
+	// NRA-511: structured session memory tools (state + pending confirmations)
+	sessionMemStore := corememory.NewSessionMemoryStore(filepath.Join(agent.Workspace, "memory"))
+	agent.Tools.Register(tools.NewMemorySetSessionStateTool(sessionMemStore))
+	agent.Tools.Register(tools.NewMemorySetPendingTool(sessionMemStore))
+	agent.Tools.Register(tools.NewMemoryClearPendingTool(sessionMemStore))
+
 		// Skill discovery and installation tools
 		registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
 			MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,

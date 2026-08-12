@@ -27,6 +27,9 @@ type MemoryStore struct {
 	sqlite     *corememory.Store
 	historical *corememory.HistoricalStore
 	recipes    *corememory.RecipeStore
+	// NRA-511: structured per-session memory + long-term profile
+	sessions *corememory.SessionMemoryStore
+	longTerm *corememory.LongTermStore
 }
 
 type PromptMemoryOptions struct {
@@ -52,6 +55,8 @@ func NewMemoryStore(workspace string) *MemoryStore {
 		memoryFile: memoryFile,
 		sqlite:     corememory.NewStore(memoryDir),
 		historical: corememory.NewHistoricalStore(memoryDir),
+		sessions:   corememory.NewSessionMemoryStore(memoryDir),
+		longTerm:   corememory.NewLongTermStore(memoryDir),
 	}
 	// Recipe store (query→tool+args) is ALWAYS enabled by default.
 	if rs, err := corememory.NewRecipeStore(memoryDir); err == nil {
@@ -186,6 +191,43 @@ func (ms *MemoryStore) GetMemoryContext() string {
 	}
 
 	return sb.String()
+}
+
+// GetStructuredContext returns the NRA-511 structured memory block for a
+// session: per-session business state (partner, document, pending actions)
+// plus durable profile (preferences, company). Always injected when present;
+// returns empty string when nothing is stored (zero token cost).
+func (ms *MemoryStore) GetStructuredContext(sessionKey string) string {
+	if sessionKey == "" {
+		return ""
+	}
+	var parts []string
+
+	if ms.sessions != nil {
+		if summary := ms.sessions.GetSessionSummary(sessionKey); summary != "" {
+			parts = append(parts, summary)
+		}
+	}
+	if ms.longTerm != nil {
+		if profile, err := ms.longTerm.BuildPromptContext(); err == nil && profile != "" {
+			parts = append(parts, profile)
+		}
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+	return "## Structured Memory\n\n" + strings.Join(parts, "\n")
+}
+
+// SessionMemory exposes the session store for field updates (tool layer).
+func (ms *MemoryStore) SessionMemory() *corememory.SessionMemoryStore {
+	return ms.sessions
+}
+
+// LongTermMemory exposes the long-term store for preference updates.
+func (ms *MemoryStore) LongTermMemory() *corememory.LongTermStore {
+	return ms.longTerm
 }
 
 func (ms *MemoryStore) GetRelevantContext(opts PromptMemoryOptions) string {
