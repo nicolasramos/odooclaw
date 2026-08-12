@@ -1,0 +1,57 @@
+# Soup Integration — odooclaw Dataset Pipeline
+
+## Overview
+
+This file configures the dataset pipeline for integration with the Soup training framework.
+
+## Configuration
+
+dataset:
+  name: odooclaw-mcp-tools
+  version: "1.0"
+  source: scripts/dataset_pipeline/output/dataset.jsonl
+
+pipeline:
+  parser: scripts/dataset_pipeline/parser.py
+  generator: scripts/dataset_pipeline/generator.py
+  validator: scripts/dataset_pipeline/validator.py
+  orchestrator: scripts/dataset_pipeline/orchestrator.py
+
+training:
+  format: lfm-native
+  tool_prefix: mcp_
+  categories:
+    - tool_selection
+    - argument_filling
+    - error_handling
+    - multi_turn
+
+validation:
+  min_tool_coverage: 0.9
+  max_format_errors: 0
+  require_all_tools: true
+
+output:
+  dataset: output/dataset.jsonl
+  metadata: output/metadata.json
+  manifest: output/manifest.json
+
+## Usage
+
+Full pipeline:
+    python scripts/dataset_pipeline/orchestrator.py /path/to/odooclaw --seed 42
+
+Soup integration:
+    soup train --dataset scripts/dataset_pipeline/output/dataset.jsonl \
+      --config soup.yaml
+
+Verify before training:
+    python scripts/dataset_pipeline/validator.py \
+      scripts/dataset_pipeline/output/dataset.jsonl \
+      scripts/dataset_pipeline/output/metadata.json
+
+## Reproducibility
+
+The pipeline is deterministic given the same seed and repo state:
+- Same commit of MCP tools -> same metadata.json -> same dataset.jsonl
+- Verify with: sha256sum scripts/dataset_pipeline/output/dataset.jsonl

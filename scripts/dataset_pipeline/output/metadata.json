@@ -1,0 +1,2948 @@
+[
+  {
+    "name": "odoo_search",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "model",
+        "type": "str"
+      },
+      {
+        "name": "domain",
+        "type": "list | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_read",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "model",
+        "type": "str"
+      },
+      {
+        "name": "ids",
+        "type": "list[int]"
+      },
+      {
+        "name": "fields",
+        "type": "list[str] | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_create",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "model",
+        "type": "str"
+      },
+      {
+        "name": "values",
+        "type": "dict[str, Any]"
+      }
+    ],
+    "risk_level": "write",
+    "category": "records"
+  },
+  {
+    "name": "odoo_write",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "model",
+        "type": "str"
+      },
+      {
+        "name": "ids",
+        "type": "list[int]"
+      },
+      {
+        "name": "values",
+        "type": "dict[str, Any]"
+      }
+    ],
+    "risk_level": "write",
+    "category": "records"
+  },
+  {
+    "name": "odoo_invoke_action",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "model",
+        "type": "str"
+      },
+      {
+        "name": "method",
+        "type": "str"
+      },
+      {
+        "name": "ids",
+        "type": "list[int]"
+      }
+    ],
+    "risk_level": "read",
+    "category": "actions"
+  },
+  {
+    "name": "odoo_find_partner",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "name",
+        "type": "str"
+      },
+      {
+        "name": "vat",
+        "type": "str | None"
+      },
+      {
+        "name": "email",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "partners"
+  },
+  {
+    "name": "odoo_get_partner_summary",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "partner_id",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "partners"
+  },
+  {
+    "name": "odoo_create_activity",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "model",
+        "type": "str"
+      },
+      {
+        "name": "res_id",
+        "type": "int"
+      },
+      {
+        "name": "summary",
+        "type": "str"
+      },
+      {
+        "name": "note",
+        "type": "str"
+      },
+      {
+        "name": "user_id",
+        "type": "int | None"
+      },
+      {
+        "name": "date_deadline",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "write",
+    "category": "chatter"
+  },
+  {
+    "name": "odoo_list_pending_activities",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "model",
+        "type": "str | None"
+      },
+      {
+        "name": "user_id",
+        "type": "int | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "chatter"
+  },
+  {
+    "name": "odoo_mark_activity_done",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "activity_id",
+        "type": "int"
+      },
+      {
+        "name": "feedback",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "chatter"
+  },
+  {
+    "name": "odoo_post_chatter_message",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "model",
+        "type": "str"
+      },
+      {
+        "name": "res_id",
+        "type": "int"
+      },
+      {
+        "name": "body",
+        "type": "str"
+      }
+    ],
+    "risk_level": "write",
+    "category": "chatter"
+  },
+  {
+    "name": "odoo_find_task",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "name",
+        "type": "str | None"
+      },
+      {
+        "name": "project_id",
+        "type": "int | None"
+      },
+      {
+        "name": "stage_id",
+        "type": "int | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "projects"
+  },
+  {
+    "name": "odoo_create_task",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "name",
+        "type": "str"
+      },
+      {
+        "name": "project_id",
+        "type": "int"
+      },
+      {
+        "name": "description",
+        "type": "str | None"
+      },
+      {
+        "name": "assigned_to",
+        "type": "int | None"
+      },
+      {
+        "name": "deadline",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "write",
+    "category": "projects"
+  },
+  {
+    "name": "odoo_update_task",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "task_id",
+        "type": "int"
+      },
+      {
+        "name": "stage_id",
+        "type": "int | None"
+      },
+      {
+        "name": "assigned_to",
+        "type": "int | None"
+      },
+      {
+        "name": "deadline",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "projects"
+  },
+  {
+    "name": "odoo_find_my_tasks",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "project_id",
+        "type": "int | None"
+      },
+      {
+        "name": "state",
+        "type": "str | None"
+      },
+      {
+        "name": "date_deadline_from",
+        "type": "str | None"
+      },
+      {
+        "name": "date_deadline_to",
+        "type": "str | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "projects"
+  },
+  {
+    "name": "odoo_update_task_status",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "task_id",
+        "type": "int"
+      },
+      {
+        "name": "stage_id",
+        "type": "int | None"
+      },
+      {
+        "name": "stage_name",
+        "type": "str | None"
+      },
+      {
+        "name": "comment",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "projects"
+  },
+  {
+    "name": "odoo_find_sale_order",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "name",
+        "type": "str | None"
+      },
+      {
+        "name": "partner_id",
+        "type": "int | None"
+      },
+      {
+        "name": "state",
+        "type": "str | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "sales"
+  },
+  {
+    "name": "odoo_get_sale_order_summary",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "order_id",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "sales"
+  },
+  {
+    "name": "odoo_get_record_summary",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "model",
+        "type": "str"
+      },
+      {
+        "name": "res_id",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "generic"
+  },
+  {
+    "name": "odoo_create_purchase_order",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "partner_id",
+        "type": "int"
+      },
+      {
+        "name": "lines",
+        "type": "list[POLineSchema]"
+      }
+    ],
+    "risk_level": "write",
+    "category": "purchases"
+  },
+  {
+    "name": "odoo_find_purchase_order",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "name",
+        "type": "str | None"
+      },
+      {
+        "name": "partner_id",
+        "type": "int | None"
+      },
+      {
+        "name": "state",
+        "type": "str | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "purchases"
+  },
+  {
+    "name": "odoo_get_purchase_order_summary",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "order_id",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "purchases"
+  },
+  {
+    "name": "odoo_get_purchase_receipt_status",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "purchase_order_id",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "purchases"
+  },
+  {
+    "name": "odoo_get_purchase_invoice_status",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "purchase_order_id",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "purchases"
+  },
+  {
+    "name": "odoo_suggest_vendor_products",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "partner_id",
+        "type": "int"
+      },
+      {
+        "name": "query",
+        "type": "str | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "purchases"
+  },
+  {
+    "name": "odoo_match_vendor_bill_to_purchase_order",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "partner_id",
+        "type": "int"
+      },
+      {
+        "name": "vendor_bill_number",
+        "type": "str | None"
+      },
+      {
+        "name": "purchase_order_id",
+        "type": "int | None"
+      },
+      {
+        "name": "ocr_payload",
+        "type": "dict[str, Any] | None"
+      },
+      {
+        "name": "tolerance",
+        "type": "float"
+      }
+    ],
+    "risk_level": "read",
+    "category": "purchases"
+  },
+  {
+    "name": "odoo_create_vendor_invoice",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "partner_id",
+        "type": "int"
+      },
+      {
+        "name": "lines",
+        "type": "list[InvoiceLineSchema]"
+      },
+      {
+        "name": "ref",
+        "type": "str | None"
+      },
+      {
+        "name": "confirm",
+        "type": "bool"
+      },
+      {
+        "name": "dry_run",
+        "type": "bool"
+      },
+      {
+        "name": "total_tolerance",
+        "type": "float"
+      },
+      {
+        "name": "vendor_create_policy",
+        "type": "str"
+      },
+      {
+        "name": "confirm_partner_create",
+        "type": "bool"
+      }
+    ],
+    "risk_level": "write",
+    "category": "accounting"
+  },
+  {
+    "name": "odoo_find_pending_invoices",
+    "server": "odoo-mcp",
+    "description": "Find invoices/bills pending payment for a partner.\nUses correct Odoo 18 domains:\nstate='posted' AND payment_state in ('not_paid','partial').\nDO NOT use state='open' - that is Odoo 13 and does NOT exist\nin Odoo 18.\nOmit partner_id to get ALL pending invoices.",
+    "has_docstring": true,
+    "params": [
+      {
+        "name": "partner_id",
+        "type": "int | None"
+      },
+      {
+        "name": "move_type",
+        "type": "str | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_get_invoice_summary",
+    "server": "odoo-mcp",
+    "description": "Get complete details of a specific invoice (account.move), including lines.",
+    "has_docstring": true,
+    "params": [
+      {
+        "name": "move_id",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_get_model_schema",
+    "server": "odoo-mcp",
+    "description": "Retrieve the fields and schema for a given Odoo model\n(e.g. 'res.partner'). Very useful if a field search fails.",
+    "has_docstring": true,
+    "params": [
+      {
+        "name": "model",
+        "type": "str"
+      }
+    ],
+    "risk_level": "read",
+    "category": "introspection"
+  },
+  {
+    "name": "odoo_get_capabilities",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_create_helpdesk_ticket",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "name",
+        "type": "str"
+      },
+      {
+        "name": "description",
+        "type": "str | None"
+      },
+      {
+        "name": "partner_id",
+        "type": "int | None"
+      },
+      {
+        "name": "email",
+        "type": "str | None"
+      },
+      {
+        "name": "team_id",
+        "type": "int | None"
+      },
+      {
+        "name": "priority",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_create_helpdesk_ticket_from_partner",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "partner_id",
+        "type": "int"
+      },
+      {
+        "name": "name",
+        "type": "str"
+      },
+      {
+        "name": "description",
+        "type": "str | None"
+      },
+      {
+        "name": "team_id",
+        "type": "int | None"
+      },
+      {
+        "name": "priority",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "write",
+    "category": "partners"
+  },
+  {
+    "name": "odoo_create_activity_summary",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "model",
+        "type": "str"
+      },
+      {
+        "name": "res_id",
+        "type": "int"
+      },
+      {
+        "name": "summary",
+        "type": "str"
+      },
+      {
+        "name": "note",
+        "type": "str | None"
+      },
+      {
+        "name": "user_id",
+        "type": "int | None"
+      }
+    ],
+    "risk_level": "write",
+    "category": "chatter"
+  },
+  {
+    "name": "odoo_close_activity_with_reason",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "activity_id",
+        "type": "int"
+      },
+      {
+        "name": "reason",
+        "type": "str"
+      }
+    ],
+    "risk_level": "read",
+    "category": "chatter"
+  },
+  {
+    "name": "odoo_draft_ticket_email",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "ticket_id",
+        "type": "int"
+      },
+      {
+        "name": "subject",
+        "type": "str"
+      },
+      {
+        "name": "body",
+        "type": "str"
+      },
+      {
+        "name": "email_to",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "general"
+  },
+  {
+    "name": "odoo_create_contract_line",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "contract_id",
+        "type": "int"
+      },
+      {
+        "name": "product_id",
+        "type": "int"
+      },
+      {
+        "name": "name",
+        "type": "str | None"
+      },
+      {
+        "name": "quantity",
+        "type": "float"
+      },
+      {
+        "name": "price_unit",
+        "type": "float"
+      },
+      {
+        "name": "date_start",
+        "type": "str | None"
+      },
+      {
+        "name": "date_end",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_replace_contract_line",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "line_id",
+        "type": "int"
+      },
+      {
+        "name": "product_id",
+        "type": "int"
+      },
+      {
+        "name": "name",
+        "type": "str | None"
+      },
+      {
+        "name": "quantity",
+        "type": "float"
+      },
+      {
+        "name": "price_unit",
+        "type": "float"
+      },
+      {
+        "name": "date_start",
+        "type": "str | None"
+      },
+      {
+        "name": "date_end",
+        "type": "str | None"
+      },
+      {
+        "name": "close_reason",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "general"
+  },
+  {
+    "name": "odoo_close_contract_line",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "line_id",
+        "type": "int"
+      },
+      {
+        "name": "reason",
+        "type": "str | None"
+      },
+      {
+        "name": "close_date",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "general"
+  },
+  {
+    "name": "odoo_create_calendar_event",
+    "server": "odoo-mcp",
+    "description": "Creates a calendar event (appointment or meeting)\nhandling multiple attendees automatically.",
+    "has_docstring": true,
+    "params": [
+      {
+        "name": "name",
+        "type": "str"
+      },
+      {
+        "name": "start",
+        "type": "str"
+      },
+      {
+        "name": "stop",
+        "type": "str"
+      },
+      {
+        "name": "partner_ids",
+        "type": "list[int] | None"
+      },
+      {
+        "name": "allday",
+        "type": "bool"
+      },
+      {
+        "name": "description",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_create_sale_order",
+    "server": "odoo-mcp",
+    "description": "Creates a sale order (presupuesto) for a customer with product lines.",
+    "has_docstring": true,
+    "params": [
+      {
+        "name": "partner_id",
+        "type": "int"
+      },
+      {
+        "name": "lines",
+        "type": "list[SOLineSchema]"
+      }
+    ],
+    "risk_level": "write",
+    "category": "sales"
+  },
+  {
+    "name": "odoo_confirm_sale_order",
+    "server": "odoo-mcp",
+    "description": "Confirms a sale order, moving it from draft/sent to 'sale' status.",
+    "has_docstring": true,
+    "params": [
+      {
+        "name": "order_id",
+        "type": "int"
+      }
+    ],
+    "risk_level": "write",
+    "category": "sales"
+  },
+  {
+    "name": "odoo_create_lead",
+    "server": "odoo-mcp",
+    "description": "Creates a new CRM Lead / Opportunity.",
+    "has_docstring": true,
+    "params": [
+      {
+        "name": "name",
+        "type": "str"
+      },
+      {
+        "name": "partner_id",
+        "type": "int | None"
+      },
+      {
+        "name": "expected_revenue",
+        "type": "float | None"
+      },
+      {
+        "name": "probability",
+        "type": "float | None"
+      },
+      {
+        "name": "description",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_find_product",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "name",
+        "type": "str | None"
+      },
+      {
+        "name": "default_code",
+        "type": "str | None"
+      },
+      {
+        "name": "barcode",
+        "type": "str | None"
+      },
+      {
+        "name": "category_id",
+        "type": "int | None"
+      },
+      {
+        "name": "vendor_id",
+        "type": "int | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_get_product_summary",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "product_id",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_get_product_supplier_info",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "product_id",
+        "type": "int"
+      },
+      {
+        "name": "partner_id",
+        "type": "int | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_get_product_stock_context",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "product_id",
+        "type": "int"
+      },
+      {
+        "name": "location_id",
+        "type": "int | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_get_stock_availability",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "product_ids",
+        "type": "list[int]"
+      },
+      {
+        "name": "location_id",
+        "type": "int | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_get_logistics_capabilities",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_find_reordering_rules",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "product_id",
+        "type": "int | None"
+      },
+      {
+        "name": "location_id",
+        "type": "int | None"
+      },
+      {
+        "name": "company_id",
+        "type": "int | None"
+      },
+      {
+        "name": "low_stock_only",
+        "type": "bool"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_get_replenishment_suggestions",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "product_id",
+        "type": "int | None"
+      },
+      {
+        "name": "location_id",
+        "type": "int | None"
+      },
+      {
+        "name": "company_id",
+        "type": "int | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_find_inventory_discrepancies",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "product_id",
+        "type": "int | None"
+      },
+      {
+        "name": "location_id",
+        "type": "int | None"
+      },
+      {
+        "name": "company_id",
+        "type": "int | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_prepare_inventory_adjustment",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "quant_id",
+        "type": "int"
+      },
+      {
+        "name": "counted_quantity",
+        "type": "float"
+      }
+    ],
+    "risk_level": "read",
+    "category": "general"
+  },
+  {
+    "name": "odoo_apply_inventory_adjustment",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "quant_id",
+        "type": "int"
+      },
+      {
+        "name": "counted_quantity",
+        "type": "float"
+      },
+      {
+        "name": "confirm",
+        "type": "bool"
+      },
+      {
+        "name": "dry_run",
+        "type": "bool"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_find_purchase_receipts",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "purchase_order_id",
+        "type": "int | None"
+      },
+      {
+        "name": "partner_id",
+        "type": "int | None"
+      },
+      {
+        "name": "state",
+        "type": "str | None"
+      },
+      {
+        "name": "date_from",
+        "type": "str | None"
+      },
+      {
+        "name": "date_to",
+        "type": "str | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_get_receipt_summary",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "picking_id",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_match_receipt_to_purchase_order",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "picking_id",
+        "type": "int"
+      },
+      {
+        "name": "purchase_order_id",
+        "type": "int | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "sales"
+  },
+  {
+    "name": "odoo_prepare_receipt_validation",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "picking_id",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "general"
+  },
+  {
+    "name": "odoo_validate_receipt",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "picking_id",
+        "type": "int"
+      },
+      {
+        "name": "confirm",
+        "type": "bool"
+      },
+      {
+        "name": "dry_run",
+        "type": "bool"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_find_sale_deliveries",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "sale_order_id",
+        "type": "int | None"
+      },
+      {
+        "name": "partner_id",
+        "type": "int | None"
+      },
+      {
+        "name": "state",
+        "type": "str | None"
+      },
+      {
+        "name": "date_from",
+        "type": "str | None"
+      },
+      {
+        "name": "date_to",
+        "type": "str | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_get_delivery_summary",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "picking_id",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_match_delivery_to_sale_order",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "picking_id",
+        "type": "int"
+      },
+      {
+        "name": "sale_order_id",
+        "type": "int | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "sales"
+  },
+  {
+    "name": "odoo_prepare_delivery_validation",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "picking_id",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "general"
+  },
+  {
+    "name": "odoo_validate_delivery",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "picking_id",
+        "type": "int"
+      },
+      {
+        "name": "confirm",
+        "type": "bool"
+      },
+      {
+        "name": "dry_run",
+        "type": "bool"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_find_internal_transfers",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "state",
+        "type": "str | None"
+      },
+      {
+        "name": "date_from",
+        "type": "str | None"
+      },
+      {
+        "name": "date_to",
+        "type": "str | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_find_lot_serial",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "name",
+        "type": "str | None"
+      },
+      {
+        "name": "product_id",
+        "type": "int | None"
+      },
+      {
+        "name": "company_id",
+        "type": "int | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_get_lot_traceability",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "lot_id",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_check_lot_requirements",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "picking_id",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "general"
+  },
+  {
+    "name": "odoo_get_transfer_summary",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "picking_id",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_prepare_transfer_validation",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "picking_id",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "general"
+  },
+  {
+    "name": "odoo_validate_transfer",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "picking_id",
+        "type": "int"
+      },
+      {
+        "name": "confirm",
+        "type": "bool"
+      },
+      {
+        "name": "dry_run",
+        "type": "bool"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_prepare_internal_transfer",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "location_id",
+        "type": "int"
+      },
+      {
+        "name": "location_dest_id",
+        "type": "int"
+      },
+      {
+        "name": "lines",
+        "type": "list[dict[str, Any]]"
+      },
+      {
+        "name": "picking_type_id",
+        "type": "int | None"
+      },
+      {
+        "name": "origin",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "general"
+  },
+  {
+    "name": "odoo_create_internal_transfer",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "location_id",
+        "type": "int"
+      },
+      {
+        "name": "location_dest_id",
+        "type": "int"
+      },
+      {
+        "name": "lines",
+        "type": "list[dict[str, Any]]"
+      },
+      {
+        "name": "picking_type_id",
+        "type": "int | None"
+      },
+      {
+        "name": "origin",
+        "type": "str | None"
+      },
+      {
+        "name": "confirm",
+        "type": "bool"
+      },
+      {
+        "name": "dry_run",
+        "type": "bool"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_find_stock_locations",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "name",
+        "type": "str | None"
+      },
+      {
+        "name": "usage",
+        "type": "str | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_get_location_stock_summary",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "location_id",
+        "type": "int"
+      },
+      {
+        "name": "product_id",
+        "type": "int | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_get_stock_moves",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "product_id",
+        "type": "int | None"
+      },
+      {
+        "name": "picking_id",
+        "type": "int | None"
+      },
+      {
+        "name": "state",
+        "type": "str | None"
+      },
+      {
+        "name": "date_from",
+        "type": "str | None"
+      },
+      {
+        "name": "date_to",
+        "type": "str | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_explain_stock_forecast",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "product_id",
+        "type": "int"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "general"
+  },
+  {
+    "name": "odoo_get_product_stock",
+    "server": "odoo-mcp",
+    "description": "Returns stock quantities (on hand, reserved) for a given product.",
+    "has_docstring": true,
+    "params": [
+      {
+        "name": "product_id",
+        "type": "int"
+      },
+      {
+        "name": "location_id",
+        "type": "int | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_log_timesheet",
+    "server": "odoo-mcp",
+    "description": "Logs a timesheet entry for a project or task.",
+    "has_docstring": true,
+    "params": [
+      {
+        "name": "project_id",
+        "type": "int"
+      },
+      {
+        "name": "name",
+        "type": "str"
+      },
+      {
+        "name": "unit_amount",
+        "type": "float"
+      },
+      {
+        "name": "date",
+        "type": "str | None"
+      },
+      {
+        "name": "task_id",
+        "type": "int | None"
+      },
+      {
+        "name": "employee_id",
+        "type": "int | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "general"
+  },
+  {
+    "name": "odoo_find_attendance",
+    "server": "odoo-mcp",
+    "description": "Lists attendance entries (hr.attendance) for a user/employee and date range.",
+    "has_docstring": true,
+    "params": [
+      {
+        "name": "user_id",
+        "type": "int | None"
+      },
+      {
+        "name": "employee_id",
+        "type": "int | None"
+      },
+      {
+        "name": "date_from",
+        "type": "str | None"
+      },
+      {
+        "name": "date_to",
+        "type": "str | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_log_task_timesheet",
+    "server": "odoo-mcp",
+    "description": "Logs timesheet hours directly to a task, resolving project_id automatically.",
+    "has_docstring": true,
+    "params": [
+      {
+        "name": "task_id",
+        "type": "int"
+      },
+      {
+        "name": "name",
+        "type": "str"
+      },
+      {
+        "name": "unit_amount",
+        "type": "float"
+      },
+      {
+        "name": "employee_id",
+        "type": "int | None"
+      },
+      {
+        "name": "date",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "projects"
+  },
+  {
+    "name": "odoo_check_in",
+    "server": "odoo-mcp",
+    "description": "Registers attendance check-in for current user or selected employee.",
+    "has_docstring": true,
+    "params": [
+      {
+        "name": "employee_id",
+        "type": "int | None"
+      },
+      {
+        "name": "check_in_at",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_check_out",
+    "server": "odoo-mcp",
+    "description": "Registers attendance check-out for current user or selected employee.",
+    "has_docstring": true,
+    "params": [
+      {
+        "name": "employee_id",
+        "type": "int | None"
+      },
+      {
+        "name": "check_out_at",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_get_my_today_summary",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "employee_id",
+        "type": "int | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_find_missing_timesheets",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "employee_id",
+        "type": "int | None"
+      },
+      {
+        "name": "date_from",
+        "type": "str | None"
+      },
+      {
+        "name": "date_to",
+        "type": "str | None"
+      },
+      {
+        "name": "tolerance_hours",
+        "type": "float"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_suggest_timesheet_from_attendance",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "employee_id",
+        "type": "int | None"
+      },
+      {
+        "name": "date_from",
+        "type": "str | None"
+      },
+      {
+        "name": "date_to",
+        "type": "str | None"
+      },
+      {
+        "name": "tolerance_hours",
+        "type": "float"
+      }
+    ],
+    "risk_level": "read",
+    "category": "general"
+  },
+  {
+    "name": "odoo_create_expense_report",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "name",
+        "type": "str"
+      },
+      {
+        "name": "expense_ids",
+        "type": "list[int] | None"
+      },
+      {
+        "name": "employee_id",
+        "type": "int | None"
+      },
+      {
+        "name": "date_from",
+        "type": "str | None"
+      },
+      {
+        "name": "date_to",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_submit_expense_report",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "sheet_id",
+        "type": "int"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_approve_expense",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "sheet_id",
+        "type": "int"
+      },
+      {
+        "name": "approve",
+        "type": "bool"
+      },
+      {
+        "name": "reason",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_notify_pending_actions",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "employee_id",
+        "type": "int | None"
+      },
+      {
+        "name": "days_back",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "actions"
+  },
+  {
+    "name": "odoo_register_payment",
+    "server": "odoo-mcp",
+    "description": "Registers a payment for a specific customer or vendor invoice.",
+    "has_docstring": true,
+    "params": [
+      {
+        "name": "invoice_id",
+        "type": "int"
+      },
+      {
+        "name": "amount",
+        "type": "float"
+      },
+      {
+        "name": "payment_date",
+        "type": "str | None"
+      },
+      {
+        "name": "journal_id",
+        "type": "int | None"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_find_unreconciled_bank_lines",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "journal_id",
+        "type": "int | None"
+      },
+      {
+        "name": "date_from",
+        "type": "str | None"
+      },
+      {
+        "name": "date_to",
+        "type": "str | None"
+      },
+      {
+        "name": "amount_min",
+        "type": "float | None"
+      },
+      {
+        "name": "amount_max",
+        "type": "float | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "write",
+    "category": "records"
+  },
+  {
+    "name": "odoo_suggest_bank_reconciliation",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "statement_line_id",
+        "type": "int"
+      },
+      {
+        "name": "tolerance_amount",
+        "type": "float"
+      },
+      {
+        "name": "days_window",
+        "type": "int"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "accounting"
+  },
+  {
+    "name": "odoo_reconcile_bank_line",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "statement_line_id",
+        "type": "int"
+      },
+      {
+        "name": "move_line_ids",
+        "type": "list[int]"
+      },
+      {
+        "name": "confirm",
+        "type": "bool"
+      }
+    ],
+    "risk_level": "write",
+    "category": "accounting"
+  },
+  {
+    "name": "odoo_register_invoice_payment",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "invoice_id",
+        "type": "int"
+      },
+      {
+        "name": "amount",
+        "type": "float"
+      },
+      {
+        "name": "payment_date",
+        "type": "str | None"
+      },
+      {
+        "name": "journal_id",
+        "type": "int | None"
+      },
+      {
+        "name": "memo",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "write",
+    "category": "sales"
+  },
+  {
+    "name": "odoo_get_ar_ap_aging",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "report_type",
+        "type": "str"
+      },
+      {
+        "name": "as_of",
+        "type": "str | None"
+      },
+      {
+        "name": "company_id",
+        "type": "int | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_run_period_close_checks",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "period_start",
+        "type": "str | None"
+      },
+      {
+        "name": "period_end",
+        "type": "str | None"
+      },
+      {
+        "name": "company_id",
+        "type": "int | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "general"
+  },
+  {
+    "name": "odoo_create_journal_entry",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "journal_id",
+        "type": "int"
+      },
+      {
+        "name": "lines",
+        "type": "list[JournalEntryLineSchema]"
+      },
+      {
+        "name": "date",
+        "type": "str | None"
+      },
+      {
+        "name": "ref",
+        "type": "str | None"
+      },
+      {
+        "name": "company_id",
+        "type": "int | None"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_post_journal_entry",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "move_id",
+        "type": "int"
+      },
+      {
+        "name": "confirm",
+        "type": "bool"
+      }
+    ],
+    "risk_level": "write",
+    "category": "chatter"
+  },
+  {
+    "name": "odoo_get_tax_summary",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "date_from",
+        "type": "str | None"
+      },
+      {
+        "name": "date_to",
+        "type": "str | None"
+      },
+      {
+        "name": "company_id",
+        "type": "int | None"
+      },
+      {
+        "name": "tax_group_id",
+        "type": "int | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_validate_vendor_bill_duplicate",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "partner_id",
+        "type": "int"
+      },
+      {
+        "name": "vendor_bill_number",
+        "type": "str"
+      },
+      {
+        "name": "invoice_date",
+        "type": "str | None"
+      },
+      {
+        "name": "amount_total",
+        "type": "float | None"
+      },
+      {
+        "name": "currency_id",
+        "type": "int | None"
+      },
+      {
+        "name": "tolerance",
+        "type": "float"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_suggest_expense_account_and_taxes",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "description",
+        "type": "str"
+      },
+      {
+        "name": "amount",
+        "type": "float | None"
+      },
+      {
+        "name": "partner_id",
+        "type": "int | None"
+      },
+      {
+        "name": "product_id",
+        "type": "int | None"
+      },
+      {
+        "name": "company_id",
+        "type": "int | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "accounting"
+  },
+  {
+    "name": "odoo_create_vendor_bill_from_ocr_validated",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "ocr_payload",
+        "type": "dict[str, Any]"
+      },
+      {
+        "name": "attachment_id",
+        "type": "int | None"
+      },
+      {
+        "name": "confirm",
+        "type": "bool"
+      },
+      {
+        "name": "dry_run",
+        "type": "bool"
+      },
+      {
+        "name": "company_id",
+        "type": "int | None"
+      },
+      {
+        "name": "allowed_company_ids",
+        "type": "list[int] | None"
+      },
+      {
+        "name": "total_tolerance",
+        "type": "float"
+      },
+      {
+        "name": "vendor_create_policy",
+        "type": "str"
+      },
+      {
+        "name": "confirm_partner_create",
+        "type": "bool"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_get_view_by_xmlid",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "xmlid",
+        "type": "str"
+      },
+      {
+        "name": "include_inherited_chain",
+        "type": "bool"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_find_views_by_model",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "model",
+        "type": "str"
+      },
+      {
+        "name": "view_type",
+        "type": "str | None"
+      },
+      {
+        "name": "limit",
+        "type": "int"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_get_report_template",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "xmlid",
+        "type": "str"
+      }
+    ],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "odoo_scan_view_migration_issues",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "xmlid",
+        "type": "str"
+      },
+      {
+        "name": "target_version",
+        "type": "str | None"
+      },
+      {
+        "name": "rule_sets",
+        "type": "list[str] | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "general"
+  },
+  {
+    "name": "odoo_scan_report_migration_issues",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "xmlid",
+        "type": "str"
+      },
+      {
+        "name": "target_version",
+        "type": "str | None"
+      },
+      {
+        "name": "rule_sets",
+        "type": "list[str] | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "general"
+  },
+  {
+    "name": "odoo_propose_view_patch",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "xmlid",
+        "type": "str"
+      },
+      {
+        "name": "intent",
+        "type": "str"
+      },
+      {
+        "name": "constraints",
+        "type": "list[str] | None"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_propose_report_patch",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "xmlid",
+        "type": "str"
+      },
+      {
+        "name": "intent",
+        "type": "str"
+      },
+      {
+        "name": "constraints",
+        "type": "list[str] | None"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_validate_view_patch",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "base_view_xmlid",
+        "type": "str"
+      },
+      {
+        "name": "patch",
+        "type": "str"
+      },
+      {
+        "name": "strict",
+        "type": "bool"
+      },
+      {
+        "name": "target_version",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_validate_report_patch",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "report_xmlid",
+        "type": "str"
+      },
+      {
+        "name": "patch",
+        "type": "str"
+      },
+      {
+        "name": "strict",
+        "type": "bool"
+      },
+      {
+        "name": "target_version",
+        "type": "str | None"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_preview_view_patch",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "base_view_xmlid",
+        "type": "str"
+      },
+      {
+        "name": "patch",
+        "type": "str"
+      },
+      {
+        "name": "diff_format",
+        "type": "str"
+      }
+    ],
+    "risk_level": "read",
+    "category": "general"
+  },
+  {
+    "name": "odoo_preview_report_patch",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "report_xmlid",
+        "type": "str"
+      },
+      {
+        "name": "patch",
+        "type": "str"
+      },
+      {
+        "name": "diff_format",
+        "type": "str"
+      }
+    ],
+    "risk_level": "read",
+    "category": "general"
+  },
+  {
+    "name": "odoo_test_view_compilation",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "view_xmlid",
+        "type": "str"
+      },
+      {
+        "name": "context",
+        "type": "dict[str, Any] | None"
+      }
+    ],
+    "risk_level": "read",
+    "category": "general"
+  },
+  {
+    "name": "odoo_apply_view_patch_safe",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "base_view_xmlid",
+        "type": "str"
+      },
+      {
+        "name": "patch",
+        "type": "str"
+      },
+      {
+        "name": "strict",
+        "type": "bool"
+      },
+      {
+        "name": "confirm",
+        "type": "bool"
+      },
+      {
+        "name": "dry_run",
+        "type": "bool"
+      },
+      {
+        "name": "inherited_view_name",
+        "type": "str | None"
+      },
+      {
+        "name": "priority",
+        "type": "int"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_apply_report_patch_safe",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "report_xmlid",
+        "type": "str"
+      },
+      {
+        "name": "patch",
+        "type": "str"
+      },
+      {
+        "name": "strict",
+        "type": "bool"
+      },
+      {
+        "name": "confirm",
+        "type": "bool"
+      },
+      {
+        "name": "dry_run",
+        "type": "bool"
+      },
+      {
+        "name": "inherited_view_name",
+        "type": "str | None"
+      },
+      {
+        "name": "priority",
+        "type": "int"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_rollback_patch_safe",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "snapshot",
+        "type": "dict[str, Any]"
+      },
+      {
+        "name": "confirm",
+        "type": "bool"
+      },
+      {
+        "name": "dry_run",
+        "type": "bool"
+      }
+    ],
+    "risk_level": "destructive",
+    "category": "general"
+  },
+  {
+    "name": "odoo_assist_view_migration",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "xmlid",
+        "type": "str"
+      },
+      {
+        "name": "target_version",
+        "type": "str | None"
+      },
+      {
+        "name": "intent",
+        "type": "str | None"
+      },
+      {
+        "name": "constraints",
+        "type": "list[str] | None"
+      },
+      {
+        "name": "strict",
+        "type": "bool"
+      },
+      {
+        "name": "include_compile_test",
+        "type": "bool"
+      }
+    ],
+    "risk_level": "read",
+    "category": "general"
+  },
+  {
+    "name": "odoo_assist_report_migration",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "xmlid",
+        "type": "str"
+      },
+      {
+        "name": "target_version",
+        "type": "str | None"
+      },
+      {
+        "name": "intent",
+        "type": "str | None"
+      },
+      {
+        "name": "constraints",
+        "type": "list[str] | None"
+      },
+      {
+        "name": "strict",
+        "type": "bool"
+      }
+    ],
+    "risk_level": "read",
+    "category": "general"
+  },
+  {
+    "name": "odoo_visualize_view_patch",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "base_view_xmlid",
+        "type": "str"
+      },
+      {
+        "name": "patch",
+        "type": "str"
+      },
+      {
+        "name": "diff_format",
+        "type": "str"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_visualize_report_patch",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "report_xmlid",
+        "type": "str"
+      },
+      {
+        "name": "patch",
+        "type": "str"
+      },
+      {
+        "name": "diff_format",
+        "type": "str"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_batch_assist_view_migration",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "xmlids",
+        "type": "list[str]"
+      },
+      {
+        "name": "target_version",
+        "type": "str | None"
+      },
+      {
+        "name": "intent",
+        "type": "str | None"
+      },
+      {
+        "name": "constraints",
+        "type": "list[str] | None"
+      },
+      {
+        "name": "strict",
+        "type": "bool"
+      },
+      {
+        "name": "include_compile_test",
+        "type": "bool"
+      },
+      {
+        "name": "continue_on_error",
+        "type": "bool"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  },
+  {
+    "name": "odoo_batch_assist_report_migration",
+    "server": "odoo-mcp",
+    "description": "",
+    "has_docstring": false,
+    "params": [
+      {
+        "name": "xmlids",
+        "type": "list[str]"
+      },
+      {
+        "name": "target_version",
+        "type": "str | None"
+      },
+      {
+        "name": "intent",
+        "type": "str | None"
+      },
+      {
+        "name": "constraints",
+        "type": "list[str] | None"
+      },
+      {
+        "name": "strict",
+        "type": "bool"
+      },
+      {
+        "name": "continue_on_error",
+        "type": "bool"
+      }
+    ],
+    "risk_level": "write",
+    "category": "general"
+  }
+]
