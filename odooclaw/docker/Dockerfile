@@ -77,6 +77,9 @@ RUN chmod +x /usr/local/bin/whisper-stt-mcp.py
 # Copy OCR-invoice MCP server script (PDF/document tools)
 COPY workspace/skills/ocr-invoice/server.py /usr/local/bin/ocr-invoice-mcp.py
 RUN chmod +x /usr/local/bin/ocr-invoice-mcp.py
+# 4-layer pipeline engine (OCR_MODE=pipeline): pipeline.py must sit next to the MCP script
+COPY workspace/skills/ocr-invoice/pipeline.py /usr/local/bin/pipeline.py
+RUN chmod +x /usr/local/bin/pipeline.py
 
 # Copy RLM-utils MCP server script (needs shebang for exec format)
 COPY workspace/skills/rlm-utils/server.py /usr/local/bin/rlm-utils-mcp.py
