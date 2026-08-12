@@ -1,13 +1,11 @@
 {
   "version": "1.0.0",
-  "generated_at": "2026-08-12T13:35:19.638462+00:00",
   "seed": 42,
-  "repo_root": "/Users/nramos/nas-development/multica/899260c8-661d-4b6b-9635-ceae4fcfc473/d4760db0/workdir/odooclaw",
-  "tools_count": 124,
-  "examples_count": 375,
+  "tools_count": 134,
+  "examples_count": 516,
   "files": {
-    "metadata": "/Users/nramos/nas-development/multica/899260c8-661d-4b6b-9635-ceae4fcfc473/d4760db0/workdir/odooclaw/scripts/dataset_pipeline/output/metadata.json",
-    "dataset": "/Users/nramos/nas-development/multica/899260c8-661d-4b6b-9635-ceae4fcfc473/d4760db0/workdir/odooclaw/scripts/dataset_pipeline/output/dataset.jsonl",
-    "validation": "/Users/nramos/nas-development/multica/899260c8-661d-4b6b-9635-ceae4fcfc473/d4760db0/workdir/odooclaw/scripts/dataset_pipeline/output/validation_report.json"
+    "metadata": "metadata.json",
+    "dataset": "dataset.jsonl",
+    "validation": "validation_report.json"
   }
 }

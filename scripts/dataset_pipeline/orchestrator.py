@@ -42,8 +42,9 @@ def run_stage(name, cmd_args, env=None):
     if result.stdout:
         print(result.stdout, file=sys.stderr)
     if result.stderr:
-        # Only print non-stderr (parser/generator use stderr for progress)
-        pass
+        # Print stderr from all stages (parser/generator use it for progress,
+        # validator uses it for warnings — we must surface those)
+        print(result.stderr, file=sys.stderr)
 
     return result.returncode == 0, result.stderr
 
@@ -120,9 +121,10 @@ def main():
     print("█"*50, file=sys.stderr)
 
     validator_script = os.path.join(SCRIPT_DIR, "validator.py")
+    env = {"VALIDATION_REPORT_PATH": validation_path}
     success, _ = run_stage("Validate", [
         sys.executable, validator_script, dataset_path, metadata_path,
-    ])
+    ], env=env)
 
     if not success:
         print("WARNING: Validation found issues. Check validation_report.json.", file=sys.stderr)
@@ -134,15 +136,13 @@ def main():
 
     manifest = {
         "version": "1.0.0",
-        "generated_at": datetime.now(timezone.utc).isoformat(),
         "seed": seed,
-        "repo_root": repo_root,
         "tools_count": len(metadata),
         "examples_count": example_count,
         "files": {
-            "metadata": metadata_path,
-            "dataset": dataset_path,
-            "validation": validation_path,
+            "metadata": "metadata.json",
+            "dataset": "dataset.jsonl",
+            "validation": "validation_report.json",
         },
     }
 

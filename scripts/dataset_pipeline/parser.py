@@ -117,7 +117,7 @@ def parse_odoo_mcp(server_py: str) -> list[dict]:
 def parse_build_tools_servers(repo_root: str) -> list[dict]:
     """Parse servers that expose tools via build_tools() returning JSON dicts."""
     skills_dir = os.path.join(
-        repo_root, "odooclaw", "workspace", "workspace", "skills"
+        repo_root, "odooclaw", "workspace", "skills"
     )
     tools = []
 
@@ -250,9 +250,6 @@ def _classify_risk(name: str, docstring: str) -> str:
 
     if any(kw in name_lower for kw in _DESTRUCTIVE_KEYWORDS):
         return "destructive"
-
-    if any(kw in name_lower for kw in _WRITE_KEYWORDS):
-        return "write"
 
     if any(kw in name_lower for kw in _WRITE_KEYWORDS):
         return "write"

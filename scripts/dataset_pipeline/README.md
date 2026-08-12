@@ -29,9 +29,10 @@ No hand-written datasets. Fully reproducible: change an MCP tool → regenerate 
 python scripts/dataset_pipeline/orchestrator.py /path/to/odooclaw --seed 42
 
 # Output goes to: scripts/dataset_pipeline/output/
-#   - metadata.json   (parsed tool metadata)
-#   - dataset.jsonl   (training examples)
-#   - manifest.json   (pipeline metadata)
+#   - metadata.json        (parsed tool metadata)
+#   - dataset.jsonl        (training examples)
+#   - validation_report.json (quality report from validator)
+#   - manifest.json        (pipeline metadata)
 ```
 
 ### Individual stages
@@ -45,6 +46,9 @@ python scripts/dataset_pipeline/generator.py metadata.json --output dataset.json
 
 # 3. Validate the dataset
 python scripts/dataset_pipeline/validator.py dataset.jsonl metadata.json
+
+# 4. Check the validation report
+cat scripts/dataset_pipeline/output/validation_report.json
 ```
 
 ### Soup integration
@@ -61,7 +65,7 @@ The parser handles all 134 MCP tools across 5 servers:
 
 | Server | Tools | Source Pattern |
 |--------|-------|----------------|
-| odoo-mcp | ~124 | `@mcp.tool()` decorators in server.py |
+| odoo-mcp | 124 | `@mcp.tool()` decorators in server.py |
 | rlm-utils | 2 | `build_tools()` returning JSON schema dicts |
 | ocr-invoice | 2 | `build_tools()` returning JSON schema dicts |
 | edge-tts | 2 | `build_tools()` returning JSON schema dicts |

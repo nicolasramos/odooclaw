@@ -13,14 +13,15 @@ Usage:
 """
 
 import json
+import os
 import re
 import sys
 from collections import Counter
 
 
-# LFM native format pattern
+# LFM native format pattern — tool names may contain hyphens (e.g. edge-tts-synthesize)
 TOOL_CALL_PATTERN = re.compile(
-    r"<\|tool_call_start\|>mcp_(?:odoo-mcp|(\w+(?:-\w+)?))_(\w+)\((.*)\)<\|tool_call_end\|>"
+    r"<\|tool_call_start\|>mcp_(?:odoo-mcp|(\w+(?:-\w+)?))_([\w-]+)\((.*)\)<\|tool_call_end\|>"
 )
 
 
@@ -55,12 +56,14 @@ def validate_dataset(dataset_path: str, metadata_path: str, fail_on_warnings: bo
             if field not in ex:
                 issues.append(f"Line {i+1}: missing field '{field}'")
 
-        # Validate tool_call format in assistant
+        # Validate tool_call format in assistant — must have valid mcp_ call
         if "assistant" in ex and isinstance(ex["assistant"], str):
             matches = TOOL_CALL_PATTERN.findall(ex["assistant"])
             if not matches:
-                # Not all examples need tool calls (some are pure user queries)
-                pass
+                # Check if it contains a tool_call marker but with broken format
+                if "<|tool_call_start|>" in ex["assistant"] and "<|tool_call_end|>" in ex["assistant"]:
+                    issues.append(f"Line {i+1}: broken tool_call format (missing valid mcp_ call)")
+                    stats["format_errors"] += 1
 
         # Check category is valid
         valid_cats = {"tool_selection", "argument_filling", "error_handling", "multi_turn"}
@@ -119,6 +122,18 @@ def validate_dataset(dataset_path: str, metadata_path: str, fail_on_warnings: bo
             "empty_examples": stats["empty_examples"],
         },
     }
+
+    # Write validation report to disk (for orchestrator and CI consumption)
+    report_path = os.environ.get("VALIDATION_REPORT_PATH", "validation_report.json")
+    try:
+        report_dir = os.path.dirname(report_path)
+        if report_dir:
+            os.makedirs(report_dir, exist_ok=True)
+        with open(report_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2, ensure_ascii=False)
+        print(f"Validation report written to {report_path}", file=sys.stderr)
+    except OSError as e:
+        print(f"WARNING: could not write validation report: {e}", file=sys.stderr)
 
     return result
 

@@ -2944,5 +2944,95 @@
     ],
     "risk_level": "write",
     "category": "general"
+  },
+  {
+    "name": "rlm_partition",
+    "server": "rlm-utils",
+    "description": "[RLM] Divide a large list of Odoo records into smaller JSON files in the workspace. Use this to avoid context window flooding or context rot. After partitioning, launch sub-agents with 'spawn' or 'subagent' tool to process each chunk individually.",
+    "has_docstring": false,
+    "params": [],
+    "risk_level": "read",
+    "category": "rlm"
+  },
+  {
+    "name": "rlm_aggregate",
+    "server": "rlm-utils",
+    "description": "[RLM] Combine results from multiple chunk files into a single report or list. Use this at the end of a recursive process ('Reduce' step).",
+    "has_docstring": false,
+    "params": [],
+    "risk_level": "read",
+    "category": "rlm"
+  },
+  {
+    "name": "ocr-invoice",
+    "server": "ocr-invoice",
+    "description": "Extract structured invoice data from an Odoo attachment (PDF/image).",
+    "has_docstring": false,
+    "params": [],
+    "risk_level": "read",
+    "category": "sales"
+  },
+  {
+    "name": "ocr-create-vendor-bill",
+    "server": "ocr-invoice",
+    "description": "Extract invoice data from attachment and create vendor bill in Odoo (account.move in_invoice).",
+    "has_docstring": false,
+    "params": [],
+    "risk_level": "write",
+    "category": "ocr"
+  },
+  {
+    "name": "ocr-create-employee-expense",
+    "server": "ocr-invoice",
+    "description": "Extract expense receipt data from attachment and create an employee expense in Odoo (hr.expense).",
+    "has_docstring": false,
+    "params": [],
+    "risk_level": "write",
+    "category": "ocr"
+  },
+  {
+    "name": "ocr-create-mileage-expense",
+    "server": "ocr-invoice",
+    "description": "Extract mileage data from attachment and create a mileage expense in Odoo (hr.expense).",
+    "has_docstring": false,
+    "params": [],
+    "risk_level": "write",
+    "category": "ocr"
+  },
+  {
+    "name": "edge-tts-synthesize",
+    "server": "edge-tts",
+    "description": "Text to convert to speech (max ~1000 chars recommended)",
+    "has_docstring": false,
+    "params": [],
+    "risk_level": "read",
+    "category": "voice"
+  },
+  {
+    "name": "edge-tts-list-voices",
+    "server": "edge-tts",
+    "description": "List all available Edge TTS voices with their language and description.",
+    "has_docstring": false,
+    "params": [],
+    "risk_level": "read",
+    "category": "records"
+  },
+  {
+    "name": "whisper-transcribe",
+    "server": "whisper-stt",
+    "description": "The Odoo ir.attachment record ID to transcribe",
+    "has_docstring": false,
+    "params": [],
+    "risk_level": "read",
+    "category": "voice"
+  },
+  {
+    "name": "whisper-list-methods",
+    "server": "whisper-stt",
+    "description": "List available transcription methods and their status.",
+    "has_docstring": false,
+    "params": [],
+    "risk_level": "read",
+    "category": "records"
   }
 ]

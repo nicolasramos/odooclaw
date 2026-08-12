@@ -1,0 +1,19 @@
+{
+  "valid": true,
+  "issues": [],
+  "warnings": [],
+  "stats": {
+    "total_examples": 516,
+    "categories": {
+      "argument_filling": 134,
+      "tool_selection": 114,
+      "multi_turn": 134,
+      "error_handling": 134
+    },
+    "tools_covered": 134,
+    "tools_total": 134,
+    "tool_coverage_pct": 100.0,
+    "format_errors": 0,
+    "empty_examples": 0
+  }
+}

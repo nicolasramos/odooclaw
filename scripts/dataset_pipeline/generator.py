@@ -110,18 +110,18 @@ def _gen_odoo_selection(name: str, params: list, category: str) -> list[dict]:
     # Search/read tools
     if category == "records" and any(kw in name for kw in ["search", "read", "find"]):
         if any(p["name"] == "model" for p in params):
-            # Partner search
+            # Partner search — use model + domain (not partner_id)
             for partner in _pick_n(PARTNER_NAMES, 3):
                 examples.append({
                     "user": f"Busca al cliente {partner}",
-                    "assistant": f"<|tool_call_start|>mcp_odoo-mcp_{name}(model=\"res.partner\", domain=[[\"customer_rank\", \">\", 0]])<|tool_call_end|>",
+                    "assistant": f"<|tool_call_start|>mcp_odoo-mcp_{name}(model=\"res.partner\", domain=[[\"name\", \"ilike\", \"{partner}\"]])<|tool_call_end|>",
                     "category": "tool_selection",
                     "tool_name": name,
                 })
             for partner in _pick_n(PARTNER_NAMES, 2):
                 examples.append({
                     "user": f"Find partner {partner}",
-                    "assistant": f"<|tool_call_start|>mcp_odoo-mcp_{name}(model=\"res.partner\", domain=[[\"customer_rank\", \">\", 0]])<|tool_call_end|>",
+                    "assistant": f"<|tool_call_start|>mcp_odoo-mcp_{name}(model=\"res.partner\", domain=[[\"name\", \"ilike\", \"{partner}\"]])<|tool_call_end|>",
                     "category": "tool_selection",
                     "tool_name": name,
                 })
@@ -146,21 +146,21 @@ def _gen_odoo_selection(name: str, params: list, category: str) -> list[dict]:
                     "tool_name": name,
                 })
 
-        # Product search
+        # Product search — use name domain, not model=
         if any(kw in name for kw in ["product", "stock"]):
             for product in _pick_n(PRODUCT_NAMES, 2):
                 examples.append({
                     "user": f"Busca el producto {product}",
-                    "assistant": f"<|tool_call_start|>mcp_odoo-mcp_{name}(model=\"product.product\")<|tool_call_end|>",
+                    "assistant": f"<|tool_call_start|>mcp_odoo-mcp_{name}(model=\"product.product\", domain=[[\"name\", \"ilike\", \"{product}\"]])<|tool_call_end>",
                     "category": "tool_selection",
                     "tool_name": name,
                 })
 
-        # Inventory/stock tools
+        # Inventory/stock tools — use domain for filtering, not partner_id
         if any(kw in name for kw in ["inventory", "stock", "location", "transfer", "receipt", "delivery"]):
             examples.append({
                 "user": "Revisa el inventario actual",
-                "assistant": f"<|tool_call_start|>mcp_odoo-mcp_{name}()<|tool_call_end|>",
+                "assistant": f"<|tool_call_start|>mcp_odoo-mcp_{name}(model=\"stock.quant\")<|tool_call_end>",
                 "category": "tool_selection",
                 "tool_name": name,
             })
@@ -169,16 +169,16 @@ def _gen_odoo_selection(name: str, params: list, category: str) -> list[dict]:
         if any(kw in name for kw in ["purchase"]):
             examples.append({
                 "user": "Busca órdenes de compra pendientes",
-                "assistant": f"<|tool_call_start|>mcp_odoo-mcp_{name}()<|tool_call_end|>",
+                "assistant": f"<|tool_call_start|>mcp_odoo-mcp_{name}(model=\"purchase.order\")<|tool_call_end>",
                 "category": "tool_selection",
                 "tool_name": name,
             })
 
-        # General record search
+        # General record search — use model + domain, not partner_id
         if not any(kw in name for kw in ["partner", "task", "sale", "product", "inventory", "stock", "purchase"]):
             examples.append({
                 "user": "Busca registros en el sistema",
-                "assistant": f"<|tool_call_start|>mcp_odoo-mcp_{name}(model=\"sale.order\")<|tool_call_end|>",
+                "assistant": f"<|tool_call_start|>mcp_odoo-mcp_{name}(model=\"sale.order\", domain=[[\"state\", \"=\", \"draft\"]])<|tool_call_end>",
                 "category": "tool_selection",
                 "tool_name": name,
             })
@@ -272,7 +272,7 @@ def _gen_odoo_selection(name: str, params: list, category: str) -> list[dict]:
         elif name == "odoo_reconcile_bank_line":
             examples.append({
                 "user": "Reconcilia la línea bancaria 100",
-                "assistant": f"<|tool_call_start|>mcp_odoo-mcp_{name}(line_id=100)<|tool_call_end|>",
+                "assistant": f"<|tool_call_start|>mcp_odoo-mcp_{name}(statement_line_id=100)<|tool_call_end>",
                 "category": "tool_selection",
                 "tool_name": name,
             })
@@ -524,16 +524,20 @@ def gen_error_handling(tool: dict) -> list[dict]:
     examples = []
 
     if server == "odoo-mcp":
+        # Build a realistic tool call with proper args for error recovery
+        param_defaults = ", ".join(f'{p["name"]}=None' for p in tool["params"][:3])
         examples.append({
             "user": f"Error al llamar a {name}: permission denied",
-            "assistant": f"<|tool_call_start|>mcp_odoo-mcp_{name}(...)<|tool_call_end|>\n\n[Error: permission denied — verificar permisos de usuario]",
+            "assistant": f"<|tool_call_start|>mcp_odoo-mcp_{name}({param_defaults})<|tool_call_end>\n\n[Error: permission denied — verificar permisos de usuario]",
             "category": "error_handling",
             "tool_name": name,
         })
     else:
+        server_prefix = name.split("-")[0] if "-" in name else "utils"
+        param_defaults = ", ".join(f'{p["name"]}=None' for p in tool["params"][:3])
         examples.append({
             "user": f"Error en {name}: servicio no disponible",
-            "assistant": f"<|tool_call_start|>mcp_{name}_{name}(...)<|tool_call_end|>\n\n[Error: servicio no disponible — verificar configuración]",
+            "assistant": f"<|tool_call_start|>mcp_{server_prefix}_{name}({param_defaults})<|tool_call_end>\n\n[Error: servicio no disponible — verificar configuración]",
             "category": "error_handling",
             "tool_name": name,
         })
@@ -605,19 +609,15 @@ def generate_dataset(metadata: list[dict], seed: int = 42) -> list[dict]:
         # Multi-turn examples (1 per tool)
         all_examples.extend(gen_multi_turn(tool))
 
-    # Global dedup by final user query content
-    seen_queries = set()
+    # Global dedup by tool_name + category (not by last user message,
+    # which is identical across all tools and collapses multi_turn to 1)
+    seen_keys = set()
     unique_examples = []
     for ex in all_examples:
-        # For multi_turn, the last user message is the key
-        if ex["category"] == "multi_turn":
-            query = ex["user"][-1] if isinstance(ex["user"], list) else ex["user"]
-        else:
-            query = ex["user"]
-
-        query_hash = hashlib.md5(query.encode()).hexdigest()
-        if query_hash not in seen_queries:
-            seen_queries.add(query_hash)
+        # Dedup key: (tool_name, category) — each tool gets one example per category
+        key = f"{ex['tool_name']}::{ex['category']}"
+        if key not in seen_keys:
+            seen_keys.add(key)
             unique_examples.append(ex)
 
     # Shuffle for training variety
