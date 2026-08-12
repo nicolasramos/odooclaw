@@ -267,7 +267,7 @@ def get_odoo_models() -> str:
 @mcp.resource("odoo://model/{model_name}/schema")
 def get_model_schema(model_name: str) -> str:
     client = get_odoo_client()
-    return introspection.odoo_model_schema(client, client.odoo_session.uid, model_name)
+    return introspection.odoo_model_schema(client, client.odoo_session.get_uid(), model_name)
 
 
 @mcp.resource("odoo://record/{model}/{id}/summary")
@@ -276,7 +276,7 @@ def get_resource_record_summary(model: str, id: str) -> str:
     import json
 
     res = generic.odoo_get_record_summary(
-        client, client.odoo_session.uid, model, int(id)
+        client, client.odoo_session.get_uid(), model, int(id)
     )
     return json.dumps(res, indent=2)
 
@@ -288,7 +288,7 @@ def get_resource_chatter_summary(model: str, id: str) -> str:
 
     from odoo_mcp.services.generic_service import get_chatter_summary
 
-    res = get_chatter_summary(client, client.odoo_session.uid, model, int(id))
+    res = get_chatter_summary(client, client.odoo_session.get_uid(), model, int(id))
     return json.dumps(res, indent=2)
 
 
@@ -304,7 +304,7 @@ def odoo_search(
         client = get_odoo_client()
         return records.odoo_search(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             model,
             domain or [],
             limit,
@@ -323,7 +323,7 @@ def odoo_search_read(
         client = get_odoo_client()
         return records.odoo_search_read(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             model,
             domain or [],
             fields,
@@ -342,7 +342,7 @@ def odoo_read(
         client = get_odoo_client()
         return records.odoo_read(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             model,
             ids,
             fields,
@@ -359,7 +359,7 @@ def odoo_create(
         client = get_odoo_client()
         return records.odoo_create(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             model,
             values,
         )
@@ -376,7 +376,7 @@ def odoo_write(
         client = get_odoo_client()
         return records.odoo_write(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             model,
             ids,
             values,
@@ -394,7 +394,7 @@ def odoo_invoke_action(
         client = get_odoo_client()
         return actions.odoo_invoke_action(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             model,
             method,
             ids,
@@ -412,7 +412,7 @@ def odoo_find_partner(
         client = get_odoo_client()
         return partners.odoo_find_partner(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             name,
             vat,
             email,
@@ -427,7 +427,7 @@ def odoo_get_partner_summary(
     with measure_time("odoo_get_partner_summary"):
         client = get_odoo_client()
         return partners.odoo_get_partner_summary(
-            client, sender_id or client.odoo_session.uid, partner_id
+            client, sender_id or client.odoo_session.get_uid(), partner_id
         )
 
 
@@ -445,7 +445,7 @@ def odoo_create_activity(
         client = get_odoo_client()
         return chatter.odoo_create_activity(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             model,
             res_id,
             summary,
@@ -465,7 +465,7 @@ def odoo_list_pending_activities(
         client = get_odoo_client()
         return chatter.odoo_list_pending_activities(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             model,
             user_id,
         )
@@ -481,7 +481,7 @@ def odoo_mark_activity_done(
         client = get_odoo_client()
         return chatter.odoo_mark_activity_done(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             activity_id,
             feedback,
         )
@@ -498,7 +498,7 @@ def odoo_post_chatter_message(
         client = get_odoo_client()
         return chatter.odoo_post_chatter_message(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             model,
             res_id,
             body,
@@ -517,7 +517,7 @@ def odoo_find_task(
         client = get_odoo_client()
         return projects.odoo_find_task(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             name,
             project_id,
             stage_id,
@@ -538,7 +538,7 @@ def odoo_create_task(
         client = get_odoo_client()
         return projects.odoo_create_task(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             name,
             project_id,
             description,
@@ -559,7 +559,7 @@ def odoo_update_task(
         client = get_odoo_client()
         return projects.odoo_update_task(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             task_id,
             stage_id,
             assigned_to,
@@ -580,7 +580,7 @@ def odoo_find_my_tasks(
         client = get_odoo_client()
         return projects.odoo_find_my_tasks(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             project_id,
             state,
             date_deadline_from,
@@ -601,7 +601,7 @@ def odoo_update_task_status(
         client = get_odoo_client()
         return projects.odoo_update_task_status(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             task_id,
             stage_id,
             stage_name,
@@ -621,7 +621,7 @@ def odoo_find_sale_order(
         client = get_odoo_client()
         return sales.odoo_find_sale_order(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             name,
             partner_id,
             state,
@@ -637,7 +637,7 @@ def odoo_get_sale_order_summary(
     with measure_time("odoo_get_sale_order_summary"):
         client = get_odoo_client()
         return sales.odoo_get_sale_order_summary(
-            client, sender_id or client.odoo_session.uid, order_id
+            client, sender_id or client.odoo_session.get_uid(), order_id
         )
 
 
@@ -651,7 +651,7 @@ def odoo_get_record_summary(
         client = get_odoo_client()
         return generic.odoo_get_record_summary(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             model,
             res_id,
         )
@@ -667,7 +667,7 @@ def odoo_create_purchase_order(
         client = get_odoo_client()
         return purchases.odoo_create_purchase_order(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             partner_id,
             [line.dict() for line in lines],
         )
@@ -684,7 +684,7 @@ def odoo_create_vendor_invoice(
         client = get_odoo_client()
         return accounting.odoo_create_vendor_invoice(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             partner_id,
             [line.dict() for line in lines],
             ref,
@@ -714,7 +714,7 @@ def odoo_find_pending_invoices(
         client = get_odoo_client()
         return find_pending_invoices(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             partner_id,
             move_type,
             limit,
@@ -730,7 +730,7 @@ def odoo_get_invoice_summary(
     with measure_time("odoo_get_invoice_summary"):
         client = get_odoo_client()
         return get_invoice_summary(
-            client, sender_id or client.odoo_session.uid, move_id
+            client, sender_id or client.odoo_session.get_uid(), move_id
         )
 
 
@@ -745,7 +745,7 @@ def odoo_get_model_schema(
     with measure_time("odoo_get_model_schema"):
         client = get_odoo_client()
         return introspection.odoo_model_schema(
-            client, sender_id or client.odoo_session.uid, model
+            client, sender_id or client.odoo_session.get_uid(), model
         )
 
 
@@ -756,7 +756,7 @@ def odoo_get_capabilities(
     with measure_time("odoo_get_capabilities"):
         client = get_odoo_client()
         return business_ops.odoo_get_capabilities(
-            client, sender_id or client.odoo_session.uid
+            client, sender_id or client.odoo_session.get_uid()
         )
 
 
@@ -774,7 +774,7 @@ def odoo_create_helpdesk_ticket(
         client = get_odoo_client()
         return business_ops.odoo_create_helpdesk_ticket(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             name,
             description,
             partner_id,
@@ -797,7 +797,7 @@ def odoo_create_helpdesk_ticket_from_partner(
         client = get_odoo_client()
         return business_ops.odoo_create_helpdesk_ticket_from_partner(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             partner_id,
             name,
             description,
@@ -819,7 +819,7 @@ def odoo_create_activity_summary(
         client = get_odoo_client()
         return business_ops.odoo_create_activity_summary(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             model,
             res_id,
             summary,
@@ -838,7 +838,7 @@ def odoo_close_activity_with_reason(
         client = get_odoo_client()
         return business_ops.odoo_close_activity_with_reason(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             activity_id,
             reason,
         )
@@ -856,7 +856,7 @@ def odoo_draft_ticket_email(
         client = get_odoo_client()
         return business_ops.odoo_draft_ticket_email(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             ticket_id,
             subject,
             body,
@@ -879,7 +879,7 @@ def odoo_create_contract_line(
         client = get_odoo_client()
         return business_ops.odoo_create_contract_line(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             contract_id,
             product_id,
             name,
@@ -906,7 +906,7 @@ def odoo_replace_contract_line(
         client = get_odoo_client()
         return business_ops.odoo_replace_contract_line(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             line_id,
             product_id,
             name,
@@ -929,7 +929,7 @@ def odoo_close_contract_line(
         client = get_odoo_client()
         return business_ops.odoo_close_contract_line(
             client,
-            sender_id or client.odoo_session.uid,
+            sender_id or client.odoo_session.get_uid(),
             line_id,
             reason,
             close_date,
@@ -953,7 +953,7 @@ def odoo_create_calendar_event(
         client = get_odoo_client()
         return create_calendar_event(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             name=name,
             start=start,
             stop=stop,
@@ -974,7 +974,7 @@ def odoo_create_sale_order(
         client = get_odoo_client()
         return create_sale_order(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             partner_id=partner_id,
             lines=lines,
         )
@@ -990,7 +990,7 @@ def odoo_confirm_sale_order(
         client = get_odoo_client()
         return confirm_sale_order(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             order_id=order_id,
         )
 
@@ -1009,7 +1009,7 @@ def odoo_create_lead(
         client = get_odoo_client()
         return create_lead(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             name=name,
             partner_id=partner_id,
             expected_revenue=expected_revenue,
@@ -1029,7 +1029,7 @@ def odoo_get_product_stock(
         client = get_odoo_client()
         return get_product_stock(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             product_id=product_id,
             location_id=location_id,
         )
@@ -1050,7 +1050,7 @@ def odoo_log_timesheet(
         client = get_odoo_client()
         return log_timesheet(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             project_id=project_id,
             name=name,
             unit_amount=unit_amount,
@@ -1074,7 +1074,7 @@ def odoo_find_attendance(
         client = get_odoo_client()
         return find_attendance(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             user_id=user_id,
             employee_id=employee_id,
             date_from=date_from,
@@ -1097,7 +1097,7 @@ def odoo_log_task_timesheet(
         client = get_odoo_client()
         return log_task_timesheet(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             task_id=task_id,
             name=name,
             unit_amount=unit_amount,
@@ -1117,7 +1117,7 @@ def odoo_check_in(
         client = get_odoo_client()
         return check_in(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             employee_id=employee_id,
             check_in_at=check_in_at,
         )
@@ -1134,7 +1134,7 @@ def odoo_check_out(
         client = get_odoo_client()
         return check_out(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             employee_id=employee_id,
             check_out_at=check_out_at,
         )
@@ -1149,7 +1149,7 @@ def odoo_get_my_today_summary(
         client = get_odoo_client()
         return get_my_today_summary(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             employee_id=employee_id,
         )
 
@@ -1166,7 +1166,7 @@ def odoo_find_missing_timesheets(
         client = get_odoo_client()
         return find_missing_timesheets(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             employee_id=employee_id,
             date_from=date_from,
             date_to=date_to,
@@ -1186,7 +1186,7 @@ def odoo_suggest_timesheet_from_attendance(
         client = get_odoo_client()
         return suggest_timesheet_from_attendance(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             employee_id=employee_id,
             date_from=date_from,
             date_to=date_to,
@@ -1207,7 +1207,7 @@ def odoo_create_expense_report(
         client = get_odoo_client()
         return create_expense_report(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             name=name,
             expense_ids=expense_ids,
             employee_id=employee_id,
@@ -1225,7 +1225,7 @@ def odoo_submit_expense_report(
         client = get_odoo_client()
         return submit_expense_report(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             sheet_id=sheet_id,
         )
 
@@ -1241,7 +1241,7 @@ def odoo_approve_expense(
         client = get_odoo_client()
         return approve_expense(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             sheet_id=sheet_id,
             approve=approve,
             reason=reason,
@@ -1258,7 +1258,7 @@ def odoo_notify_pending_actions(
         client = get_odoo_client()
         return notify_pending_actions(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             employee_id=employee_id,
             days_back=days_back,
         )
@@ -1277,7 +1277,7 @@ def odoo_register_payment(
         client = get_odoo_client()
         return register_payment(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             invoice_id=invoice_id,
             amount=amount,
             payment_date=payment_date,
@@ -1299,7 +1299,7 @@ def odoo_find_unreconciled_bank_lines(
         client = get_odoo_client()
         return find_unreconciled_bank_lines(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             journal_id=journal_id,
             date_from=date_from,
             date_to=date_to,
@@ -1321,7 +1321,7 @@ def odoo_suggest_bank_reconciliation(
         client = get_odoo_client()
         return suggest_bank_reconciliation(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             statement_line_id=statement_line_id,
             tolerance_amount=tolerance_amount,
             days_window=days_window,
@@ -1340,7 +1340,7 @@ def odoo_reconcile_bank_line(
         client = get_odoo_client()
         return reconcile_bank_line(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             statement_line_id=statement_line_id,
             move_line_ids=move_line_ids,
             confirm=confirm,
@@ -1360,7 +1360,7 @@ def odoo_register_invoice_payment(
         client = get_odoo_client()
         return register_invoice_payment(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             invoice_id=invoice_id,
             amount=amount,
             payment_date=payment_date,
@@ -1381,7 +1381,7 @@ def odoo_get_ar_ap_aging(
         client = get_odoo_client()
         return get_ar_ap_aging(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             report_type=report_type,
             as_of=as_of,
             company_id=company_id,
@@ -1400,7 +1400,7 @@ def odoo_run_period_close_checks(
         client = get_odoo_client()
         return run_period_close_checks(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             period_start=period_start,
             period_end=period_end,
             company_id=company_id,
@@ -1420,7 +1420,7 @@ def odoo_create_journal_entry(
         client = get_odoo_client()
         return create_journal_entry(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             journal_id=journal_id,
             entry_date=date,
             lines=[line.model_dump(exclude_none=True) for line in lines],
@@ -1439,7 +1439,7 @@ def odoo_post_journal_entry(
         client = get_odoo_client()
         return post_journal_entry(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             move_id=move_id,
             confirm=confirm,
         )
@@ -1457,7 +1457,7 @@ def odoo_get_tax_summary(
         client = get_odoo_client()
         return get_tax_summary(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             date_from=date_from,
             date_to=date_to,
             company_id=company_id,
@@ -1479,7 +1479,7 @@ def odoo_validate_vendor_bill_duplicate(
         client = get_odoo_client()
         return validate_vendor_bill_duplicate(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             partner_id=partner_id,
             vendor_bill_number=vendor_bill_number,
             invoice_date=invoice_date,
@@ -1502,7 +1502,7 @@ def odoo_suggest_expense_account_and_taxes(
         client = get_odoo_client()
         return suggest_expense_account_and_taxes(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             description=description,
             amount=amount,
             partner_id=partner_id,
@@ -1525,7 +1525,7 @@ def odoo_create_vendor_bill_from_ocr_validated(
         client = get_odoo_client()
         return create_vendor_bill_from_ocr_validated(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             ocr_payload=ocr_payload,
             attachment_id=attachment_id,
             confirm=confirm,
@@ -1545,7 +1545,7 @@ def odoo_get_view_by_xmlid(
         client = get_odoo_client()
         return get_view_by_xmlid(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             xmlid=xmlid,
             include_inherited_chain=include_inherited_chain,
         )
@@ -1562,7 +1562,7 @@ def odoo_find_views_by_model(
         client = get_odoo_client()
         return find_views_by_model(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             model=model,
             view_type=view_type,
             limit=limit,
@@ -1578,7 +1578,7 @@ def odoo_get_report_template(
         client = get_odoo_client()
         return get_report_template(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             xmlid=xmlid,
         )
 
@@ -1594,7 +1594,7 @@ def odoo_scan_view_migration_issues(
         client = get_odoo_client()
         return scan_view_migration_issues(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             xmlid=xmlid,
             target_version=target_version,
             rule_sets=rule_sets,
@@ -1612,7 +1612,7 @@ def odoo_scan_report_migration_issues(
         client = get_odoo_client()
         return scan_report_migration_issues(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             xmlid=xmlid,
             target_version=target_version,
             rule_sets=rule_sets,
@@ -1630,7 +1630,7 @@ def odoo_propose_view_patch(
         client = get_odoo_client()
         return propose_view_patch(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             xmlid=xmlid,
             intent=intent,
             constraints=constraints,
@@ -1648,7 +1648,7 @@ def odoo_propose_report_patch(
         client = get_odoo_client()
         return propose_report_patch(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             xmlid=xmlid,
             intent=intent,
             constraints=constraints,
@@ -1667,7 +1667,7 @@ def odoo_validate_view_patch(
         client = get_odoo_client()
         return validate_view_patch(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             base_view_xmlid=base_view_xmlid,
             patch=patch,
             strict=strict,
@@ -1687,7 +1687,7 @@ def odoo_validate_report_patch(
         client = get_odoo_client()
         return validate_report_patch(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             report_xmlid=report_xmlid,
             patch=patch,
             strict=strict,
@@ -1706,7 +1706,7 @@ def odoo_preview_view_patch(
         client = get_odoo_client()
         return preview_view_patch(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             base_view_xmlid=base_view_xmlid,
             patch=patch,
             diff_format=diff_format,
@@ -1724,7 +1724,7 @@ def odoo_preview_report_patch(
         client = get_odoo_client()
         return preview_report_patch(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             report_xmlid=report_xmlid,
             patch=patch,
             diff_format=diff_format,
@@ -1741,7 +1741,7 @@ def odoo_test_view_compilation(
         client = get_odoo_client()
         return test_view_compilation(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             view_xmlid=view_xmlid,
             context=context,
         )
@@ -1762,7 +1762,7 @@ def odoo_apply_view_patch_safe(
         client = get_odoo_client()
         return apply_view_patch_safe(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             base_view_xmlid=base_view_xmlid,
             patch=patch,
             strict=strict,
@@ -1788,7 +1788,7 @@ def odoo_apply_report_patch_safe(
         client = get_odoo_client()
         return apply_report_patch_safe(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             report_xmlid=report_xmlid,
             patch=patch,
             strict=strict,
@@ -1810,7 +1810,7 @@ def odoo_rollback_patch_safe(
         client = get_odoo_client()
         return rollback_patch_safe(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             snapshot=snapshot,
             confirm=confirm,
             dry_run=dry_run,
@@ -1831,7 +1831,7 @@ def odoo_assist_view_migration(
         client = get_odoo_client()
         return assist_view_migration(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             xmlid=xmlid,
             target_version=target_version,
             intent=intent,
@@ -1854,7 +1854,7 @@ def odoo_assist_report_migration(
         client = get_odoo_client()
         return assist_report_migration(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             xmlid=xmlid,
             target_version=target_version,
             intent=intent,
@@ -1874,7 +1874,7 @@ def odoo_visualize_view_patch(
         client = get_odoo_client()
         return visualize_view_patch(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             base_view_xmlid=base_view_xmlid,
             patch=patch,
             diff_format=diff_format,
@@ -1892,7 +1892,7 @@ def odoo_visualize_report_patch(
         client = get_odoo_client()
         return visualize_report_patch(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             report_xmlid=report_xmlid,
             patch=patch,
             diff_format=diff_format,
@@ -1914,7 +1914,7 @@ def odoo_batch_assist_view_migration(
         client = get_odoo_client()
         return batch_assist_view_migration(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             xmlids=xmlids,
             target_version=target_version,
             intent=intent,
@@ -1939,7 +1939,7 @@ def odoo_batch_assist_report_migration(
         client = get_odoo_client()
         return batch_assist_report_migration(
             client=client,
-            sender_id=sender_id or client.odoo_session.uid,
+            sender_id=sender_id or client.odoo_session.get_uid(),
             xmlids=xmlids,
             target_version=target_version,
             intent=intent,
