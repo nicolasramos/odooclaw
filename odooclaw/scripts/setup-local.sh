@@ -39,7 +39,7 @@ VISION_MMPROJ_FILE="mmproj-odooclaw-vision-Q8_0.gguf"
 
 # Apple (MLX) variants — same canonical models, MLX format
 LLAMA_MODEL_MLX_REPO="nicolasramos/odooclaw-light-1.2b-ft-mlx"
-VISION_MODEL_MLX_REPO="nicolasramos/odooclaw-vision-mlx"  # NRA-542 (pending conversion)
+VISION_MODEL_MLX_REPO="nicolasramos/odooclaw-vision-mlx"
 
 LLAMA_PORT="${LLAMA_PORT:-8082}"    # chat + tool calling
 VISION_PORT="${VISION_PORT:-8093}"  # vision / OCR
@@ -151,14 +151,8 @@ PYEOF
 if [ "$PLATFORM" = "apple" ]; then
   # Light model: MLX snapshot (oMLX native) — repo exists on HF
   download_dir "$LLAMA_MODEL_MLX_REPO" "$MODELS_DIR/odooclaw-light-1.2b-ft-mlx"
-  # Vision model: MLX repo pending (NRA-542). Until published, fall back to GGUF+mmproj
-  if curl -sf "https://huggingface.co/api/models/$VISION_MODEL_MLX_REPO" >/dev/null 2>&1; then
-    download_dir "$VISION_MODEL_MLX_REPO" "$MODELS_DIR/odooclaw-vision-mlx"
-  else
-    warn "odooclaw-vision-mlx not yet published (NRA-542) — downloading GGUF fallback (llama.cpp) for vision"
-    download "$VISION_MODEL_REPO" "$VISION_MODEL_FILE"  "$MODELS_DIR/$VISION_MODEL_FILE"
-    download "$VISION_MODEL_REPO" "$VISION_MMPROJ_FILE" "$MODELS_DIR/$VISION_MMPROJ_FILE"
-  fi
+  # Vision model: MLX snapshot (NRA-542 published 2026-08-12)
+  download_dir "$VISION_MODEL_MLX_REPO" "$MODELS_DIR/odooclaw-vision-mlx"
 else
   download "$LLAMA_MODEL_REPO"  "$LLAMA_MODEL_FILE"   "$MODELS_DIR/$LLAMA_MODEL_FILE"
   download "$VISION_MODEL_REPO" "$VISION_MODEL_FILE"  "$MODELS_DIR/$VISION_MODEL_FILE"
