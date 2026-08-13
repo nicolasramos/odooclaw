@@ -66,11 +66,11 @@ Durable profile persisted as JSON in `<memoryDir>/long_term/`:
 
 `BuildPromptContext()` renders a compact always-injected profile block.
 
-### 5. Mnemosyne — semantic layer (optional, NAS)
+### 5. Mnemosyne — semantic layer (optional)
 
-MCP server at `192.168.1.10:8090` (SSE). Personas, episodes, instructions
-and triplets with multilingual embeddings (Qwen3-Embedding-0.6B).
-Used for deep semantic recall; not required for local operation.
+MCP server (SSE) for personas, episodes, instructions and triplets with
+multilingual embeddings. Used for deep semantic recall; not required for
+local operation. Configure its endpoint in the gateway config.
 
 ## Memory tools
 

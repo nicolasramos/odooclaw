@@ -26,8 +26,8 @@ def test_build_record_url_strips_trailing_slash():
 
 
 def test_build_record_url_allows_http_and_https():
-    assert build_record_url("http://192.168.1.14:8069", "res.partner", 1).startswith(
-        "http://192.168.1.14:8069/web#id=1"
+    assert build_record_url("http://127.0.0.1:8069", "res.partner", 1).startswith(
+        "http://127.0.0.1:8069/web#id=1"
     )
     assert build_record_url("https://odoo.example.com", "crm.lead", 2).startswith(
         "https://odoo.example.com/web#id=2"

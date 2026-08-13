@@ -73,10 +73,10 @@ from pipeline import OCRConfig, run_pipeline
 
 cfg = OCRConfig(
     # Layer 1 — your vision model (any OpenAI-compatible endpoint)
-    vision_base_url="http://192.168.1.14:8093/v1",
+    vision_base_url="http://127.0.0.1:8093/v1",
     vision_model="odooclaw-vision",          # or paddleocr-vl, qwen-vl, gpt-4o...
     # Layer 3 — your LLM (any OpenAI-compatible endpoint)
-    llm_base_url="http://192.168.1.14:8084/v1",
+    llm_base_url="http://127.0.0.1:8084/v1",
     llm_model="LFM2.5-1.2B-Instruct-base-Q4_K_M",
     llm_api_key="",
 )
@@ -92,9 +92,9 @@ result = run_pipeline("invoice.pdf", cfg)
 
 ```
 OCR_MODE=pipeline
-OCR_PIPELINE_VISION_URL=http://192.168.1.14:8093/v1
+OCR_PIPELINE_VISION_URL=http://127.0.0.1:8093/v1
 OCR_PIPELINE_VISION_MODEL=odooclaw-vision
-OCR_PIPELINE_LLM_URL=http://192.168.1.14:8084/v1
+OCR_PIPELINE_LLM_URL=http://127.0.0.1:8084/v1
 OCR_PIPELINE_LLM_MODEL=LFM2.5-1.2B-Instruct-base-Q4_K_M
 ```
 

@@ -1087,10 +1087,10 @@ class OdooOCRSkill:
         """4-layer model-agnostic pipeline (vision -> fiscal -> header -> validate).
 
         Config via env (any OpenAI-compatible endpoint):
-          OCR_PIPELINE_VISION_URL   default http://192.168.1.14:8093/v1 (odooclaw-vision)
+          OCR_PIPELINE_VISION_URL   default http://127.0.0.1:8093/v1 (odooclaw-vision)
           OCR_PIPELINE_VISION_MODEL default odooclaw-vision
           OCR_PIPELINE_VISION_KEY   optional
-          OCR_PIPELINE_LLM_URL      default http://192.168.1.23:8000/v1 (LFM2.5-1.2B base)
+          OCR_PIPELINE_LLM_URL      default http://127.0.0.1:8000/v1 (LFM2.5-1.2B base)
           OCR_PIPELINE_LLM_MODEL    default LFM2.5-1.2B-Instruct-MLX-4bit
           OCR_PIPELINE_LLM_KEY      optional
         """
@@ -1101,12 +1101,12 @@ class OdooOCRSkill:
 
         cfg = OCRConfig(
             vision_base_url=os.environ.get(
-                "OCR_PIPELINE_VISION_URL", "http://192.168.1.14:8093/v1"
+                "OCR_PIPELINE_VISION_URL", "http://127.0.0.1:8093/v1"
             ),
             vision_model=os.environ.get("OCR_PIPELINE_VISION_MODEL", "odooclaw-vision"),
             vision_api_key=os.environ.get("OCR_PIPELINE_VISION_KEY", ""),
             llm_base_url=os.environ.get(
-                "OCR_PIPELINE_LLM_URL", "http://192.168.1.23:8000/v1"
+                "OCR_PIPELINE_LLM_URL", "http://127.0.0.1:8000/v1"
             ),
             llm_model=os.environ.get(
                 "OCR_PIPELINE_LLM_MODEL", "LFM2.5-1.2B-Instruct-MLX-4bit"

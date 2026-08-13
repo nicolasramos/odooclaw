@@ -31,12 +31,12 @@ class OCRConfig:
     # Layer 1: vision / OCR endpoint (VLM, OpenAI-compatible chat/completions)
     # Default: odooclaw-vision (GLM-OCR) — 15/31 in real battery vs 7/31 Paddle.
     # Swap to any VLM: PaddleOCR-VL, Qwen-VL, GPT-4o, etc.
-    vision_base_url: str = "http://192.168.1.14:8093/v1"      # odooclaw-vision (GLM-OCR)
+    vision_base_url: str = "http://127.0.0.1:8093/v1"      # odooclaw-vision (GLM-OCR)
     vision_model: str = "odooclaw-vision"
     vision_api_key: str = ""
 
     # Layer 3: LLM endpoint for header interpretation
-    llm_base_url: str = "http://192.168.1.23:8000/v1"         # oMLX Mac Studio
+    llm_base_url: str = "http://127.0.0.1:8000/v1"         # oMLX Mac Studio
     llm_model: str = "LFM2.5-1.2B-Instruct-MLX-4bit"          # base, no fine-tune
     llm_api_key: str = ""
 

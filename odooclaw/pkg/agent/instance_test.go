@@ -191,7 +191,7 @@ func TestNewAgentInstance_PromptToolsInTextOverride(t *testing.T) {
 					{
 						ModelName:         "odooclaw-v25e",
 						Model:             "odooclaw-v26",
-						APIBase:           "http://192.168.1.14:8081/v1",
+						APIBase:           "http://127.0.0.1:8081/v1",
 						PromptToolsInText: tt.cfgFlag,
 					},
 				},
