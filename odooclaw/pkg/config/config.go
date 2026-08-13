@@ -59,6 +59,7 @@ type Config struct {
 	Tools     ToolsConfig     `json:"tools"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
+	Multimodel MultimodelConfig `json:"multimodel,omitempty"`
 }
 
 // MarshalJSON implements custom JSON marshaling for Config
@@ -437,6 +438,38 @@ type DevicesConfig struct {
 	MonitorUSB bool `json:"monitor_usb" env:"ODOOCLAW_DEVICES_MONITOR_USB"`
 }
 
+// MultimodelConfig configures the multi-model architecture.
+// When enabled, user messages are classified by intent and routed to
+// specialized models (tool calling, summarization) instead of always
+// using the primary LLM.
+type MultimodelConfig struct {
+	Enabled    bool                    `json:"enabled"`
+	Classifier ClassifierConfig        `json:"classifier"`
+	Router     MultimodelRouterConfig  `json:"router"`
+}
+
+// ClassifierConfig configures the intent classifier model.
+type ClassifierConfig struct {
+	Endpoint string `json:"endpoint"`   // e.g. "http://n100:8080/v1"
+	APIKey   string `json:"api_key"`    // Often empty for local llama.cpp
+	Model    string `json:"model"`      // e.g. "local-model"
+}
+
+// MultimodelRouterConfig configures model routing per intent.
+type MultimodelRouterConfig struct {
+	ToolCalling ModelEndpointConfig `json:"tool_calling"`
+	Summarizer  ModelEndpointConfig `json:"summarizer"`
+	Complex     ModelEndpointConfig `json:"complex"`
+}
+
+// ModelEndpointConfig describes a model endpoint for the multi-model pipeline.
+type ModelEndpointConfig struct {
+	Endpoint    string  `json:"endpoint"`     // e.g. "http://n100:8080/v1"
+	ModelID     string  `json:"model_id"`     // e.g. "qwen2.5-1.5b-lora"
+	MaxTokens   int     `json:"max_tokens"`
+	Temperature float64 `json:"temperature"`
+}
+
 type ProvidersConfig struct {
 	Anthropic     ProviderConfig       `json:"anthropic"`
 	OpenAI        OpenAIProviderConfig `json:"openai"`
@@ -531,6 +564,14 @@ type ModelConfig struct {
 	RPM            int    `json:"rpm,omitempty"`              // Requests per minute limit
 	MaxTokensField string `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
 	RequestTimeout int    `json:"request_timeout,omitempty"`
+
+	// PromptToolsInText forces tools to be injected as plain text in the system
+	// prompt instead of being sent as OpenAI JSON function schemas. Defaults to
+	// the automatic heuristic (isLocalSmallModel) when nil: fine-tuned Qwen
+	// 0.5B/1.5B (v25e) need text injection, while native-tool-calling
+	// fine-tunes (v26-native) require the native "tools" array to reach 100%
+	// exact-match. Set explicitly per model when the heuristic is wrong.
+	PromptToolsInText *bool `json:"prompt_tools_in_text,omitempty"`
 }
 
 // Validate checks if the ModelConfig has all required fields.

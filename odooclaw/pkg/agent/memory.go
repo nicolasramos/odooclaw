@@ -26,6 +26,10 @@ type MemoryStore struct {
 	memoryFile string
 	sqlite     *corememory.Store
 	historical *corememory.HistoricalStore
+	recipes    *corememory.RecipeStore
+	// NRA-511: structured per-session memory + long-term profile
+	sessions *corememory.SessionMemoryStore
+	longTerm *corememory.LongTermStore
 }
 
 type PromptMemoryOptions struct {
@@ -45,13 +49,20 @@ func NewMemoryStore(workspace string) *MemoryStore {
 	// Ensure memory directory exists
 	os.MkdirAll(memoryDir, 0o755)
 
-	return &MemoryStore{
+	ms := &MemoryStore{
 		workspace:  workspace,
 		memoryDir:  memoryDir,
 		memoryFile: memoryFile,
 		sqlite:     corememory.NewStore(memoryDir),
 		historical: corememory.NewHistoricalStore(memoryDir),
+		sessions:   corememory.NewSessionMemoryStore(memoryDir),
+		longTerm:   corememory.NewLongTermStore(memoryDir),
 	}
+	// Recipe store (query→tool+args) is ALWAYS enabled by default.
+	if rs, err := corememory.NewRecipeStore(memoryDir); err == nil {
+		ms.recipes = rs
+	}
+	return ms
 }
 
 // getTodayFile returns the path to today's daily note file (memory/YYYYMM/YYYYMMDD.md).
@@ -182,6 +193,43 @@ func (ms *MemoryStore) GetMemoryContext() string {
 	return sb.String()
 }
 
+// GetStructuredContext returns the NRA-511 structured memory block for a
+// session: per-session business state (partner, document, pending actions)
+// plus durable profile (preferences, company). Always injected when present;
+// returns empty string when nothing is stored (zero token cost).
+func (ms *MemoryStore) GetStructuredContext(sessionKey string) string {
+	if sessionKey == "" {
+		return ""
+	}
+	var parts []string
+
+	if ms.sessions != nil {
+		if summary := ms.sessions.GetSessionSummary(sessionKey); summary != "" {
+			parts = append(parts, summary)
+		}
+	}
+	if ms.longTerm != nil {
+		if profile, err := ms.longTerm.BuildPromptContext(); err == nil && profile != "" {
+			parts = append(parts, profile)
+		}
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+	return "## Structured Memory\n\n" + strings.Join(parts, "\n")
+}
+
+// SessionMemory exposes the session store for field updates (tool layer).
+func (ms *MemoryStore) SessionMemory() *corememory.SessionMemoryStore {
+	return ms.sessions
+}
+
+// LongTermMemory exposes the long-term store for preference updates.
+func (ms *MemoryStore) LongTermMemory() *corememory.LongTermStore {
+	return ms.longTerm
+}
+
 func (ms *MemoryStore) GetRelevantContext(opts PromptMemoryOptions) string {
 	searchOpts := corememory.SearchOptions{
 		Query:    opts.Query,
@@ -208,14 +256,46 @@ func (ms *MemoryStore) GetRelevantContext(opts PromptMemoryOptions) string {
 		}
 	}
 
-	if hotContext == "" {
-		return coldContext
-	}
-	if coldContext == "" {
-		return hotContext
+	// Recipe store: resolved query→tool+args patterns as few-shot.
+	recipeContext := ""
+	if ms.recipes != nil {
+		context, err := ms.recipes.BuildRecipeContext(opts.Query, opts.Channel, opts.ChatID, 3)
+		if err == nil && context != "" {
+			recipeContext = rewriteRelevantHeading(context, "## Known Resolved Patterns")
+		}
 	}
 
-	return hotContext + "\n\n---\n\n" + coldContext
+	parts := make([]string, 0, 3)
+	if hotContext != "" {
+		parts = append(parts, hotContext)
+	}
+	if coldContext != "" {
+		parts = append(parts, coldContext)
+	}
+	if recipeContext != "" {
+		parts = append(parts, recipeContext)
+	}
+	return strings.Join(parts, "\n\n---\n\n")
+}
+
+// SaveRecipe records a successful query→tool+args resolution for reuse.
+func (ms *MemoryStore) SaveRecipe(query, tool, args, channel, chatID, senderID string) {
+	if ms.recipes == nil || query == "" || tool == "" {
+		return
+	}
+	_, _ = ms.recipes.SaveRecipe(query, tool, args, channel, chatID, senderID, true)
+}
+
+// RecipeCount returns the number of stored recipes (diagnostics).
+func (ms *MemoryStore) RecipeCount() int {
+	if ms.recipes == nil {
+		return 0
+	}
+	n, err := ms.recipes.CountRecipes()
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 func rewriteRelevantHeading(context string, heading string) string {

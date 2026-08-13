@@ -208,3 +208,87 @@ def update_task_status(
         "comment_posted": bool(comment),
         "task": updated[0] if updated else None,
     }
+
+
+def get_task_stats(
+    client: OdooClient,
+    user_id: int,
+    project_id: Optional[int] = None,
+    user_ids: Optional[list[int]] = None,
+) -> dict:
+    """Task statistics: open vs closed, optionally filtered by project or users.
+
+    Synthesis tool: the LLM only recognizes the intent ("cuantas tareas pendientes",
+    "tareas abiertas del proyecto X"), this function builds the domains.
+    """
+    def _count(domain: list[tuple[str, str, Any]]) -> int:
+        return client.call_kw(
+            "project.task",
+            "search_count",
+            args=[domain],
+            kwargs={},
+            sender_id=user_id,
+        )
+
+    base: list[tuple[str, str, Any]] = []
+    if project_id:
+        base.append(("project_id", "=", project_id))
+    if user_ids:
+        base.append(("user_ids", "in", user_ids))
+
+    closed = _count(base + [("stage_id.is_closed", "=", True)])
+    open_tasks = _count(base + [("stage_id.is_closed", "!=", True)])
+
+    # Top stages for the open tasks
+    domain_open: list[tuple[str, str, Any]] = base + [("stage_id.is_closed", "!=", True)]
+    stage_rows = client.call_kw(
+        "project.task",
+        "read_group",
+        args=[domain_open, ["stage_id"], ["stage_id"]],
+        kwargs={},
+        sender_id=user_id,
+    )
+    by_stage = {
+        (r.get("stage_id") or ["?"])[0]: r.get("stage_id_count", 0)
+        for r in stage_rows
+    }
+
+    return {
+        "total_tasks": closed + open_tasks,
+        "open_tasks": open_tasks,
+        "closed_tasks": closed,
+        "by_stage": by_stage,
+    }
+
+
+def find_tasks_for_user(
+    client: OdooClient,
+    user_id: int,
+    user_name: str,
+    limit: int = 20,
+) -> dict:
+    """Find tasks assigned to a user by name (partial match on res.partner)."""
+    partners = client.call_kw(
+        "res.partner",
+        "search_read",
+        args=[[("name", "ilike", user_name)]],
+        kwargs={"fields": ["id", "name"], "limit": 5},
+        sender_id=user_id,
+    )
+    if not partners:
+        return {"ok": False, "error": f"No se encontró ningún usuario llamado '{user_name}'", "tasks": []}
+
+    uid_list = [p["id"] for p in partners]
+    tasks = client.call_kw(
+        "project.task",
+        "search_read",
+        args=[[("user_ids", "in", uid_list)]],
+        kwargs={"fields": ["id", "name", "project_id", "stage_id"], "limit": limit},
+        sender_id=user_id,
+    )
+    return {
+        "ok": True,
+        "users_found": partners,
+        "tasks": tasks,
+        "count": len(tasks),
+    }

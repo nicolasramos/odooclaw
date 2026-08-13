@@ -1396,3 +1396,62 @@ def create_vendor_bill_from_ocr_validated(
         partner_created=partner_created,
         attachment_linked=bool(attachment_id),
     )
+
+
+def get_financial_snapshot(
+    client: OdooClient,
+    sender_id: int,
+    company_id: Optional[int] = None,
+    limit: int = 100,
+) -> dict:
+    """Financial situation snapshot: AR/AP aging + pending invoices + month sales/purchases.
+
+    Synthesis tool: the LLM only recognizes the intent ("situación financiera",
+    "como estamos de dinero"), this function does all the queries.
+    """
+    if not client.model_exists("account.move", sender_id=sender_id):
+        return build_unsupported_response(
+            "accounting.get_financial_snapshot",
+            "account.move model is not available in this Odoo instance.",
+            ["account.move"],
+        )
+
+    aging = get_ar_ap_aging(client, sender_id, report_type="both", company_id=company_id, limit=limit)
+
+    month_start = date.today().replace(day=1)
+    iso = month_start.isoformat()
+
+    def _moves(move_types: list[str], state: str = "posted") -> list[dict]:
+        domain: list[list[Any]] = [
+            ["move_type", "in", move_types],
+            ["state", "=", state],
+        ]
+        if company_id:
+            domain.append(["company_id", "=", company_id])
+        rows = client.call_kw(
+            "account.move",
+            "search_read",
+            args=[domain],
+            kwargs={"fields": ["id", "name", "partner_id", "amount_total", "invoice_date", "payment_state"], "limit": limit},
+            sender_id=sender_id,
+        )
+        return rows
+
+    sales = _moves(["out_invoice"])
+    purchases = _moves(["in_invoice"])
+    month_sales = [r for r in sales if (r.get("invoice_date") or "")[:7] == month_start.strftime("%Y-%m")]
+    month_purchases = [r for r in purchases if (r.get("invoice_date") or "")[:7] == month_start.strftime("%Y-%m")]
+
+    def _sum(rows: list[dict]) -> float:
+        return round(sum(_safe_float(r.get("amount_total")) for r in rows), 2)
+
+    return {
+        "summary": {
+            "month_sales_total": _sum(month_sales),
+            "month_purchases_total": _sum(month_purchases),
+            "sales_invoices_count": len(sales),
+            "purchase_invoices_count": len(purchases),
+            "month": month_start.strftime("%Y-%m"),
+        },
+        "aging": aging,
+    }

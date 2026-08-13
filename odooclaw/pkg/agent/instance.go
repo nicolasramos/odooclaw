@@ -34,6 +34,11 @@ type AgentInstance struct {
 	Subagents      *config.SubagentsConfig
 	SkillsFilter   []string
 	Candidates     []providers.FallbackCandidate
+
+	// PromptToolsInText, when non-nil, overrides the isLocalSmallModel
+	// heuristic in the agent loop: true forces text injection of tools,
+	// false sends the native OpenAI "tools" array. Nil keeps the heuristic.
+	PromptToolsInText *bool
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -81,6 +86,10 @@ func NewAgentInstance(
 		toolResultMaxChars = *defaults.ToolResultMaxChars
 	}
 	contextBuilder := NewContextBuilder(workspace, contextWindowTokens, toolResultMaxChars)
+	// Local small models need a minimal system prompt. Wire the resolved model
+	// so BuildSystemPrompt can switch to the compact prompt for them.
+	contextBuilder.SetModel(model)
+	contextBuilder.InvalidateCache()
 
 	agentID := routing.DefaultAgentID
 	agentName := ""
@@ -156,6 +165,18 @@ func NewAgentInstance(
 
 	candidates := providers.ResolveCandidatesWithLookup(modelCfg, defaults.Provider, resolveFromModelList)
 
+	// Per-model prompt_tools_in_text override: when the primary model's
+	// ModelConfig pins the flag, it wins over the isLocalSmallModel heuristic
+	// in the agent loop (native-tool-calling fine-tunes like v26-native need
+	// the native "tools" array; text-injected v25e needs the opposite).
+	var promptToolsInText *bool
+	if cfg != nil {
+		if mc, err := cfg.GetModelConfig(model); err == nil && mc != nil && mc.PromptToolsInText != nil {
+			v := *mc.PromptToolsInText
+			promptToolsInText = &v
+		}
+	}
+
 	return &AgentInstance{
 		ID:             agentID,
 		Name:           agentName,
@@ -173,6 +194,7 @@ func NewAgentInstance(
 		Subagents:      subagents,
 		SkillsFilter:   skillsFilter,
 		Candidates:     candidates,
+		PromptToolsInText: promptToolsInText,
 	}
 }
 
