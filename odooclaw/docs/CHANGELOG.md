@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Model-agnostic 4-layer OCR invoice pipeline** (`ocr-invoice`): vision → fiscal → header → validation. Any OpenAI-compatible vision/LLM endpoint; default GLM-OCR (`odooclaw-vision`) + LFM2.5-1.2B header. Validated 15/31 real invoices (failures go to declared review, never invented). Activated with `OCR_MODE=pipeline`.
+- **Structured session memory** (NRA-511): per-session business state (current partner/company/document/module, pending confirmations) + long-term profile (preferences, company). New tools: `memory_set_session_state`, `memory_set_pending_confirmation`, `memory_clear_pending`.
+- **Knowledge Base + retrieval engine** (NRA-515): `pkg/knowledge` + `pkg/tools/retrieval.go` — KB store/indexer (tools, aliases, relations, risk levels) with BM25 + metadata retrieval.
+- **ToolGuard hardening** (NRA-455/463/464/466): dynamic allowlist from `ir.model`, default denied models, escape hatch via `ir.config_parameter`.
+- **Reproducible dataset pipeline** (NRA-512): repo → parser → metadata → JSONL generator + validator + orchestrator (`scripts/dataset_pipeline/`).
+- **Local setup installer** (`scripts/setup-local.sh`): one-shot llama.cpp (Linux) / oMLX (Apple) install + model download from HuggingFace + gateway config. Apple uses MLX always.
+- **n-gram speculative decoding** (NRA-541): `--spec-ngram-mod-n-max 16` benchmarked +49% tok/s on Linux/llama.cpp.
+- **odooclaw-vision-mlx**: MLX conversion of the vision model published on HuggingFace.
+- **Synthesis tools**: `odoo_get_task_stats`, `odoo_find_tasks_for_user`, `odoo_get_financial_snapshot` with pair-retrieval boosting.
+- **`odoo_search_read`** tool: combined search+read in a single call.
+
+### Fixed
+- **OdooSession race condition** (NRA-253): `threading.Lock` around session state — parallel tool calls no longer return HTTP 500.
+- **Partner dedup case-insensitive** in `odoo_create` (NRA-425 follow-up).
+- **Clickable record URLs** in `odoo_read`/`odoo_search_read` results.
+- **SQLite pure-Go** (`modernc.org/sqlite`): CGO_ENABLED=0 compatible builds.
+
+### Security
+- ToolGuard escape hatch via `ir.config_parameter` (`odooclaw.denied_models` / allowlist).
+
 ## [0.3.0] - 2026-06-08
 
 ### Added

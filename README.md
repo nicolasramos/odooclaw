@@ -43,6 +43,13 @@ By using this engine, **OdooClaw** inherits the ability to run directly inside a
 - 🔐 **Native Permission Inheritance**: Secure by default. The AI dynamically assumes Odoo user permissions, preventing any bypass of native Security Rights or Record Rules.
 - 🧠 **Intelligent ORM Bridge**: High-precision tool execution. The `odoo-mcp` bridge provides modular tools with strict validation, denylist/allowlist controls, and safer mappings for real Odoo ORM operations.
 - 🧠 **Dual-Layer Memory (HOT + COLD)**: Keeps current prompt memory behavior while adding scoped historical memory, temporal facts, timeline recall, retrieval explainability, and optional historical markdown import.
+- 🧠 **Structured Session Memory (NRA-511)**: Per-session business state (current partner/company/document/module, pending confirmations) + long-term profile (preferences, company) — tools `memory_set_session_state`, `memory_set_pending_confirmation`, `memory_clear_pending`.
+- 📚 **Knowledge Base + Tool Retrieval (NRA-515)**: SQLite FTS5 KB with Odoo domain knowledge + retrieval engine that injects only the top 3-5 compact tool schemas (~245 tokens vs ~3,800 full) instead of all 100+.
+- 🏭 **Reproducible Dataset Pipeline (NRA-512)**: repo → parser → metadata → JSONL generator + validator + orchestrator; change a tool → regenerate the dataset.
+- 🧾 **4-Layer Model-Agnostic OCR Pipeline**: vision → fiscal → header → validation with any OpenAI-compatible model (default: GLM-OCR + LFM2.5). Validated 15/31 real invoices; failures go to declared review, never invented.
+- 🛠️ **ToolGuard**: tool-call validation wrapper — schema validation + destructive-operation gating, dynamic allowlist from `ir.model` + denied models + escape hatch.
+- 💾 **One-Shot Local Installer**: `scripts/setup-local.sh` — llama.cpp (Linux) / oMLX (Apple) + HuggingFace model download + gateway config. Apple Silicon always uses MLX.
+- ⚡ **n-gram Speculative Decoding**: `--spec-ngram-mod-n-max 16` — benchmarked +49% tok/s on Linux (NRA-541).
 - 🔁 **RLM Acceleration (Context-Rot Resistant)**: For large Odoo datasets, OdooClaw decomposes analysis into recursive Map-Reduce steps (`rlm_partition` -> sub-agents -> `rlm_aggregate`) to keep context clean, improve accuracy, and reduce long-context cost.
 - 📄 **Smart OCR & Action Generation**: Automatically scans PDF invoices, extracts data, and creates vendor bills or purchase orders intelligently.
 - 💼 **Workforce Ops Tools**: Native tools for attendance, check-in/check-out, task-centric timesheets, daily summaries, missing-timesheet detection, and expense report lifecycle.
@@ -552,9 +559,13 @@ For an in-depth look at the architecture, please refer to the [Design Documentat
 Guides for running and extending OdooClaw locally:
 
 - **[Local Setup](odooclaw/docs/LOCAL_SETUP.md)** — one-shot installer: llama.cpp (Linux) / oMLX (Apple), model download from HuggingFace, gateway config, n-gram speculative flags.
-- **[Memory System](odooclaw/docs/MEMORY.md)** — layered memory: HOT/COLD (SQLite), structured session memory, long-term profile, memory tools (NRA-511).
+- **[Memory System](odooclaw/docs/MEMORY.md)** — layered memory: HOT/COLD (SQLite), structured session memory (NRA-511), long-term profile, memory tools.
+- **[Knowledge Base & Tool Retrieval](odooclaw/docs/KNOWLEDGE_RETRIEVAL.md)** — KB + retrieval engine (NRA-515): top-3-5 compact tool schemas, synonym rewriter, Odoo domain knowledge.
 - **[Models](odooclaw/docs/MODELS.md)** — canonical models, how to change/swap models, HF publishing convention (GGUF + MLX + Ollama), acceleration.
+- **[ToolGuard](odooclaw/docs/toolguard.md)** — tool-call validation wrapper: schema checks + destructive-operation gating.
+- **[Dataset Pipeline](scripts/dataset_pipeline/README.md)** — reproducible training dataset generation (NRA-512).
 - **[OCR Invoice Pipeline](odooclaw/workspace/skills/ocr-invoice/README.md)** — 4-layer model-agnostic invoice extraction (vision → fiscal → header → validation).
+- **[Changelog](odooclaw/docs/CHANGELOG.md)** — release history (Unreleased covers NRA-511/512/513/515/540/541/542).
 
 ---
 
