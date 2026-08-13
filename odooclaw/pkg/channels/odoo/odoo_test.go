@@ -43,7 +43,7 @@ func TestServeHTTP_AllowsGroupWhenEnabled(t *testing.T) {
 		t.Fatalf("NewOdooChannel() error = %v", err)
 	}
 
-	body := `{"message_id":102,"model":"discuss.channel","res_id":25,"author_id":7,"author_user_id":8,"author_name":"Mitchell Admin","body":"@odooclaw asigna tarea","is_dm":false,"company_id":1,"allowed_company_ids":[1,2]}`
+	body := `{"message_id":102,"model":"discuss.channel","res_id":25,"author_id":7,"author_user_id":8,"author_name":"Mitchell Admin","body":"@odooclaw asigna tarea","is_dm":false,"company_id":1,"allowed_company_ids":[1,2],"reply_token":"tok-102"}`
 	req := httptest.NewRequest(http.MethodPost, "/webhook/odoo", strings.NewReader(body))
 	w := httptest.NewRecorder()
 
@@ -78,7 +78,7 @@ func TestServeHTTP_GroupMentionWithPrivateReplyTargetUsesDirectSession(t *testin
 		t.Fatalf("NewOdooChannel() error = %v", err)
 	}
 
-	body := `{"message_id":104,"model":"discuss.channel","res_id":99,"reply_model":"discuss.channel","reply_res_id":1234,"author_id":33,"author_user_id":44,"author_name":"Mitchell Admin","body":"@odooclaw crea tarea","is_dm":false}`
+	body := `{"message_id":104,"model":"discuss.channel","res_id":99,"reply_model":"discuss.channel","reply_res_id":1234,"author_id":33,"author_user_id":44,"author_name":"Mitchell Admin","body":"@odooclaw crea tarea","is_dm":false,"reply_token":"tok-104"}`
 	req := httptest.NewRequest(http.MethodPost, "/webhook/odoo", strings.NewReader(body))
 	w := httptest.NewRecorder()
 
@@ -113,7 +113,7 @@ func TestServeHTTP_AllowsDMEvenWhenGroupDisabled(t *testing.T) {
 		t.Fatalf("NewOdooChannel() error = %v", err)
 	}
 
-	body := `{"message_id":103,"model":"discuss.channel","res_id":30,"author_id":11,"author_user_id":12,"author_name":"Demo User","body":"necesito ayuda","is_dm":true}`
+	body := `{"message_id":103,"model":"discuss.channel","res_id":30,"author_id":11,"author_user_id":12,"author_name":"Demo User","body":"necesito ayuda","is_dm":true,"reply_token":"tok-103"}`
 	req := httptest.NewRequest(http.MethodPost, "/webhook/odoo", strings.NewReader(body))
 	w := httptest.NewRecorder()
 
