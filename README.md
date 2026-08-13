@@ -547,6 +547,17 @@ For an in-depth look at the architecture, please refer to the [Design Documentat
 
 ---
 
+## 📚 Documentation
+
+Guides for running and extending OdooClaw locally:
+
+- **[Local Setup](odooclaw/docs/LOCAL_SETUP.md)** — one-shot installer: llama.cpp (Linux) / oMLX (Apple), model download from HuggingFace, gateway config, n-gram speculative flags.
+- **[Memory System](odooclaw/docs/MEMORY.md)** — layered memory: HOT/COLD (SQLite), structured session memory, long-term profile, memory tools (NRA-511).
+- **[Models](odooclaw/docs/MODELS.md)** — canonical models, how to change/swap models, HF publishing convention (GGUF + MLX + Ollama), acceleration.
+- **[OCR Invoice Pipeline](odooclaw/workspace/skills/ocr-invoice/README.md)** — 4-layer model-agnostic invoice extraction (vision → fiscal → header → validation).
+
+---
+
 ## ⚖️ License and Credits
 
 This project is distributed under the **MIT** license.
