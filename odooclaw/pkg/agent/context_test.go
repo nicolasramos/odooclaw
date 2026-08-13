@@ -562,8 +562,8 @@ func TestBuildSystemPrompt_MinimalForLocalSmallModel(t *testing.T) {
 	if !cb.isLocalSmallModel() {
 		t.Fatal("expected isLocalSmallModel() to be true for odooclaw-v25e")
 	}
-	if len(prompt) > 800 {
-		t.Fatalf("expected minimal system prompt (<800 chars), got %d chars", len(prompt))
+	if len(prompt) > 2500 {
+		t.Fatalf("expected minimal system prompt (<2500 chars), got %d chars", len(prompt))
 	}
 	if strings.Contains(prompt, "AGENTS BOOTSTRAP") || strings.Contains(prompt, "lots of long context") {
 		t.Fatal("minimal prompt must not include AGENTS.md or memory content")

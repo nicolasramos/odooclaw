@@ -47,6 +47,7 @@ By using this engine, **OdooClaw** inherits the ability to run directly inside a
 - 📚 **Knowledge Base + Tool Retrieval (NRA-515)**: SQLite FTS5 KB with Odoo domain knowledge + retrieval engine that injects only the top 3-5 compact tool schemas (~245 tokens vs ~3,800 full) instead of all 100+.
 - 🏭 **Reproducible Dataset Pipeline (NRA-512)**: repo → parser → metadata → JSONL generator + validator + orchestrator; change a tool → regenerate the dataset.
 - 🧾 **4-Layer Model-Agnostic OCR Pipeline**: vision → fiscal → header → validation with any OpenAI-compatible model (default: GLM-OCR + LFM2.5). Validated 15/31 real invoices; failures go to declared review, never invented.
+- 🧾 **Dynamic Billing Rules (account_dynamic_rules)**: our module amplified with `tax_ids` + `fiscal_position_id` (PR #9 merged in odoo-addons): the tax and fiscal position are decided by Odoo from the OCR invoice JSON — **zero hardcoded taxes**, purely configurable mechanism, backported for Odoo 16/17/18.
 - 🛠️ **ToolGuard**: tool-call validation wrapper — schema validation + destructive-operation gating, dynamic allowlist from `ir.model` + denied models + escape hatch.
 - 💾 **One-Shot Local Installer**: `scripts/setup-local.sh` — llama.cpp (Linux) / oMLX (Apple) + HuggingFace model download + gateway config. Apple Silicon always uses MLX.
 - ⚡ **n-gram Speculative Decoding**: `--spec-ngram-mod-n-max 16` — benchmarked +49% tok/s on Linux (NRA-541).

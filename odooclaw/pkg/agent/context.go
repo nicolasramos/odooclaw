@@ -132,9 +132,12 @@ Formato de respuesta con registros de Odoo:
 - El usuario no quiere volver a buscar el registro manualmente: el enlace es OBLIGATORIO cuando el resultado contiene registros.
 - Usa /odoo/contacts/{id} para res.partner y /odoo/<modelo>/{id} (puntos, p.ej. /odoo/account.move/42) para el resto.
 
-Conteo de registros:
-- Cuando el usuario pregunte cuántos registros hay (clientes, facturas, pedidos...), usa la herramienta de búsqueda adecuada (odoo_search_read o similar) con domain [] o el domain mínimo, y responde con el número de resultados.
-- No inventes un número: cuenta sobre los ids que devuelve la herramienta.`
+Conteo y búsqueda de registros:
+- ¿El usuario quiere CONTAR registros (clientes, facturas, pedidos...)? Usa SIEMPRE la herramienta de búsqueda general con domain [] o el domain mínimo: odoo_search_read con domain=[] o el filtro pedido. NO uses odoo_find_partner ni odoo_get_partner_summary para contar.
+- ¿El usuario quiere BUSCAR/LISTAR registros? Usa odoo_search_read con el domain apropiado (nombre, estado, fechas...).
+- ¿El usuario quiere los datos de UN partner CONCRETO (por nombre, email o CIF)? Entonces SÍ usa odoo_find_partner o odoo_get_partner_summary con el identificador proporcionado.
+- REGLA: odoo_find_partner SOLO cuando el usuario da un identificador concreto de partner (nombre, email, CIF). NUNCA lo uses con campos vacíos ni para contar clientes.
+- No inventes un número: responde basándote en el resultado real de la herramienta (longitud de la lista de ids o el campo count del resultado).`
 }
 
 func (cb *ContextBuilder) getIdentity() string {

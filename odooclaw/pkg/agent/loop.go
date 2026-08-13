@@ -19,7 +19,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
 
 	"github.com/nicolasramos/odooclaw/pkg/browsercopilot"
 	"github.com/nicolasramos/odooclaw/pkg/bus"
@@ -218,11 +217,11 @@ func registerSharedTools(
 		agent.Tools.Register(tools.NewMemoryDebugExplainRetrievalTool(agent.Workspace))
 		agent.Tools.Register(tools.NewMemoryImportHistoryTool(agent.Workspace))
 
-	// NRA-511: structured session memory tools (state + pending confirmations)
-	sessionMemStore := corememory.NewSessionMemoryStore(filepath.Join(agent.Workspace, "memory"))
-	agent.Tools.Register(tools.NewMemorySetSessionStateTool(sessionMemStore))
-	agent.Tools.Register(tools.NewMemorySetPendingTool(sessionMemStore))
-	agent.Tools.Register(tools.NewMemoryClearPendingTool(sessionMemStore))
+		// NRA-511: structured session memory tools (state + pending confirmations)
+		sessionMemStore := corememory.NewSessionMemoryStore(filepath.Join(agent.Workspace, "memory"))
+		agent.Tools.Register(tools.NewMemorySetSessionStateTool(sessionMemStore))
+		agent.Tools.Register(tools.NewMemorySetPendingTool(sessionMemStore))
+		agent.Tools.Register(tools.NewMemoryClearPendingTool(sessionMemStore))
 
 		// Skill discovery and installation tools
 		registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
@@ -1223,15 +1222,10 @@ func (al *AgentLoop) runLLMIteration(
 
 			errMsg := strings.ToLower(err.Error())
 
-			// Check if this is a network/HTTP timeout — not a context window error.
-			isTimeoutError := errors.Is(err, context.DeadlineExceeded) ||
-				strings.Contains(errMsg, "deadline exceeded") ||
-				strings.Contains(errMsg, "client.timeout") ||
-				strings.Contains(errMsg, "timed out") ||
-				strings.Contains(errMsg, "timeout exceeded")
+			retryReason, isTransient := transientLLMRetryReason(err)
 
-			// Detect real context window / token limit errors, excluding network timeouts.
-			isContextError := !isTimeoutError && (strings.Contains(errMsg, "context_length_exceeded") ||
+			// Detect real context window / token limit errors, excluding transient errors.
+			isContextError := !isTransient && (strings.Contains(errMsg, "context_length_exceeded") ||
 				strings.Contains(errMsg, "context window") ||
 				strings.Contains(errMsg, "maximum context length") ||
 				strings.Contains(errMsg, "token limit") ||
@@ -1241,10 +1235,11 @@ func (al *AgentLoop) runLLMIteration(
 				strings.Contains(errMsg, "prompt is too long") ||
 				strings.Contains(errMsg, "request too large"))
 
-			if isTimeoutError && retry < maxRetries {
+			if isTransient && retry < maxRetries {
 				backoff := time.Duration(retry+1) * 5 * time.Second
-				logger.WarnCF("agent", "Timeout error, retrying after backoff", map[string]any{
+				logger.WarnCF("agent", "Transient LLM error, retrying after backoff", map[string]any{
 					"error":   err.Error(),
+					"reason":  retryReason,
 					"retry":   retry,
 					"backoff": backoff.String(),
 				})
@@ -1262,6 +1257,17 @@ func (al *AgentLoop) runLLMIteration(
 					},
 				)
 
+				if !al.forceCompression(agent, opts.SessionKey) {
+					logger.WarnCF(
+						"agent",
+						"Context compression made no progress; skipping identical retry",
+						map[string]any{
+							"session_key": opts.SessionKey,
+							"retry":       retry,
+						},
+					)
+					break
+				}
 				if retry == 0 && !constants.IsInternalChannel(opts.Channel) {
 					al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 						Channel: opts.Channel,
@@ -1270,7 +1276,6 @@ func (al *AgentLoop) runLLMIteration(
 					})
 				}
 
-				al.forceCompression(agent, opts.SessionKey)
 				newHistory := agent.Sessions.GetHistory(opts.SessionKey)
 				newSummary := agent.Sessions.GetSummary(opts.SessionKey)
 				messages = agent.ContextBuilder.BuildMessages(
@@ -1521,45 +1526,12 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 
 // forceCompression aggressively reduces context when the limit is hit.
 // It drops the oldest 50% of messages (keeping system prompt and last user message).
-func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
+func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) bool {
 	history := agent.Sessions.GetHistory(sessionKey)
-	if len(history) <= 4 {
-		return
+	newHistory, droppedCount, compressed := compressedHistory(history)
+	if !compressed {
+		return false
 	}
-
-	// Keep system prompt (usually [0]) and the very last message (user's trigger)
-	// We want to drop the oldest half of the *conversation*
-	// Assuming [0] is system, [1:] is conversation
-	conversation := history[1 : len(history)-1]
-	if len(conversation) == 0 {
-		return
-	}
-
-	// Helper to find the mid-point of the conversation
-	mid := len(conversation) / 2
-
-	// New history structure:
-	// 1. System Prompt (with compression note appended)
-	// 2. Second half of conversation
-	// 3. Last message
-
-	droppedCount := mid
-	keptConversation := conversation[mid:]
-
-	newHistory := make([]providers.Message, 0, 1+len(keptConversation)+1)
-
-	// Append compression note to the original system prompt instead of adding a new system message
-	// This avoids having two consecutive system messages which some APIs (like Zhipu) reject
-	compressionNote := fmt.Sprintf(
-		"\n\n[System Note: Emergency compression dropped %d oldest messages due to context limit]",
-		droppedCount,
-	)
-	enhancedSystemPrompt := history[0]
-	enhancedSystemPrompt.Content = enhancedSystemPrompt.Content + compressionNote
-	newHistory = append(newHistory, enhancedSystemPrompt)
-
-	newHistory = append(newHistory, keptConversation...)
-	newHistory = append(newHistory, history[len(history)-1]) // Last message
 
 	// Update session
 	agent.Sessions.SetHistory(sessionKey, newHistory)
@@ -1570,6 +1542,7 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) {
 		"dropped_msgs": droppedCount,
 		"new_count":    len(newHistory),
 	})
+	return true
 }
 
 // GetStartupInfo returns information about loaded tools and skills for logging.
@@ -2157,12 +2130,7 @@ func (al *AgentLoop) summarizeBatch(
 // Uses a safe heuristic of 2.5 characters per token to account for CJK and other
 // overheads better than the previous 3 chars/token.
 func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
-	totalChars := 0
-	for _, m := range messages {
-		totalChars += utf8.RuneCountInString(m.Content)
-	}
-	// 2.5 chars per token = totalChars * 2 / 5
-	return totalChars * 2 / 5
+	return estimateMessageTokens(messages)
 }
 
 func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) (string, bool) {
@@ -2657,4 +2625,37 @@ func retrieveRelevantTools(defs []providers.ToolDefinition, query string, k int)
 		}
 	}
 	return out
+}
+// transientLLMRetryReason classifies an LLM error as transient (safe to retry)
+// using the provider error classifier first, then falling back to string patterns.
+// Returns the reason string and true if the error is transient.
+func transientLLMRetryReason(err error) (string, bool) {
+	if err == nil {
+		return "", false
+	}
+
+	// Use the provider error classifier for structured detection.
+	if failErr := providers.ClassifyError(err, "", ""); failErr != nil {
+		switch failErr.Reason {
+		case providers.FailoverTimeout:
+			if failErr.Status >= 500 {
+				return "server_error", true
+			}
+			return "timeout", true
+		case providers.FailoverRateLimit, providers.FailoverOverloaded:
+			return "rate_limit", true
+		}
+	}
+
+	// Fallback: string patterns for network errors not caught by the classifier.
+	errMsg := strings.ToLower(err.Error())
+	if strings.Contains(errMsg, "connection reset") ||
+		strings.Contains(errMsg, "connection refused") ||
+		strings.Contains(errMsg, "broken pipe") ||
+		strings.Contains(errMsg, "no such host") ||
+		strings.Contains(errMsg, "network is unreachable") {
+		return "network", true
+	}
+
+	return "", false
 }
