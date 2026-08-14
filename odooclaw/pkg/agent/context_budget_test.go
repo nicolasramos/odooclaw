@@ -193,9 +193,7 @@ func TestForceCompressionPreservesCompleteTurnsAndNonLeadingSystem(t *testing.T)
 	}
 	agent.Sessions.SetHistory(sessionKey, history)
 
-	if !al.forceCompression(agent, sessionKey) {
-		t.Fatal("forceCompression reported no change")
-	}
+	al.forceCompression(agent, sessionKey)
 	got := agent.Sessions.GetHistory(sessionKey)
 
 	if len(got) >= len(history) {

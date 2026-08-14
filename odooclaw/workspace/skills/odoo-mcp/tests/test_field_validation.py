@@ -56,18 +56,6 @@ def _extract_fields_from_call(calls, call_index):
 
 
 # ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-@pytest.fixture(autouse=True)
-def clear_field_cache():
-    """Reset module-level field cache before each test."""
-    _field_cache.clear()
-    _field_cache_timestamps.clear()
-    yield
-
-
-# ---------------------------------------------------------------------------
 # odoo_read tests
 # ---------------------------------------------------------------------------
 

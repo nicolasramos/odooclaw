@@ -257,6 +257,21 @@ func (r *ToolRegistry) ClearRetrievalEngine() {
 	r.retrievalEngine = nil
 }
 
+// isCoreTool determines if a tool is a "core" tool that should always be included.
+func isCoreTool(name string) bool {
+	corePrefixes := []string{
+		"memory", "session", "web_search", "web_extract",
+		"navigate", "read_note", "write_note", "search_notes",
+		"skill_view", "skills_list", "skill_manage",
+	}
+	for _, prefix := range corePrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // RetrieveRelevant finds the most relevant tools for a query using the retrieval engine.
 // Returns tool names ordered by relevance. Falls back to all tools if no engine is set.
 func (r *ToolRegistry) RetrieveRelevant(query string, module string, limit int) []string {

@@ -7,6 +7,8 @@ from odoo_mcp.services.project_service import (
     update_task,
     find_my_tasks,
     update_task_status,
+    get_task_stats,
+    find_tasks_for_user,
 )
 from odoo_mcp.security.audit import audit_action
 from odoo_mcp.security.guards import guard_model_access
@@ -107,3 +109,23 @@ def odoo_update_task_status(
         },
     )
     return update_task_status(client, user_id, task_id, stage_id, stage_name, comment)
+
+
+def odoo_get_task_stats(
+    client: OdooClient,
+    user_id: int,
+    project_id: Optional[int] = None,
+    user_ids: Optional[list[int]] = None,
+) -> dict:
+    guard_model_access("project.task")
+    return get_task_stats(client, user_id, project_id, user_ids)
+
+
+def odoo_find_tasks_for_user(
+    client: OdooClient,
+    user_id: int,
+    user_name: str,
+    limit: int = 20,
+) -> dict:
+    guard_model_access("project.task")
+    return find_tasks_for_user(client, user_id, user_name, limit)

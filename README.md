@@ -1,40 +1,90 @@
 <div align="center">
   <img src="odooclaw/assets/logo_openclaw.png" alt="OdooClaw" width="600">
 
-  <h1>OdooClaw: AI Assistant for Odoo ERP</h1>
+  <h1>OdooClaw 1.0 — Next Generation</h1>
 
-  <h3>Native Odoo Integration · AI Assistant · $10 Hardware · 10MB RAM</h3>
+  <h3>100% Local AI for Odoo · Own Trained Models · No Subscriptions · Data Sovereignty</h3>
 
   <p>
+    <img src="https://img.shields.io/badge/release-v1.0.0-brightgreen" alt="Release v1.0.0">
     <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go&logoColor=white" alt="Go">
     <img src="https://img.shields.io/badge/Odoo-16%20%7C%2017%20%7C%2018-F68B20?style=flat&logo=odoo&logoColor=white" alt="Odoo">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
     <br>
     <a href="https://github.com/nicolasramos/odooclaw"><img src="https://img.shields.io/badge/GitHub-Repository-black?style=flat&logo=github&logoColor=white" alt="GitHub"></a>
-    <a href="https://addons.mozilla.org/addon/odooclaw-browser-copilot/"><img src="https://img.shields.io/badge/Firefox%20Add--on-Available-FF7139?style=flat&logo=firefoxbrowser&logoColor=white" alt="Firefox Add-on"></a>
-    <a href="https://chromewebstore.google.com/detail/odooclaw-browser-copilot/lnmdgafmodbhnaijnllfcoabfofdffkc"><img src="https://img.shields.io/badge/Chrome%20Web%20Store-Available-4285F4?style=flat&logo=googlechrome&logoColor=white" alt="Chrome Web Store"></a>
+    <a href="https://huggingface.co/nicolasramos"><img src="https://img.shields.io/badge/HuggingFace-Models-FFD21E?style=flat&logo=huggingface&logoColor=black" alt="HuggingFace Models"></a>
+    <a href="https://github.com/nicolasramos/odooclaw/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/Release-Notes-blue?style=flat" alt="Release Notes"></a>
   </p>
 
 </div>
 
 ---
 
-> **Fork Notice**: This project is a fork of [PicoClaw](https://github.com/sipeed/picoclaw) created by [Sipeed](https://github.com/sipeed). We have deeply modified and adapted it to integrate natively with **Odoo ERP** using asynchronous webhooks and a dedicated communication channel.
+## 🚀 Next Generation: your own AI, on your own hardware
 
-### 🌟 The PicoClaw Legacy: Why this base?
+**OdooClaw 1.0 ships with its own trained models — and remains fully model-agnostic.**
 
-PicoClaw was originally created by Sipeed to solve a very specific problem: bringing advanced AI Agent capabilities to ultra-low-cost hardware. We chose it as the foundation for OdooClaw because of its incredible technical feats:
+You can run OdooClaw with:
+- **Our models** (OdooClaw Light 1.2B + Vision, published on HuggingFace) — 100% local, open source (MIT), free forever
+- **Your own models** — any OpenAI-compatible endpoint: local (llama.cpp, oMLX/MLX, Ollama, vLLM) or cloud (OpenAI, Anthropic, DeepSeek, Gemini, Groq, OpenRouter, Moonshot, Qwen, NVIDIA, Zhipu)
 
-- **Written in Go**: Resulting in a single, fast, self-contained binary.
-- **Microscopic Footprint**: It uses **less than 10MB of RAM**, which is 99% less memory than its NodeJS/TypeScript counterparts (like OpenClaw or AutoGPT).
-- **Instant Boot**: Boots in under 1 second, even on single-core 0.6GHz hardware ($10 boards).
-- **True Portability**: Runs seamlessly on x86, ARM, and RISC-V architectures.
+> **Your ERP. Your data. Your hardware. No subscriptions. No cloud.**
+> Bring your own model, or use ours — the gateway treats both exactly the same.
 
-By using this engine, **OdooClaw** inherits the ability to run directly inside any Odoo deployment (even on minimal cloud VPS instances) without cannibalizing the resources your ERP needs to serve users.
+### 🧠 Our trained models (published on HuggingFace)
+
+| Model | Format | What it does |
+|---|---|---|
+| **[OdooClaw Light 1.2B](https://huggingface.co/nicolasramos/odooclaw-light-1.2b-ft)** | GGUF (llama.cpp) + Ollama | Conversational agent fine-tuned on **26,968 real business examples**: greetings, real conversation, record creation, destructive-operation refusal. **95% real-conversation accuracy, 600/600 record creations** with full schemas. |
+| **[OdooClaw Light 1.2B (MLX)](https://huggingface.co/nicolasramos/odooclaw-light-1.2b-ft-mlx)** | MLX (Apple Silicon) | Same model, native MLX runtime for Mac — never llama.cpp on Apple. |
+| **[OdooClaw Vision](https://huggingface.co/nicolasramos/odooclaw-vision)** | GGUF + mmproj | Invoice/document extraction straight from PDF, no cloud. **794/800 fields correct** in benchmark. |
+| **[OdooClaw Vision (MLX)](https://huggingface.co/nicolasramos/odooclaw-vision-mlx)** | MLX (Apple Silicon) | Same vision model, native MLX. |
+
+**Benchmarks (real hardware):** VPS 1 vCPU 20 tok/s · N100 72 · Mac Mini M1 146 · Strix Halo 221 · RTX 5070 Ti 620 · M1 Ultra **643 tok/s**. Less than 1GB of models.
+
+### 📦 One-shot local install
+
+```bash
+# Linux (llama.cpp + n-gram speculative decoding, +49% tok/s)
+curl -sL https://raw.githubusercontent.com/nicolasramos/odooclaw/v1.0.0/odooclaw/scripts/setup-local.sh | bash
+
+# Apple Silicon (oMLX/MLX, never llama.cpp on Mac)
+curl -sL https://raw.githubusercontent.com/nicolasramos/odooclaw/v1.0.0/odooclaw/scripts/setup-local.sh | bash
+```
+
+The installer builds the runtime, downloads the models from HuggingFace and writes the
+gateway config pointing to **your hardware** (`127.0.0.1:8082` chat / `:8093` vision).
+Zero API keys. Or deploy the full stack with the [Doodba template v18.0.0](https://github.com/nicolasramos/odooclaw-doodba)
+(local AI runtime option included).
+
+### 🔄 Bring Your Own Model (BYOM)
+
+Don't want our models? **No problem — OdooClaw works with any model you already use.**
+The gateway is OpenAI-compatible and supports every major provider:
+
+| Local | Cloud |
+|---|---|
+| llama.cpp · oMLX/MLX · Ollama · vLLM | OpenAI · Anthropic · DeepSeek · Gemini · Groq · OpenRouter · Moonshot · Qwen · NVIDIA · Zhipu |
+
+Just point the gateway at your endpoint (see [Providers & Model Configuration](#providers--model-configuration)):
+
+```json
+{
+  "agents": { "defaults": { "provider": "openai", "model": "gpt-4o-mini" } },
+  "providers": { "openai": { "api_base": "https://api.openai.com/v1", "api_key": "${OPENAI_API_KEY}" } }
+}
+```
+
+Our models are the **recommended defaults** (trained on Odoo business conversations,
+95% accuracy, 600/600 creations, 794/800 vision) — but they are never a requirement.
+
+### 🧪 Tested before release
+
+- **46/46 Go packages green** · **23/23 Odoo module tests** (Odoo 18) · **E2E 8/8** against a real stack
+- CI gate on every branch/PR (GitHub Actions)
+- History clean: no secrets, no build artifacts, no junk
 
 ---
-
-🦐 **OdooClaw** is an ultra-lightweight AI assistant written in Go. We added a **native Odoo channel** and a specialized `odoo-mcp` server, allowing the agent to interact with your Odoo instance through secure, granular tools (search/read/create/write and safe business actions) while replying directly in Odoo Discuss.
 
 ## ✨ Key Features
 
@@ -43,6 +93,14 @@ By using this engine, **OdooClaw** inherits the ability to run directly inside a
 - 🔐 **Native Permission Inheritance**: Secure by default. The AI dynamically assumes Odoo user permissions, preventing any bypass of native Security Rights or Record Rules.
 - 🧠 **Intelligent ORM Bridge**: High-precision tool execution. The `odoo-mcp` bridge provides modular tools with strict validation, denylist/allowlist controls, and safer mappings for real Odoo ORM operations.
 - 🧠 **Dual-Layer Memory (HOT + COLD)**: Keeps current prompt memory behavior while adding scoped historical memory, temporal facts, timeline recall, retrieval explainability, and optional historical markdown import.
+- 🧠 **Structured Session Memory (NRA-511)**: Per-session business state (current partner/company/document/module, pending confirmations) + long-term profile (preferences, company) — tools `memory_set_session_state`, `memory_set_pending_confirmation`, `memory_clear_pending`.
+- 📚 **Knowledge Base + Tool Retrieval (NRA-515)**: SQLite FTS5 KB with Odoo domain knowledge + retrieval engine that injects only the top 3-5 compact tool schemas (~245 tokens vs ~3,800 full) instead of all 100+.
+- 🏭 **Reproducible Dataset Pipeline (NRA-512)**: repo → parser → metadata → JSONL generator + validator + orchestrator; change a tool → regenerate the dataset.
+- 🧾 **4-Layer Model-Agnostic OCR Pipeline**: vision → fiscal → header → validation with any OpenAI-compatible model (default: GLM-OCR + LFM2.5). Validated 15/31 real invoices; failures go to declared review, never invented.
+- 🧾 **Dynamic Billing Rules (account_dynamic_rules)**: our module amplified with `tax_ids` + `fiscal_position_id` (PR #9 merged in odoo-addons): the tax and fiscal position are decided by Odoo from the OCR invoice JSON — **zero hardcoded taxes**, purely configurable mechanism, backported for Odoo 16/17/18.
+- 🛠️ **ToolGuard**: tool-call validation wrapper — schema validation + destructive-operation gating, dynamic allowlist from `ir.model` + denied models + escape hatch.
+- 💾 **One-Shot Local Installer**: `scripts/setup-local.sh` — llama.cpp (Linux) / oMLX (Apple) + HuggingFace model download + gateway config. Apple Silicon always uses MLX.
+- ⚡ **n-gram Speculative Decoding**: `--spec-ngram-mod-n-max 16` — benchmarked +49% tok/s on Linux (NRA-541).
 - 🔁 **RLM Acceleration (Context-Rot Resistant)**: For large Odoo datasets, OdooClaw decomposes analysis into recursive Map-Reduce steps (`rlm_partition` -> sub-agents -> `rlm_aggregate`) to keep context clean, improve accuracy, and reduce long-context cost.
 - 📄 **Smart OCR & Action Generation**: Automatically scans PDF invoices, extracts data, and creates vendor bills or purchase orders intelligently.
 - 💼 **Workforce Ops Tools**: Native tools for attendance, check-in/check-out, task-centric timesheets, daily summaries, missing-timesheet detection, and expense report lifecycle.
@@ -130,23 +188,29 @@ See [Voice Features Documentation](odooclaw/docs/VOICE_FEATURES.md) for detailed
 
 ---
 
-## 📦 Odoo Module (`mail_bot_odooclaw`)
+## 📦 Odoo Modules (`mail_bot_odooclaw` + `account_dynamic_rules`)
 
-The native module is located at: `odoo/custom/src/{version}/mail_bot_odooclaw/`
+Both modules live in the dedicated repository: [`github.com/nicolasramos/odoo-addons`](https://github.com/nicolasramos/odoo-addons)  
+Each Odoo version lives on its own branch: [`16`](https://github.com/nicolasramos/odoo-addons/tree/16), [`17`](https://github.com/nicolasramos/odoo-addons/tree/17), [`18`](https://github.com/nicolasramos/odoo-addons/tree/18).
 
-> **Note**: This module has been moved to a dedicated repository for standalone use:
-> [`github.com/nicolasramos/odoo-addons`](https://github.com/nicolasramos/odoo-addons)  
-> Each Odoo version lives on its own branch: [`16`](https://github.com/nicolasramos/odoo-addons/tree/16), [`17`](https://github.com/nicolasramos/odoo-addons/tree/17), [`18`](https://github.com/nicolasramos/odoo-addons/tree/18).
+### `mail_bot_odooclaw` — OdooClaw chat integration
 
-### Supported Odoo Versions
-
-| Version | Module Path | Channel Model |
-|---------|-------------|---------------|
-| **Odoo 18** | `odoo/custom/src/18.0/mail_bot_odooclaw/` | `discuss.channel` |
-| **Odoo 17** | `odoo/custom/src/17.0/mail_bot_odooclaw/` | `mail.channel` |
-| **Odoo 16** | `odoo/custom/src/16.0/mail_bot_odooclaw/` | `mail.channel` |
+| Version | Repository path | Channel Model |
+|---------|-----------------|---------------|
+| **Odoo 18** | `odoo-addons` branch [`18`](https://github.com/nicolasramos/odoo-addons/tree/18/mail_bot_odooclaw) → `mail_bot_odooclaw/` | `discuss.channel` |
+| **Odoo 17** | `odoo-addons` branch [`17`](https://github.com/nicolasramos/odoo-addons/tree/17/mail_bot_odooclaw) → `mail_bot_odooclaw/` | `mail.channel` |
+| **Odoo 16** | `odoo-addons` branch [`16`](https://github.com/nicolasramos/odoo-addons/tree/16/mail_bot_odooclaw) → `mail_bot_odooclaw/` | `mail.channel` |
 
 > **Note**: Odoo 18 renamed `mail.channel` to `discuss.channel` and changed the member relationship structure. Each version's module handles these differences automatically.
+
+### `account_dynamic_rules` — dynamic billing rules (Next Generation)
+
+The billing module that powers the **Next Generation OCR flow** (Odoo 16/17/18):
+
+- **Amplified with `tax_ids` + `fiscal_position_id`** ([PR #9](https://github.com/nicolasramos/odoo-addons/pull/9), merged on branch `18`)
+- The tax and **fiscal position are decided by Odoo from the OCR invoice JSON** — **zero hardcoded taxes**, purely configurable mechanism
+- Backported for Odoo 16/17/18 — same behavior on every version
+- Lives at `odoo-addons` branch [`18`](https://github.com/nicolasramos/odoo-addons/tree/18/account_dynamic_rules) → `account_dynamic_rules/`
 
 ### Installation in Odoo
 
@@ -251,9 +315,11 @@ For complete Doodba setup guides:
 
 ## 🔗 Related Projects
 
-- **OdooClaw MCP** (standalone MCP server): https://github.com/nicolasramos/odooclaw-mcp
-- **OdooClaw Core** (this repository): https://github.com/nicolasramos/odooclaw
-- **OdooClaw Doodba Template** (clone-and-run deployment template): https://github.com/nicolasramos/odooclaw-doodba
+- 🦐 **[OdooClaw](https://github.com/nicolasramos/odooclaw)** — this repository (AI gateway + agent)
+- 📦 **[OdooClaw Doodba Template](https://github.com/nicolasramos/odooclaw-doodba)** — stable deployment (v18.0.0) with **Local AI runtime option**
+- 🧩 **[Odoo Addons](https://github.com/nicolasramos/odoo-addons)** — `mail_bot_odooclaw` (Odoo module) + `account_dynamic_rules` (dynamic billing rules, Odoo 16/17/18)
+- 🤗 **[HuggingFace Models](https://huggingface.co/nicolasramos)** — OdooClaw Light 1.2B (GGUF/MLX/Ollama) + OdooClaw Vision (GGUF/MLX)
+- 🌐 **[nramos.dev](https://nramos.dev)** — project blog and documentation
 
 ### Odoo Privacy Modes (Recommended)
 
@@ -546,6 +612,24 @@ OdooClaw shares the ultra-lightweight architectural principles of its predecesso
 For an in-depth look at the architecture, please refer to the [Design Documentation](odooclaw/docs/design/ARCHITECTURE.md).
 
 ---
+
+## 📚 Documentation
+
+Guides for running and extending OdooClaw locally:
+
+- **[Local Setup](odooclaw/docs/LOCAL_SETUP.md)** — one-shot installer: llama.cpp (Linux) / oMLX (Apple), model download from HuggingFace, gateway config, n-gram speculative flags.
+- **[Memory System](odooclaw/docs/MEMORY.md)** — layered memory: HOT/COLD (SQLite), structured session memory (NRA-511), long-term profile, memory tools.
+- **[Knowledge Base & Tool Retrieval](odooclaw/docs/KNOWLEDGE_RETRIEVAL.md)** — KB + retrieval engine (NRA-515): top-3-5 compact tool schemas, synonym rewriter, Odoo domain knowledge.
+- **[Models](odooclaw/docs/MODELS.md)** — canonical models, how to change/swap models, HF publishing convention (GGUF + MLX + Ollama), acceleration.
+- **[ToolGuard](odooclaw/docs/toolguard.md)** — tool-call validation wrapper: schema checks + destructive-operation gating.
+- **[Dataset Pipeline](scripts/dataset_pipeline/README.md)** — reproducible training dataset generation (NRA-512).
+- **[OCR Invoice Pipeline](odooclaw/workspace/skills/ocr-invoice/README.md)** — 4-layer model-agnostic invoice extraction (vision → fiscal → header → validation).
+- **[Changelog](odooclaw/docs/CHANGELOG.md)** — release history (Unreleased covers NRA-511/512/513/515/540/541/542).
+
+---
+
+
+> **Fork Notice**: This project is a fork of [PicoClaw](https://github.com/sipeed/picoclaw) created by [Sipeed](https://github.com/sipeed). We have deeply modified and adapted it to integrate natively with **Odoo ERP** using asynchronous webhooks and a dedicated communication channel. The PicoClaw legacy gives OdooClaw its ultra-lightweight Go engine: under 10MB of RAM, boots in under 1 second, runs on x86/ARM/RISC-V — so it fits inside any Odoo deployment without cannibalizing ERP resources.
 
 ## ⚖️ License and Credits
 

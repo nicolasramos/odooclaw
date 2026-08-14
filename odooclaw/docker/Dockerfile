@@ -27,12 +27,15 @@ FROM python:3.11-slim
 # ffmpeg: required for audio processing
 # curl: for healthcheck
 # ca-certificates: for HTTPS
+# poppler-utils: pdftoppm — required by ocr-invoice MCP to render PDF pages
+#   to images before sending them to the local vision model
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     curl \
     git \
     ca-certificates \
     tzdata \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
@@ -70,6 +73,19 @@ RUN chmod +x /usr/local/bin/edge-tts-mcp.py
 # Copy Whisper STT MCP server script
 COPY workspace/skills/whisper-stt/server.py /usr/local/bin/whisper-stt-mcp.py
 RUN chmod +x /usr/local/bin/whisper-stt-mcp.py
+
+# Copy OCR-invoice MCP server script (PDF/document tools)
+COPY workspace/skills/ocr-invoice/server.py /usr/local/bin/ocr-invoice-mcp.py
+RUN chmod +x /usr/local/bin/ocr-invoice-mcp.py
+# 4-layer pipeline engine (OCR_MODE=pipeline): pipeline.py must sit next to the MCP script
+COPY workspace/skills/ocr-invoice/pipeline.py /usr/local/bin/pipeline.py
+RUN chmod +x /usr/local/bin/pipeline.py
+
+# Copy RLM-utils MCP server script (needs shebang for exec format)
+COPY workspace/skills/rlm-utils/server.py /usr/local/bin/rlm-utils-mcp.py
+RUN printf '#!/usr/bin/env python3\n' | cat - /usr/local/bin/rlm-utils-mcp.py > /tmp/rlm-utils-mcp.py && \
+    mv /tmp/rlm-utils-mcp.py /usr/local/bin/rlm-utils-mcp.py && \
+    chmod +x /usr/local/bin/rlm-utils-mcp.py
 
 # Create cache directory for whisper models
 RUN mkdir -p /home/odooclaw/.cache && \
