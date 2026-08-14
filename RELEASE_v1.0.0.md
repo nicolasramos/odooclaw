@@ -59,10 +59,16 @@ Generation stack into one stable branch, fully tested and CI-gated.
 - Doodba template **v18.0.0**: full stack with **Local AI runtime option**
   (gateway → `host.docker.internal`, no API keys needed).
 
-## Model-agnostic
+## Model-agnostic (BYOM)
 
-If you already run OdooClaw with your own models, you can keep them — the
-gateway remains model-agnostic. Nothing is hardcoded to the shipped models.
+Our models are **recommended defaults — never a requirement**. OdooClaw stays fully
+model-agnostic: you can keep using any model you already have.
+
+- **Cloud**: OpenAI, Anthropic, DeepSeek, Gemini, Groq, OpenRouter, Moonshot, Qwen, NVIDIA, Zhipu
+- **Local**: llama.cpp, oMLX/MLX, Ollama, vLLM — any OpenAI-compatible endpoint
+
+The gateway treats your model and ours exactly the same. Nothing is hardcoded to the
+shipped models; switching providers is a one-line config change.
 
 ## Safety model
 
