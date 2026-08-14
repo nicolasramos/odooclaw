@@ -28,3 +28,41 @@ jobs:
 
       - name: Test
         run: go test ./... -count=1 -timeout 300s
+
+  pytest-odoo-mcp:
+    name: pytest odoo-mcp
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        skill: [workspace, onboard]
+    defaults:
+      run:
+        working-directory: odooclaw
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system deps (tesseract, poppler)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr poppler-utils
+
+      - name: Install odoo-mcp workspace deps
+        working-directory: odooclaw/workspace/skills/odoo-mcp
+        run: pip install --no-cache-dir -r requirements.txt
+
+      - name: Install odoo-mcp onboard deps
+        working-directory: odooclaw/cmd/odooclaw/internal/onboard/workspace/skills/odoo-mcp
+        run: pip install --no-cache-dir -r requirements.txt
+
+      - name: Run workspace tests
+        working-directory: odooclaw/workspace/skills/odoo-mcp
+        run: PYTHONPATH=src python3 -m pytest tests/ -q
+
+      - name: Run onboard tests
+        working-directory: odooclaw/cmd/odooclaw/internal/onboard/workspace/skills/odoo-mcp
+        run: PYTHONPATH=src python3 -m pytest tests/ -q
