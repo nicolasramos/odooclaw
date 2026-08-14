@@ -25,14 +25,9 @@ func mkTool(name, description string, inputSchema any) *mcp.Tool {
 	if err != nil {
 		return t
 	}
-	// Decode into a flexible intermediate, then assign to the
-	// SDK's expected shape via JSON round-trip. The MCP SDK's
-	// ToolInputSchema struct is JSON-tagged (Type, Properties,
-	// Required) so this works for both schema-bearing and
-	// schema-less tools.
-	var input mcp.ToolInputSchema
-	if err := json.Unmarshal(raw, &input); err == nil {
-		t.InputSchema = &input
-	}
+	// Decode into the SDK's expected shape. In go-sdk v1.4.1
+	// Tool.InputSchema is `any`; a json.RawMessage preserves the
+	// schema bytes verbatim (no base64 re-encoding of []byte).
+	t.InputSchema = json.RawMessage(raw)
 	return t
 }

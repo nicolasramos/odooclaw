@@ -130,12 +130,23 @@ class OdooOCRSkill:
             }
 
     def _download_attachment(self, attachment_id: int):
-        res = self._odoo_call(
-            "ir.attachment",
-            "read",
-            [[attachment_id]],
-            {"fields": ["id", "name", "mimetype", "datas"]},
-        )
+        # IMPORTANTE: la lectura del attachment debe hacerse como ADMIN, no como
+        # el sender del mensaje. Con sender_id el MCP usa /odooclaw/call_kw_as_user
+        # (user_id=sender) y los attachments sueltos (res_model=False, creados por
+        # message_post) NO son visibles para el usuario del chat → "Attachment N
+        # not found" aunque exista. El download es infraestructura, no una accion
+        # del usuario: preservamos sender solo si ya estaba seteado.
+        saved_sender = self.runtime_sender_id
+        self.runtime_sender_id = None
+        try:
+            res = self._odoo_call(
+                "ir.attachment",
+                "read",
+                [[attachment_id]],
+                {"fields": ["id", "name", "mimetype", "datas"]},
+            )
+        finally:
+            self.runtime_sender_id = saved_sender
         if res.get("isError"):
             return res
 
@@ -275,31 +286,15 @@ class OdooOCRSkill:
             return {"isError": True, "content": f"External OCR call failed: {str(exc)}"}
 
     def _call_vision(self, attachment):
+        # IMPORTANTE: para modelos locales pequeños (450M), el prompt NO puede
+        # incluir el schema JSON inline — el modelo regurgita la plantilla vacia.
+        # El normalizador (_normalize_invoice) mapea los campos alternativos.
         prompt = (
-            "You are an OCR+Accounting extractor for supplier invoices. "
-            "Return ONLY valid JSON, no markdown, no explanations.\n\n"
-            "JSON schema:\n"
-            "{\n"
-            '  "partner_name": "",\n'
-            '  "partner_vat": "",\n'
-            '  "customer_name": "",\n'
-            '  "customer_vat": "",\n'
-            '  "invoice_date": "",\n'
-            '  "invoice_date_due": "",\n'
-            '  "ref": "",\n'
-            '  "currency": "EUR",\n'
-            '  "amount_untaxed": 0,\n'
-            '  "amount_tax": 0,\n'
-            '  "amount_total": 0,\n'
-            '  "notes": "",\n'
-            '  "invoice_line_ids": [\n'
-            '    {"name": "", "quantity": 1, "price_unit": 0, "tax_percentage": 21}\n'
-            "  ]\n"
-            "}\n\n"
-            "Rules: dates must be YYYY-MM-DD, numbers as numeric values, tax_percentage as number (0,4,10,21...)."
+            "Extract invoice data as JSON only. "
+            "Return JSON with vendor_name, invoice_number, date, total, tax."
         )
 
-        content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        content: list[dict[str, Any]] = []
 
         mime = attachment["mimetype"]
         if "pdf" in mime or attachment["name"].lower().endswith(".pdf"):
@@ -323,6 +318,10 @@ class OdooOCRSkill:
                 }
             )
 
+        # IMPORTANTE: la imagen SIEMPRE primero; el texto de instrucciones al final.
+        # Verificado en N100 (2026-08-07): con texto primero el 450M regurgita basura.
+        content.append({"type": "text", "text": prompt})
+
         payload = {
             "model": self.vision_model,
             "messages": [
@@ -333,13 +332,18 @@ class OdooOCRSkill:
                 {"role": "user", "content": content},
             ],
             "temperature": 0,
+            "max_tokens": 150,
         }
 
         headers = {"Content-Type": "application/json"}
         if self.openai_api_key:
             headers["Authorization"] = f"Bearer {self.openai_api_key}"
 
-        try:
+        # El 450M es no-determinista en CPU: a veces entra en bucle de repeticion.
+        # 3 intentos con el mismo prompt (temp 0.0) resuelve la mayoria.
+        last_exc = None
+        for _attempt in range(3):
+          try:
             r = requests.post(
                 f"{self.vision_api_base}/chat/completions",
                 json=payload,
@@ -350,14 +354,58 @@ class OdooOCRSkill:
             body = r.json()
             text = body.get("choices", [{}])[0].get("message", {}).get("content", "")
             parsed = self._extract_first_json(text)
-            return {"parsed": parsed, "raw_text": text}
-        except Exception as exc:
-            return {"isError": True, "content": f"Vision extraction failed: {str(exc)}"}
+            if parsed is not None:
+                return {"parsed": parsed, "raw_text": text}
+            last_exc = ValueError("No valid JSON found in model response")
+          except Exception as exc:
+            last_exc = exc
+        return {"isError": True, "content": f"Vision extraction failed: {last_exc}"}
+
+    def _norm_date(self, value, default=""):
+        import re as _re
+        if not value:
+            return default
+        value = str(value).strip()
+        # ya ISO
+        if _re.match(r"\d{4}-\d{2}-\d{2}", value):
+            return value[:10]
+        m = _re.match(r"(\d{1,2})[/.](\d{1,2})[/.](\d{2,4})", value)
+        if m:
+            a, b, y = m.groups()
+            y = "20" + y if len(y) == 2 else y
+            # Heuristica: si el primero >12 -> dia/mes (europeo); si el segundo >12 -> mes/dia (US)
+            if int(a) > 12:
+                d, mo = int(a), int(b)
+            elif int(b) > 12:
+                mo, d = int(a), int(b)
+            else:
+                # ambiguo (ambos <=12): asumir mes/dia (US, comun en facturas inglesas)
+                mo, d = int(a), int(b)
+            return f"{int(y):04d}-{mo:02d}-{d:02d}"
+        # formato largo "May 7th, 2025" etc -> best effort
+        from datetime import datetime
+        for fmt in ("%b %d, %Y", "%B %d, %Y", "%d %b %Y", "%d %B %Y"):
+            try:
+                return datetime.strptime(value, fmt).strftime("%Y-%m-%d")
+            except Exception:
+                continue
+        return default
 
     def _num(self, value, default=0.0):
         try:
             if isinstance(value, str):
-                value = value.replace(" ", "").replace(",", ".")
+                # limpiar simbolos de moneda y separadores europeos (1.234,56 -> 1234.56)
+                value = (
+                    value.replace("€", "").replace("EUR", "")
+                    .replace("$", "").replace("GBP", "").replace("USD", "")
+                    .replace(" ", "").replace("\u00a0", "")
+                )
+                if "," in value and "." in value:
+                    # formato europeo 1.234,56
+                    if value.rfind(",") > value.rfind("."):
+                        value = value.replace(".", "").replace(",", ".")
+                elif "," in value:
+                    value = value.replace(",", ".")
             return float(value)
         except Exception:
             return float(default)
@@ -428,20 +476,22 @@ class OdooOCRSkill:
             ).strip(),
             "customer_name": str(data.get("customer_name") or "").strip(),
             "customer_vat": str(data.get("customer_vat") or "").strip(),
-            "invoice_date": str(data.get("invoice_date") or "").strip(),
-            "invoice_date_due": str(
+            "invoice_date": self._norm_date(data.get("invoice_date") or data.get("date") or ""),
+            "invoice_date_due": self._norm_date(
                 data.get("invoice_date_due") or data.get("due_date") or ""
-            ).strip(),
+            ),
             "ref": str(data.get("ref") or data.get("invoice_number") or "").strip(),
             "currency": str(data.get("currency") or "EUR").strip() or "EUR",
             "amount_untaxed": self._num(
                 data.get("amount_untaxed") or data.get("subtotal"), 0
             ),
             "amount_tax": self._num(
-                data.get("amount_tax") or data.get("tax_amount"), 0
+                data.get("amount_tax") or data.get("tax_amount")
+                or data.get("tax"), 0
             ),
             "amount_total": self._num(
-                data.get("amount_total") or data.get("total_amount"), 0
+                data.get("amount_total") or data.get("total_amount")
+                or data.get("total"), 0
             ),
             "notes": str(data.get("notes") or "").strip(),
             "invoice_line_ids": normalized_lines,
@@ -537,7 +587,6 @@ class OdooOCRSkill:
             [
                 {
                     "name": name,
-                    "datas_fname": name,
                     "type": "binary",
                     "datas": datas_b64,
                     "res_model": record_model,
@@ -670,6 +719,10 @@ class OdooOCRSkill:
                 }
             )
 
+        # IMPORTANTE: la imagen SIEMPRE primero; el texto de instrucciones al final.
+        # Verificado en N100 (2026-08-07): con texto primero el 450M regurgita basura.
+        content.append({"type": "text", "text": prompt})
+
         payload = {
             "model": self.vision_model,
             "messages": [
@@ -680,6 +733,7 @@ class OdooOCRSkill:
                 {"role": "user", "content": content},
             ],
             "temperature": 0,
+            "max_tokens": 150,
         }
 
         headers = {"Content-Type": "application/json"}
@@ -893,6 +947,10 @@ class OdooOCRSkill:
                 }
             )
 
+        # IMPORTANTE: la imagen SIEMPRE primero; el texto de instrucciones al final.
+        # Verificado en N100 (2026-08-07): con texto primero el 450M regurgita basura.
+        content.append({"type": "text", "text": prompt})
+
         payload = {
             "model": self.vision_model,
             "messages": [
@@ -903,6 +961,7 @@ class OdooOCRSkill:
                 {"role": "user", "content": content},
             ],
             "temperature": 0,
+            "max_tokens": 150,
         }
 
         headers = {"Content-Type": "application/json"}
@@ -999,6 +1058,95 @@ class OdooOCRSkill:
             name_override=name,
         )
 
+    def _call_rapidocr(self, attachment):
+        """Extracción con RapidOCR local (100% CPU): texto + coordenadas +
+        parser posicional + lógica de negocio. No necesita modelo de visión."""
+        try:
+            from rapidocr_extractor import extract_invoice_rapidocr
+        except ImportError:
+            return {
+                "isError": True,
+                "content": "rapidocr_extractor no disponible (pip install rapidocr-onnxruntime)",
+            }
+        pdf_data = attachment.get("data")
+        if not pdf_data:
+            return {"isError": True, "content": "Attachment sin datos binarios"}
+        mime = attachment.get("mimetype", "")
+        if "pdf" not in mime and not attachment.get("name", "").lower().endswith(".pdf"):
+            return {"isError": True, "content": "RapidOCR solo procesa PDFs"}
+        res = extract_invoice_rapidocr(
+            pdf_data,
+            dpi=self.ocr_image_dpi,
+            max_pages=self.ocr_max_pages,
+            known_vendors=None,
+            company_vats=os.environ.get("COMPANY_VATS", "").split(",") if os.environ.get("COMPANY_VATS") else None,
+        )
+        return res
+
+    def _call_pipeline(self, attachment):
+        """4-layer model-agnostic pipeline (vision -> fiscal -> header -> validate).
+
+        Config via env (any OpenAI-compatible endpoint):
+          OCR_PIPELINE_VISION_URL   default http://127.0.0.1:8093/v1 (odooclaw-vision)
+          OCR_PIPELINE_VISION_MODEL default odooclaw-vision
+          OCR_PIPELINE_VISION_KEY   optional
+          OCR_PIPELINE_LLM_URL      default http://127.0.0.1:8000/v1 (LFM2.5-1.2B base)
+          OCR_PIPELINE_LLM_MODEL    default LFM2.5-1.2B-Instruct-MLX-4bit
+          OCR_PIPELINE_LLM_KEY      optional
+        """
+        try:
+            from pipeline import OCRConfig, run_pipeline
+        except ImportError:
+            return {"isError": True, "content": "pipeline.py not available in ocr-invoice workspace"}
+
+        cfg = OCRConfig(
+            vision_base_url=os.environ.get(
+                "OCR_PIPELINE_VISION_URL", "http://127.0.0.1:8093/v1"
+            ),
+            vision_model=os.environ.get("OCR_PIPELINE_VISION_MODEL", "odooclaw-vision"),
+            vision_api_key=os.environ.get("OCR_PIPELINE_VISION_KEY", ""),
+            llm_base_url=os.environ.get(
+                "OCR_PIPELINE_LLM_URL", "http://127.0.0.1:8000/v1"
+            ),
+            llm_model=os.environ.get(
+                "OCR_PIPELINE_LLM_MODEL", "LFM2.5-1.2B-Instruct-MLX-4bit"
+            ),
+            llm_api_key=os.environ.get("OCR_PIPELINE_LLM_KEY", ""),
+        )
+        pdf_data = attachment.get("data")
+        if not pdf_data:
+            return {"isError": True, "content": "Attachment sin datos binarios"}
+        mime = attachment.get("mimetype", "")
+        if "pdf" not in mime and not attachment.get("name", "").lower().endswith(".pdf"):
+            return {"isError": True, "content": "Pipeline solo procesa PDFs"}
+        try:
+            import tempfile as _tf
+            with _tf.TemporaryDirectory(prefix="ocr_pipeline_") as _workdir:
+                _pdf = os.path.join(_workdir, "invoice.pdf")
+                with open(_pdf, "wb") as _f:
+                    _f.write(pdf_data)
+                data = run_pipeline(_pdf, cfg)
+        except Exception as e:  # noqa: BLE001
+            return {"isError": True, "content": f"Pipeline failed: {e}"}
+
+        # Normalize pipeline output to the canonical invoice schema
+        invoice_data = {
+            "vendor_name": (data.get("partner_name") or "").strip(),
+            "vendor_vat": (data.get("vat") or "").strip(),
+            "invoice_number": (data.get("ref") or "").strip(),
+            "invoice_date": (data.get("invoice_date") or "").strip(),
+            "amount_total": data.get("amount_total"),
+            "subtotal": data.get("amount_total"),
+            "amount_tax": data.get("amount_tax"),
+            "currency": (data.get("currency") or "EUR").strip(),
+            "lines": data.get("invoice_line_ids") or [],
+            "fiscal_found": data.get("fiscal_found", False),
+            "is_reverse_charge": data.get("is_reverse_charge", False),
+            "validation_ok": data.get("_ok", False),
+            "validation_issues": data.get("_issues", []),
+        }
+        return {"invoice_data": invoice_data, "raw_text": data.get("_raw_text", "")}
+
     def extract_invoice(
         self,
         attachment_id: int,
@@ -1018,20 +1166,41 @@ class OdooOCRSkill:
         extracted = None
         raw_text = None
 
-        ext_res = self._call_external_ocr(attachment)
-        if isinstance(ext_res, dict) and not ext_res.get("isError"):
-            extracted = ext_res
-        else:
-            vision_res = self._call_vision(attachment)
-            if vision_res.get("isError"):
-                if isinstance(ext_res, dict) and ext_res.get("isError"):
-                    return {
-                        "isError": True,
-                        "content": f"External OCR failed: {ext_res.get('content')} | Vision fallback failed: {vision_res.get('content')}",
-                    }
-                return vision_res
-            extracted = vision_res.get("parsed")
-            raw_text = vision_res.get("raw_text")
+        # 0) Motor preferente (si se pide explícitamente): pipeline 4 capas agnóstico
+        ocr_mode = os.environ.get("OCR_MODE", "auto").strip().lower()
+        if ocr_mode == "pipeline":
+            pipe_res = self._call_pipeline(attachment)
+            if isinstance(pipe_res, dict) and not pipe_res.get("isError"):
+                extracted = pipe_res.get("invoice_data") or {}
+                raw_text = pipe_res.get("raw_text")
+            else:
+                return pipe_res
+
+        # 1) Motor preferente: RapidOCR local (100% CPU, extrae líneas y cabecera)
+        if not extracted and ocr_mode in ("rapidocr", "auto"):
+            rapid_res = self._call_rapidocr(attachment)
+            if isinstance(rapid_res, dict) and not rapid_res.get("isError"):
+                extracted = rapid_res.get("invoice_data") or {}
+                raw_text = rapid_res.get("raw_text")
+            elif ocr_mode == "rapidocr":
+                return rapid_res
+
+        # 2) Fallback: OCR externo (si está configurado) y visión VL
+        if not extracted:
+            ext_res = self._call_external_ocr(attachment)
+            if isinstance(ext_res, dict) and not ext_res.get("isError"):
+                extracted = ext_res
+            else:
+                vision_res = self._call_vision(attachment)
+                if vision_res.get("isError"):
+                    if isinstance(ext_res, dict) and ext_res.get("isError"):
+                        return {
+                            "isError": True,
+                            "content": f"External OCR failed: {ext_res.get('content')} | Vision fallback failed: {vision_res.get('content')}",
+                        }
+                    return vision_res
+                extracted = vision_res.get("parsed")
+                raw_text = vision_res.get("raw_text")
 
         invoice_data = self._normalize_invoice(extracted or {})
         return {

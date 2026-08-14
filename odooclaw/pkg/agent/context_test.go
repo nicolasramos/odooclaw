@@ -538,3 +538,56 @@ func TestSlidingWindowByTokens_EmptyHistoryReturnsEmpty(t *testing.T) {
 		t.Fatal("expected empty result for empty history")
 	}
 }
+
+func TestBuildSystemPrompt_MinimalForLocalSmallModel(t *testing.T) {
+	tmpDir := t.TempDir()
+	// Populate the workspace with the full-context sources (identity + AGENTS.md
+	// + skills + memory). If the minimal-prompt gate were missing, these would
+	// inflate the system prompt to several thousand chars.
+	if err := os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte("LONG AGENTS BOOTSTRAP "+strings.Repeat("x", 8000)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmpDir, "memory"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "memory", "MEMORY.md"), []byte("# Memory\n\nlots of long context "+strings.Repeat("y", 4000)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cb := NewContextBuilder(tmpDir, 0, 0)
+	cb.SetModel("odooclaw-v25e")
+	cb.InvalidateCache()
+
+	prompt := cb.BuildSystemPrompt()
+	if !cb.isLocalSmallModel() {
+		t.Fatal("expected isLocalSmallModel() to be true for odooclaw-v25e")
+	}
+	if len(prompt) > 2500 {
+		t.Fatalf("expected minimal system prompt (<2500 chars), got %d chars", len(prompt))
+	}
+	if strings.Contains(prompt, "AGENTS BOOTSTRAP") || strings.Contains(prompt, "lots of long context") {
+		t.Fatal("minimal prompt must not include AGENTS.md or memory content")
+	}
+	if !strings.Contains(prompt, "<tool_call>") {
+		t.Fatal("minimal prompt must instruct the <tool_call> format")
+	}
+}
+
+func TestBuildSystemPrompt_FullForRemoteModel(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte("BOOTSTRAP-CONTENT"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cb := NewContextBuilder(tmpDir, 0, 0)
+	cb.SetModel("gpt-4o")
+	cb.InvalidateCache()
+
+	prompt := cb.BuildSystemPrompt()
+	if cb.isLocalSmallModel() {
+		t.Fatal("expected isLocalSmallModel() to be false for gpt-4o")
+	}
+	if !strings.Contains(prompt, "BOOTSTRAP-CONTENT") {
+		t.Fatal("remote models must keep the full system prompt including bootstrap files")
+	}
+}
