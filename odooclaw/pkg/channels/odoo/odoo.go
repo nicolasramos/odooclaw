@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -23,9 +24,31 @@ import (
 
 type OdooChannel struct {
 	*channels.BaseChannel
-	config        config.OdooConfig
-	client        *http.Client
-	pendingTokens sync.Map // replyChatID -> replyToken (string), single-use
+	config            config.OdooConfig
+	client            *http.Client
+	pendingTokens     sync.Map // replyChatID -> replyToken (string), single-use
+	workspace         string   // agent workspace for MODULES.md (system webhook)
+	allowlistResetter func(ctx context.Context) error
+}
+
+// SetAllowlistCacheResetter wires a callback that invalidates the MCP
+// odoo-mcp allowlist cache (Go→MCP mechanism). It is injected by the agent
+// loop after MCP initialization; when nil, the TTL-60s cache stays as the
+// fallback and the system webhook still answers 200.
+func (c *OdooChannel) SetAllowlistCacheResetter(fn func(ctx context.Context) error) {
+	c.allowlistResetter = fn
+}
+
+// systemWebhookPath returns the system-events sub-route served by this
+// channel (e.g. /webhook/odoo/system).
+func (c *OdooChannel) systemWebhookPath() string {
+	return strings.TrimSuffix(c.WebhookPath(), "/") + "/system"
+}
+
+// WebhookExtraPaths implements channels.WebhookExtraPaths so the shared HTTP
+// server also mounts the system-events endpoint on the same handler.
+func (c *OdooChannel) WebhookExtraPaths() []string {
+	return []string{c.systemWebhookPath()}
 }
 
 // ChatterMessage represents a single message from the Odoo record chatter,
@@ -60,19 +83,34 @@ type OdooReplyPayload struct {
 	ReplyToken string `json:"reply_token,omitempty"`
 }
 
-func NewOdooChannel(cfg config.OdooConfig, messageBus *bus.MessageBus) (*OdooChannel, error) {
+func NewOdooChannel(cfg config.OdooConfig, messageBus *bus.MessageBus, workspace string) (*OdooChannel, error) {
 	base := channels.NewBaseChannel("odoo", cfg, messageBus, cfg.AllowFrom,
 		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
 	)
+
+	if workspace == "" {
+		workspace = defaultWorkspace()
+	}
 
 	ch := &OdooChannel{
 		BaseChannel: base,
 		config:      cfg,
 		client:      &http.Client{Timeout: 10 * time.Second},
+		workspace:   workspace,
 	}
 
 	base.SetOwner(ch)
 	return ch, nil
+}
+
+// defaultWorkspace returns the agent workspace used by the system webhook
+// to write MODULES.md when agents.defaults.workspace is empty.
+func defaultWorkspace() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".odooclaw", "workspace")
+	}
+	return filepath.Join(home, ".odooclaw", "workspace")
 }
 
 func (c *OdooChannel) Start(ctx context.Context) error {
@@ -174,6 +212,11 @@ func (c *OdooChannel) WebhookPath() string {
 }
 
 func (c *OdooChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == c.systemWebhookPath() {
+		c.serveSystemWebhook(w, r)
+		return
+	}
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -300,4 +343,102 @@ func (c *OdooChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status":"ok"}`))
+}
+
+// OdooSystemWebhookPayload is the JSON body of the system-events webhook
+// (POST /webhook/odoo/system). It carries no reply_token — these events do
+// not come from a chat.
+type OdooSystemWebhookPayload struct {
+	Event   string   `json:"event"`
+	Keys    []string `json:"keys"`
+	Content string   `json:"content"`
+}
+
+// serveSystemWebhook handles Odoo system events: modules_changed and
+// config_changed invalidate the MCP allowlist cache; modules_md_rebuild
+// writes the provided markdown verbatim to <workspace>/memory/MODULES.md.
+func (c *OdooChannel) serveSystemWebhook(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	// Verify webhook token if configured — same behavior as the chat webhook.
+	token := r.Header.Get("X-OdooClaw-Token")
+	if c.config.WebhookToken != "" && token != c.config.WebhookToken {
+		slog.Warn("Rejected Odoo system webhook: invalid token", "remote", r.RemoteAddr)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var payload OdooSystemWebhookPayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		slog.Error("Failed to parse Odoo system webhook", "error", err)
+		writeSystemError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	switch payload.Event {
+	case "modules_changed", "config_changed":
+		// config_changed invalidates regardless of keys (the Odoo module only
+		// sends it when odooclaw.denied_models changes).
+		c.resetAllowlistCache(r.Context())
+	case "modules_md_rebuild":
+		if strings.TrimSpace(payload.Content) == "" {
+			writeSystemError(w, http.StatusBadRequest, "missing content")
+			return
+		}
+		if err := writeModulesMD(c.workspace, payload.Content); err != nil {
+			slog.Error("Failed to write MODULES.md", "error", err)
+			writeSystemError(w, http.StatusInternalServerError, "failed to write MODULES.md")
+			return
+		}
+	default:
+		writeSystemError(w, http.StatusBadRequest, "unknown event")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"ok"}`))
+}
+
+// resetAllowlistCache invalidates the MCP odoo-mcp allowlist cache via the
+// injected resetter. When no resetter is wired (MCP unavailable), the
+// TTL-60s cache remains as the degradation fallback and the request still
+// succeeds — events are fire-and-forget.
+func (c *OdooChannel) resetAllowlistCache(ctx context.Context) {
+	if c.allowlistResetter == nil {
+		slog.Warn("Odoo system webhook: no allowlist cache resetter wired; relying on 60s TTL")
+		return
+	}
+	resetCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := c.allowlistResetter(resetCtx); err != nil {
+		slog.Warn("Odoo system webhook: allowlist cache reset failed; relying on 60s TTL", "error", err)
+	}
+}
+
+// writeModulesMD writes content verbatim (no merge, no append, no LLM) to
+// <workspace>/memory/MODULES.md, creating the directory as needed.
+func writeModulesMD(workspace, content string) error {
+	dir := filepath.Join(workspace, "memory")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "MODULES.md"), []byte(content), 0o644)
+}
+
+// writeSystemError writes a JSON error body.
+func writeSystemError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write([]byte(fmt.Sprintf(`{"error":%q}`, message)))
 }
