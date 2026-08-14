@@ -20,7 +20,15 @@ def _parse(path: Path) -> ast.Module:
 def test_all_rpc_calls_propagate_sender_id():
     missing = []
     for path in SRC_ROOT.rglob("*.py"):
-        for node in ast.walk(_parse(path)):
+        # Skip macOS resource fork files (._*.py) which are binary.
+        if path.name.startswith("._"):
+            continue
+        try:
+            tree = _parse(path)
+        except (UnicodeDecodeError, ValueError):
+            # Skip files that can't be parsed as UTF-8 text.
+            continue
+        for node in ast.walk(tree):
             if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
                 continue
             if node.func.attr not in RPC_METHODS:
