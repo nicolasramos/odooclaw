@@ -51,6 +51,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y tesseract-ocr poppler-utils
 
+      - name: Install pytest
+        run: pip install --no-cache-dir pytest
+
       - name: Install odoo-mcp workspace deps
         working-directory: odooclaw/workspace/skills/odoo-mcp
         run: pip install --no-cache-dir -r requirements.txt
