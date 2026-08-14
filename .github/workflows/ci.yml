@@ -28,3 +28,37 @@ jobs:
 
       - name: Test
         run: go test ./... -count=1 -timeout 300s
+
+  pytest:
+    name: odoo-mcp tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: odooclaw
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install odoo-mcp (workspace)
+        run: |
+          cd odooclaw/workspace/skills/odoo-mcp
+          pip install -r requirements.txt
+
+      - name: Run workspace tests
+        run: |
+          cd odooclaw/workspace/skills/odoo-mcp
+          PYTHONPATH=src python3 -m pytest tests/ -q
+
+      - name: Install odoo-mcp (onboard)
+        run: |
+          cd odooclaw/cmd/odooclaw/internal/onboard/workspace/skills/odoo-mcp
+          pip install -r requirements.txt
+
+      - name: Run onboard tests
+        run: |
+          cd odooclaw/cmd/odooclaw/internal/onboard/workspace/skills/odoo-mcp
+          PYTHONPATH=src python3 -m pytest tests/ -q
