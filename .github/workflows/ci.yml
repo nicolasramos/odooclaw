@@ -44,21 +44,13 @@ jobs:
           python-version: "3.10"
 
       - name: Install odoo-mcp (workspace)
-        run: |
-          cd odooclaw/workspace/skills/odoo-mcp
-          pip install -r requirements.txt
+        run: pip install -r workspace/skills/odoo-mcp/requirements.txt
 
       - name: Run workspace tests
-        run: |
-          cd odooclaw/workspace/skills/odoo-mcp
-          PYTHONPATH=src python3 -m pytest tests/ -q
+        run: PYTHONPATH=src python3 -m pytest workspace/skills/odoo-mcp/tests/ -q
 
       - name: Install odoo-mcp (onboard)
-        run: |
-          cd odooclaw/cmd/odooclaw/internal/onboard/workspace/skills/odoo-mcp
-          pip install -r requirements.txt
+        run: pip install -r cmd/odooclaw/internal/onboard/workspace/skills/odoo-mcp/requirements.txt
 
       - name: Run onboard tests
-        run: |
-          cd odooclaw/cmd/odooclaw/internal/onboard/workspace/skills/odoo-mcp
-          PYTHONPATH=src python3 -m pytest tests/ -q
+        run: PYTHONPATH=src python3 -m pytest cmd/odooclaw/internal/onboard/workspace/skills/odoo-mcp/tests/ -q
