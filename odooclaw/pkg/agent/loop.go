@@ -276,6 +276,13 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					"agent_count":         agentCount,
 				})
 		}
+
+		// Wire the Odoo system webhook (/webhook/odoo/system) to invalidate
+		// the MCP odoo-mcp allowlist cache. The Python policy cache lives in
+		// the MCP server process; the gateway reaches it through an MCP tool
+		// call on the existing stdio session. If no odoo MCP server is
+		// connected, the 60s TTL remains the degradation fallback.
+		al.wireOdooAllowlistCacheResetter(mcpManager)
 	}
 
 	for al.running.Load() {
@@ -367,6 +374,49 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 
 func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
+}
+
+// wireOdooAllowlistCacheResetter connects the Odoo system webhook
+// (/webhook/odoo/system) to the MCP odoo-mcp server's allowlist cache
+// invalidation tool. The Python policy cache lives in the MCP server
+// process, so the gateway reaches it through a tools/call on the existing
+// stdio session (Go→MCP). No-op when the odoo channel is absent, the MCP
+// server is not connected, or the channel does not expose a resetter hook.
+func (al *AgentLoop) wireOdooAllowlistCacheResetter(mcpManager *mcp.Manager) {
+	if al.channelManager == nil || mcpManager == nil {
+		return
+	}
+	ch, ok := al.channelManager.GetChannel("odoo")
+	if !ok {
+		return
+	}
+	resetter, ok := ch.(channels.AllowlistCacheResetter)
+	if !ok {
+		return
+	}
+	serverName := odooMCPServerName(mcpManager)
+	if serverName == "" {
+		logger.WarnC("agent", "odoo MCP server not connected; allowlist cache reset unavailable (60s TTL fallback)")
+		return
+	}
+	resetter.SetAllowlistCacheResetter(func(ctx context.Context) error {
+		_, err := mcpManager.CallTool(ctx, serverName, "reset_allowed_models_cache", map[string]any{})
+		return err
+	})
+	logger.InfoCF("agent", "Wired Odoo allowlist cache resetter", map[string]any{
+		"mcp_server": serverName,
+	})
+}
+
+// odooMCPServerName returns the connected MCP server name for the Odoo MCP
+// (config may key it as "odoo-mcp" or "odoo-manager"), or "" if not connected.
+func odooMCPServerName(m *mcp.Manager) string {
+	for _, name := range []string{"odoo-mcp", "odoo-manager"} {
+		if _, ok := m.GetServer(name); ok {
+			return name
+		}
+	}
+	return ""
 }
 
 // SetMediaStore injects a MediaStore for media lifecycle management.

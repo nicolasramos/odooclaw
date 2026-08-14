@@ -304,6 +304,17 @@ func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
 				"channel": name,
 				"path":    wh.WebhookPath(),
 			})
+			// Optional extra paths served by the same handler (e.g. channel
+			// sub-routes like /webhook/odoo/system).
+			if extra, ok := ch.(WebhookExtraPaths); ok {
+				for _, p := range extra.WebhookExtraPaths() {
+					m.mux.Handle(p, wh)
+					logger.InfoCF("channels", "Extra webhook handler registered", map[string]any{
+						"channel": name,
+						"path":    p,
+					})
+				}
+			}
 		}
 		if hc, ok := ch.(HealthChecker); ok {
 			m.mux.HandleFunc(hc.HealthPath(), hc.HealthHandler)

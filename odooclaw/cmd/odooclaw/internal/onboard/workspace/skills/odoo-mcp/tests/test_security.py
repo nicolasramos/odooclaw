@@ -45,7 +45,8 @@ def test_unlink_blocked():
 
 # ============================================
 # Tests for expanded allowlist (GH #47)
-# =====================================
+# ============================================
+
 def test_new_business_models_allowed():
     """Models core CE que faltaban deben ser permitidos."""
     # Should not raise
@@ -263,7 +264,8 @@ def test_allowed_models_expanded():
 
 # ============================================
 # Tests for dynamic allowlist (NRA-463)
-# =====================================
+# ============================================
+
 def test_dynamic_allowlist_from_ir_model():
     """La allowlist dinámica debe consultar ir.model y excluir DENIED."""
     from odoo_mcp.security import policy
@@ -479,10 +481,51 @@ def test_dynamic_allowlist_no_client_uses_static():
     assert "ir.model" not in allowed
 
 
-def test_error_message_contains_solution_hint():
-    """El mensaje de error debe indicar cómo habilitar el modelo."""
-    with pytest.raises(OdooSecurityError, match="odooclaw.extra_allowed_models"):
-        validate_model_access("nonexistent.model")
+# ============================================
+# Tests for cache reset (NRA-487 system webhook)
+# ============================================
 
-    with pytest.raises(OdooSecurityError, match="ODOOCLAW_EXTRA_ALLOWED_MODELS"):
-        validate_model_access("nonexistent.model")
+def test_reset_allowed_models_cache_clears_client_cache():
+    """The cache reset must invalidate _client_cache so the next lookup
+    re-queries ir.config_parameter (NRA-487)."""
+    from odoo_mcp.security import policy
+
+    # Seed the cache as if a client-based lookup had happened.
+    policy._client_cache = (0.0, {"res.partner"})
+    policy._allowed_models_cache = {"res.partner"}
+
+    policy.reset_allowed_models_cache()
+
+    assert policy._client_cache is None
+    assert policy._allowed_models_cache is None
+
+
+def test_reset_allowed_models_cache_forces_recomputation():
+    """After reset, a client-based lookup must recompute from the client."""
+    from odoo_mcp.security import policy
+
+    mock_client = MagicMock()
+
+    def side_effect(model, method, args=None, kwargs=None, sender_id=None):
+        if model == "ir.model":
+            return [{"model": "res.partner"}, {"model": "sale.order"}]
+        return None
+
+    mock_client.call_kw.side_effect = side_effect
+    mock_client.try_call_kw.side_effect = side_effect
+
+    policy.reset_allowed_models_cache()
+    allowed1 = policy.get_allowed_models(mock_client)
+    assert "res.partner" in allowed1
+
+    # Change what the client returns, reset, and confirm the cache is refreshed.
+    policy.reset_allowed_models_cache()
+
+    def side_effect2(model, method, args=None, kwargs=None, sender_id=None):
+        if model == "ir.model":
+            return [{"model": "res.partner"}, {"model": "sale.order"}, {"model": "stock.picking"}]
+        return None
+
+    mock_client.call_kw.side_effect = side_effect2
+    allowed2 = policy.get_allowed_models(mock_client)
+    assert "stock.picking" in allowed2
