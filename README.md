@@ -164,23 +164,29 @@ See [Voice Features Documentation](odooclaw/docs/VOICE_FEATURES.md) for detailed
 
 ---
 
-## 📦 Odoo Module (`mail_bot_odooclaw`)
+## 📦 Odoo Modules (`mail_bot_odooclaw` + `account_dynamic_rules`)
 
-The native module is located at: `odoo/custom/src/{version}/mail_bot_odooclaw/`
+Both modules live in the dedicated repository: [`github.com/nicolasramos/odoo-addons`](https://github.com/nicolasramos/odoo-addons)  
+Each Odoo version lives on its own branch: [`16`](https://github.com/nicolasramos/odoo-addons/tree/16), [`17`](https://github.com/nicolasramos/odoo-addons/tree/17), [`18`](https://github.com/nicolasramos/odoo-addons/tree/18).
 
-> **Note**: This module has been moved to a dedicated repository for standalone use:
-> [`github.com/nicolasramos/odoo-addons`](https://github.com/nicolasramos/odoo-addons)  
-> Each Odoo version lives on its own branch: [`16`](https://github.com/nicolasramos/odoo-addons/tree/16), [`17`](https://github.com/nicolasramos/odoo-addons/tree/17), [`18`](https://github.com/nicolasramos/odoo-addons/tree/18).
+### `mail_bot_odooclaw` — OdooClaw chat integration
 
-### Supported Odoo Versions
-
-| Version | Module Path | Channel Model |
-|---------|-------------|---------------|
-| **Odoo 18** | `odoo/custom/src/18.0/mail_bot_odooclaw/` | `discuss.channel` |
-| **Odoo 17** | `odoo/custom/src/17.0/mail_bot_odooclaw/` | `mail.channel` |
-| **Odoo 16** | `odoo/custom/src/16.0/mail_bot_odooclaw/` | `mail.channel` |
+| Version | Repository path | Channel Model |
+|---------|-----------------|---------------|
+| **Odoo 18** | `odoo-addons` branch [`18`](https://github.com/nicolasramos/odoo-addons/tree/18/mail_bot_odooclaw) → `mail_bot_odooclaw/` | `discuss.channel` |
+| **Odoo 17** | `odoo-addons` branch [`17`](https://github.com/nicolasramos/odoo-addons/tree/17/mail_bot_odooclaw) → `mail_bot_odooclaw/` | `mail.channel` |
+| **Odoo 16** | `odoo-addons` branch [`16`](https://github.com/nicolasramos/odoo-addons/tree/16/mail_bot_odooclaw) → `mail_bot_odooclaw/` | `mail.channel` |
 
 > **Note**: Odoo 18 renamed `mail.channel` to `discuss.channel` and changed the member relationship structure. Each version's module handles these differences automatically.
+
+### `account_dynamic_rules` — dynamic billing rules (Next Generation)
+
+The billing module that powers the **Next Generation OCR flow** (Odoo 16/17/18):
+
+- **Amplified with `tax_ids` + `fiscal_position_id`** ([PR #9](https://github.com/nicolasramos/odoo-addons/pull/9), merged on branch `18`)
+- The tax and **fiscal position are decided by Odoo from the OCR invoice JSON** — **zero hardcoded taxes**, purely configurable mechanism
+- Backported for Odoo 16/17/18 — same behavior on every version
+- Lives at `odoo-addons` branch [`18`](https://github.com/nicolasramos/odoo-addons/tree/18/account_dynamic_rules) → `account_dynamic_rules/`
 
 ### Installation in Odoo
 
