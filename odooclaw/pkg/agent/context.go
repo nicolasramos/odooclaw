@@ -279,6 +279,7 @@ func (cb *ContextBuilder) sourcePaths() []string {
 		filepath.Join(cb.workspace, "SOUL.md"),
 		filepath.Join(cb.workspace, "USER.md"),
 		filepath.Join(cb.workspace, "IDENTITY.md"),
+		filepath.Join(cb.workspace, "MODULES.md"),
 		filepath.Join(cb.workspace, "memory"),
 		filepath.Join(cb.workspace, "memory", "MEMORY.md"),
 		cb.memory.SQLitePath(),
@@ -502,6 +503,12 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 		if data, err := os.ReadFile(filePath); err == nil {
 			fmt.Fprintf(&sb, "## %s\n\n%s\n\n", filename, data)
 		}
+	}
+
+	// Inject MODULES.md deterministically if present.
+	modulesPath := filepath.Join(cb.workspace, "MODULES.md")
+	if data, err := os.ReadFile(modulesPath); err == nil {
+		fmt.Fprintf(&sb, "## MODULES.md\n\n%s\n\n", data)
 	}
 
 	return sb.String()

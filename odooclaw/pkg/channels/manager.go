@@ -87,6 +87,7 @@ type Manager struct {
 	placeholders  sync.Map // "channel:chatID" → placeholderID (string)
 	typingStops   sync.Map // "channel:chatID" → func()
 	reactionUndos sync.Map // "channel:chatID" → reactionEntry
+	systemHandler *SystemHandler
 }
 
 type HTTPServerTLSConfig struct {
@@ -294,6 +295,14 @@ func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
 	// Register health endpoints
 	if healthServer != nil {
 		healthServer.RegisterOnMux(m.mux)
+	}
+
+	// Register the system handler for module sync events
+	if m.systemHandler != nil {
+		m.mux.Handle(m.systemHandler.WebhookPath(), m.systemHandler)
+		logger.InfoCF("channels", "System handler registered", map[string]any{
+			"path": m.systemHandler.WebhookPath(),
+		})
 	}
 
 	// Discover and register webhook handlers and health checkers
