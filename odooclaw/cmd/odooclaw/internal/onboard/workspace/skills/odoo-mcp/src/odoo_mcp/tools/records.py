@@ -124,6 +124,7 @@ def list_installed_modules(client: OdooClient, user_id: int) -> List[Dict[str, A
         "search_read",
         args=[domain],
         kwargs={"fields": ["id", "name"]},
+        sender_id=user_id,
     )
     return records
 

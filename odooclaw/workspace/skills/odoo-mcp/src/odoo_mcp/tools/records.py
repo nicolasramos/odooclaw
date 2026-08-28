@@ -153,6 +153,7 @@ def list_installed_modules(
         "search_read",
         args=[domain],
         kwargs={"fields": ["id", "name"]},
+        sender_id=user_id,
     )
     return records
 
