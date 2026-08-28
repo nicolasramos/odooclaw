@@ -171,6 +171,13 @@ func NewManager(cfg *config.Config, messageBus *bus.MessageBus, store media.Medi
 	return m, nil
 }
 
+// SetSystemHandler attaches the system handler for module sync events. It must
+// be called before SetupHTTPServer for the handler to be registered on the
+// shared HTTP server.
+func (m *Manager) SetSystemHandler(h *SystemHandler) {
+	m.systemHandler = h
+}
+
 // initChannel is a helper that looks up a factory by name and creates the channel.
 func (m *Manager) initChannel(name, displayName string) {
 	f, ok := getFactory(name)

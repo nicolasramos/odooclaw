@@ -131,6 +131,21 @@ func gatewayCmd(debug bool) error {
 		return fmt.Errorf("error creating channel manager: %w", err)
 	}
 
+	// Wire the /system endpoint for module sync events. It uses the same
+	// X-OdooClaw-Token contract as the Odoo channel webhook, and reloads the
+	// MCP tool validator on modules_changed events.
+	systemHandler := channels.NewSystemHandler(
+		cfg.WorkspacePath(),
+		cfg.Channels.Odoo.WebhookToken,
+		func() error {
+			if m := agentLoop.GetMCPManager(); m != nil {
+				return m.ReloadValidatorFromTools()
+			}
+			return nil
+		},
+	)
+	channelManager.SetSystemHandler(systemHandler)
+
 	// Inject channel manager and media store into agent loop
 	agentLoop.SetChannelManager(channelManager)
 	agentLoop.SetMediaStore(mediaStore)
