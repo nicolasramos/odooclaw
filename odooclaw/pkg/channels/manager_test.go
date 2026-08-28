@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -71,6 +73,36 @@ func TestSetupHTTPServerTLSEnabledStoresFiles(t *testing.T) {
 	}
 	if m.httpTLS.KeyFile != "/tmp/key.pem" {
 		t.Errorf("KeyFile = %q", m.httpTLS.KeyFile)
+	}
+}
+
+// webhookChannel is a test double that registers a main webhook path plus an
+// extra system path (like the Odoo channel's /webhook/odoo/system).
+type webhookChannel struct {
+	mockChannel
+}
+
+func (c *webhookChannel) WebhookPath() string { return "/webhook/odoo" }
+
+func (c *webhookChannel) WebhookExtraPaths() []string { return []string{"/webhook/odoo/system"} }
+
+func (c *webhookChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {}
+
+func TestSetupHTTPServer_RegistersExtraWebhookPaths(t *testing.T) {
+	m := newTestManager()
+	m.channels["odoo"] = &webhookChannel{}
+
+	m.SetupHTTPServer("127.0.0.1:0", nil)
+	if m.mux == nil {
+		t.Fatal("mux not initialized")
+	}
+
+	// The main path and the extra path must both be routable.
+	for _, path := range []string{"/webhook/odoo", "/webhook/odoo/system"} {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		if _, pattern := m.mux.Handler(req); pattern == "" {
+			t.Fatalf("path %q has no registered handler", path)
+		}
 	}
 }
 

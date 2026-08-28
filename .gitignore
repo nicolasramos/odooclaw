@@ -1,4 +1,4 @@
-# Python
+|# Python
 __pycache__/
 *.py[cod]
 *.pyo
@@ -22,6 +22,9 @@ venv/
 Thumbs.db
 .vscode/
 .idea/
+
+# AppleDouble / macOS resource forks
+._*
 
 # Browser extension build artifacts
 browser_extension/dist/*.zip

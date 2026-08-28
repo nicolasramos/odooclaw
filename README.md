@@ -22,13 +22,16 @@
 
 ## 🚀 Next Generation: your own AI, on your own hardware
 
-**OdooClaw 1.0 is no longer just an agent that borrows any model. It is a complete AI
-system with its own trained models** — 100% local, open source (MIT), and free forever.
+**OdooClaw 1.0 ships with its own trained models — and remains fully model-agnostic.**
+
+You can run OdooClaw with:
+- **Our models** (OdooClaw Light 1.2B + Vision, published on HuggingFace) — 100% local, open source (MIT), free forever
+- **Your own models** — any OpenAI-compatible endpoint: local (llama.cpp, oMLX/MLX, Ollama, vLLM) or cloud (OpenAI, Anthropic, DeepSeek, Gemini, Groq, OpenRouter, Moonshot, Qwen, NVIDIA, Zhipu)
 
 > **Your ERP. Your data. Your hardware. No subscriptions. No cloud.**
-> If you already run OdooClaw with your own models, keep them — it stays model-agnostic.
+> Bring your own model, or use ours — the gateway treats both exactly the same.
 
-### 🧠 Own trained models (published on HuggingFace)
+### 🧠 Our trained models (published on HuggingFace)
 
 | Model | Format | What it does |
 |---|---|---|
@@ -53,6 +56,27 @@ The installer builds the runtime, downloads the models from HuggingFace and writ
 gateway config pointing to **your hardware** (`127.0.0.1:8082` chat / `:8093` vision).
 Zero API keys. Or deploy the full stack with the [Doodba template v18.0.0](https://github.com/nicolasramos/odooclaw-doodba)
 (local AI runtime option included).
+
+### 🔄 Bring Your Own Model (BYOM)
+
+Don't want our models? **No problem — OdooClaw works with any model you already use.**
+The gateway is OpenAI-compatible and supports every major provider:
+
+| Local | Cloud |
+|---|---|
+| llama.cpp · oMLX/MLX · Ollama · vLLM | OpenAI · Anthropic · DeepSeek · Gemini · Groq · OpenRouter · Moonshot · Qwen · NVIDIA · Zhipu |
+
+Just point the gateway at your endpoint (see [Providers & Model Configuration](#providers--model-configuration)):
+
+```json
+{
+  "agents": { "defaults": { "provider": "openai", "model": "gpt-4o-mini" } },
+  "providers": { "openai": { "api_base": "https://api.openai.com/v1", "api_key": "${OPENAI_API_KEY}" } }
+}
+```
+
+Our models are the **recommended defaults** (trained on Odoo business conversations,
+95% accuracy, 600/600 creations, 794/800 vision) — but they are never a requirement.
 
 ### 🧪 Tested before release
 

@@ -4,7 +4,7 @@ Covers the record URL constructor (build_record_url) and the serializer
 injection of ``__url`` into odoo_read / odoo_search_read results.
 """
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call as mock_call
 
 import pytest
 
@@ -101,20 +101,42 @@ def test_serialize_records_does_not_clobber_existing_url_field():
 
 @pytest.fixture
 def mock_client():
-    # No spec: odoo_session is an instance attribute set in __init__,
-    # so a spec=OdooClient mock would raise AttributeError on it.
+    """Minimal mock: odoo_session.url + call_kw that returns fields_get for
+    validation and record data for read/search_read.
+
+    Tests that need different return values can override
+    ``client.call_kw.side_effect`` directly.
+    """
     client = MagicMock()
     client.odoo_session.url = "https://erp.example.com"
+
+    _default_fields_get = {
+        "id": {"type": "integer"},
+        "name": {"type": "char"},
+        "is_public": {"type": "boolean"},
+        "contact_count": {"type": "integer"},
+        "active": {"type": "boolean"},
+    }
+
+    def _call_kw_side_effect(model, method, *args, **kwargs):
+        if method == "fields_get":
+            return _default_fields_get
+        # read / search_read → return record list
+        return [{"id": 42, "name": "Acme SL"}]
+
+    client.call_kw.side_effect = _call_kw_side_effect
     return client
 
 
 def test_odoo_read_includes_url_per_record(mock_client):
-    mock_client.call_kw.return_value = [{"id": 42, "name": "Acme SL"}]
     res = odoo_read(mock_client, 1, "res.partner", [42], ["name"])
     assert res[0]["__url"] == (
         "https://erp.example.com/web#id=42&model=res.partner&view_type=form"
     )
-    mock_client.call_kw.assert_called_once_with(
+    # Two calls: fields_get (index 0) + read (index 1)
+    assert mock_client.call_kw.call_count == 2
+    read_call = mock_client.call_kw.call_args_list[1]
+    assert read_call == mock_call(
         "res.partner",
         "read",
         args=[[42]],
@@ -124,10 +146,18 @@ def test_odoo_read_includes_url_per_record(mock_client):
 
 
 def test_odoo_search_read_includes_url_per_record(mock_client):
-    mock_client.call_kw.return_value = [
-        {"id": 7, "name": "Acme SL"},
-        {"id": 9, "name": "Acme GmbH"},
-    ]
+    mock_client.call_kw.side_effect = lambda model, method, *args, **kwargs: (
+        [
+            {"id": 7, "name": "Acme SL"},
+            {"id": 9, "name": "Acme GmbH"},
+        ] if method != "fields_get" else {
+            "id": {"type": "integer"},
+            "name": {"type": "char"},
+            "is_public": {"type": "boolean"},
+            "contact_count": {"type": "integer"},
+            "active": {"type": "boolean"},
+        }
+    )
     res = odoo_search_read(
         mock_client, 1, "res.partner", [["name", "ilike", "Acme"]], ["name"], limit=10
     )
@@ -141,6 +171,5 @@ def test_odoo_search_read_includes_url_per_record(mock_client):
 
 def test_odoo_read_without_session_url_adds_no_url(mock_client):
     mock_client.odoo_session.url = None
-    mock_client.call_kw.return_value = [{"id": 42, "name": "Acme SL"}]
     res = odoo_read(mock_client, 1, "res.partner", [42])
     assert "__url" not in res[0]
