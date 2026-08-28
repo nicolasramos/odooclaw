@@ -48,6 +48,7 @@ type AgentLoop struct {
 	fallback       *providers.FallbackChain
 	channelManager *channels.Manager
 	mediaStore     media.MediaStore
+	mcpManager     *mcp.Manager
 	pipeline       *multimodel.Pipeline // Multi-model pipeline (nil when disabled)
 }
 
@@ -253,6 +254,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 	// Initialize MCP servers for all agents
 	if al.cfg.Tools.MCP.Enabled {
 		mcpManager := mcp.NewManager()
+		al.mcpManager = mcpManager
 		// Ensure MCP connections are cleaned up on exit, regardless of initialization success
 		// This fixes resource leak when LoadFromMCPConfig partially succeeds then fails
 		defer func() {
@@ -436,6 +438,13 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 
 func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
+}
+
+// GetMCPManager returns the MCP manager used by the agent loop, or nil if MCP
+// is disabled or the loop has not started yet. It is used by the gateway to
+// wire the /system endpoint's validator reload callback.
+func (al *AgentLoop) GetMCPManager() *mcp.Manager {
+	return al.mcpManager
 }
 
 // wireOdooAllowlistCacheResetter connects the Odoo system webhook

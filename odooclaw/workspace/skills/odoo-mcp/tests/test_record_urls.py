@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, call as mock_call
 import pytest
 
 from odoo_mcp.core.serializers import build_record_url, serialize_records
+from odoo_mcp.security.policy import reset_allowed_models_cache
 from odoo_mcp.tools.records import odoo_read, odoo_search_read
 
 
@@ -129,13 +130,18 @@ def mock_client():
 
 
 def test_odoo_read_includes_url_per_record(mock_client):
+    # Reset the policy allowlist cache so guard_model_access performs its
+    # ir.model lookup deterministically (otherwise a prior test may have
+    # warmed the module-level cache and the call count would differ).
+    reset_allowed_models_cache()
     res = odoo_read(mock_client, 1, "res.partner", [42], ["name"])
     assert res[0]["__url"] == (
         "https://erp.example.com/web#id=42&model=res.partner&view_type=form"
     )
-    # Two calls: fields_get (index 0) + read (index 1)
-    assert mock_client.call_kw.call_count == 2
-    read_call = mock_client.call_kw.call_args_list[1]
+    # Three calls: ir.model allowlist lookup (index 0) + fields_get (index 1)
+    # + read (index 2). The allowlist lookup is added by guard_model_access.
+    assert mock_client.call_kw.call_count == 3
+    read_call = mock_client.call_kw.call_args_list[2]
     assert read_call == mock_call(
         "res.partner",
         "read",

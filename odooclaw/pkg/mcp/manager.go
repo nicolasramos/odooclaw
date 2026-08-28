@@ -181,20 +181,20 @@ func (m *Manager) SetValidator(v *toolguard.Validator) {
 	m.validator = v
 }
 
-// loadValidatorFromTools is called once after every
-// LoadFromMCPConfig to (re)build the validator from the current
+// ReloadValidatorFromTools rebuilds the validator from the current
 // tool list. It is a no-op when the application has not opted in
 // by calling SetValidator at least once — the manager is
 // conservative: by default it does nothing, and the user must
 // explicitly enable validation.
-func (m *Manager) loadValidatorFromTools() {
+func (m *Manager) ReloadValidatorFromTools() error {
 	if m.validator == nil {
-		return
+		return nil
 	}
 	fresh := toolguard.RegistryFromManagerToolset(m.GetAllTools())
 	if fresh.ToolCount() > 0 {
 		m.validator = fresh
 	}
+	return nil
 }
 
 // LoadFromConfig loads MCP servers from configuration
@@ -310,7 +310,7 @@ func (m *Manager) LoadFromMCPConfig(
 			"total":     enabledCount,
 		})
 
-	m.loadValidatorFromTools()
+	m.ReloadValidatorFromTools()
 
 	return nil
 }

@@ -87,10 +87,12 @@ def _validate_fields(
 def odoo_search(client: OdooClient, user_id: int, model: str, domain: List[Any], limit: int) -> List[int]:
     """Search for record IDs matching domain."""
     validate_domain(domain)
+    guard_model_access(model, client, sender_id=user_id)
     return client.call_kw(model, "search", args=[domain], kwargs={"limit": limit}, sender_id=user_id)
 
 def odoo_read(client: OdooClient, user_id: int, model: str, ids: List[int], fields: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     """Read fields for a list of record IDs."""
+    guard_model_access(model, client, sender_id=user_id)
     clean = _validate_fields(client, model, fields, user_id)
     kwargs = {"fields": clean} if clean else {}
     records = client.call_kw(model, "read", args=[ids], kwargs=kwargs, sender_id=user_id)
@@ -99,12 +101,32 @@ def odoo_read(client: OdooClient, user_id: int, model: str, ids: List[int], fiel
 def odoo_search_read(client: OdooClient, user_id: int, model: str, domain: List[Any], fields: Optional[List[str]] = None, limit: int = 80) -> List[Dict[str, Any]]:
     """Search and read in a single call."""
     validate_domain(domain)
+    guard_model_access(model, client, sender_id=user_id)
     clean = _validate_fields(client, model, fields, user_id)
     kwargs = {"limit": limit}
     if clean:
         kwargs["fields"] = clean
     records = client.call_kw(model, "search_read", args=[domain], kwargs=kwargs, sender_id=user_id)
     return serialize_records(records, model=model, base_url=client.odoo_session.url)
+
+def list_installed_modules(client: OdooClient, user_id: int) -> List[Dict[str, Any]]:
+    """Return installed modules as a list of dicts with id and name.
+
+    This is the read-only tool for module awareness — it queries
+    ir.module.module with state=installed and returns a safe,
+    filtered view (id + name only).  The model itself remains in
+    DEFAULT_DENIED_MODELS for write operations.
+    """
+    guard_model_access("ir.module.module", client, sender_id=user_id)
+    domain = [("state", "=", "installed")]
+    records = client.call_kw(
+        "ir.module.module",
+        "search_read",
+        args=[domain],
+        kwargs={"fields": ["id", "name"]},
+        sender_id=user_id,
+    )
+    return records
 
 def odoo_create(client: OdooClient, user_id: int, model: str, values: Dict[str, Any]) -> int:
     """Create a new record after checking allowlist."""
