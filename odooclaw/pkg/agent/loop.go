@@ -1178,12 +1178,21 @@ func (al *AgentLoop) runLLMIteration(
 		// Build tool definitions
 		providerToolDefs := agent.Tools.ToProviderDefs()
 
-		// Small local models (fine-tuned on ~5 tools per example) degrade with
-		// dozens of tools in context. Apply tool retrieval: keep only the top-K
-		// most relevant tools for the current user query.
-		if isLocalSmallModel(agent.Model) && len(providerToolDefs) > maxLocalToolsInPrompt {
+		// Tool retrieval: when the tool set exceeds the provider's limit,
+		// select only the top-K most relevant tools for the current user query.
+		// Small local models (fine-tuned on ~5 tools per example) need a very
+		// tight cap. Cloud models (OpenAI, Anthropic) have a hard ceiling of
+		// 128 tools — when OdooClaw exposes 133+ tools, cloud providers reject
+		// the request with "array too long". Use a larger top-N for cloud to
+		// preserve coverage while staying under the provider limit.
+		isLocal := isLocalSmallModel(agent.Model)
+		maxTools := maxCloudToolsInPrompt
+		if isLocal {
+			maxTools = maxLocalToolsInPrompt
+		}
+		if len(providerToolDefs) > maxTools {
 			query := lastUserMessageText(messages)
-			providerToolDefs = retrieveRelevantTools(providerToolDefs, query, maxLocalToolsInPrompt)
+			providerToolDefs = retrieveRelevantTools(providerToolDefs, query, maxTools)
 		}
 
 		// Log LLM request details
@@ -2326,6 +2335,12 @@ func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 // The fine-tuned OdooClaw models (Qwen 0.5B/1.5B) are trained with at most
 // 5 tools listed per example; more tools cause hallucination.
 const maxLocalToolsInPrompt = 5
+
+// maxCloudToolsInPrompt caps how many tools are sent to cloud models
+// (OpenAI, Anthropic, etc.). Cloud providers have a hard limit of 128 tools;
+// OdooClaw exposes 133+ tools, so we cap at 64 to stay well under the limit
+// while preserving reasonable coverage.
+const maxCloudToolsInPrompt = 64
 
 // isLocalSmallModel reports whether the model name refers to a small local
 // fine-tuned model (llama.cpp/ollama) that needs tools injected as plain text
