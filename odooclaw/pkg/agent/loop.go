@@ -1184,13 +1184,18 @@ func (al *AgentLoop) runLLMIteration(
 		// tight cap. Cloud models (OpenAI, Anthropic) have a hard ceiling of
 		// 128 tools — when OdooClaw exposes 133+ tools, cloud providers reject
 		// the request with "array too long". Use a larger top-N for cloud to
-		// preserve coverage while staying under the provider limit.
+		// preserve coverage while staying under the provider limit. The cloud
+		// cap is configurable per model (max_cloud_tools_in_prompt).
+		// Local small models are unaffected — their cap stays fixed at 5.
 		isLocal := isLocalSmallModel(agent.Model)
 		maxTools := maxCloudToolsInPrompt
+		if agent.MaxCloudToolsInPrompt != nil {
+			maxTools = *agent.MaxCloudToolsInPrompt
+		}
 		if isLocal {
 			maxTools = maxLocalToolsInPrompt
 		}
-		if len(providerToolDefs) > maxTools {
+		if maxTools > 0 && len(providerToolDefs) > maxTools {
 			query := lastUserMessageText(messages)
 			providerToolDefs = retrieveRelevantTools(providerToolDefs, query, maxTools)
 		}
@@ -2700,6 +2705,7 @@ func retrieveRelevantTools(defs []providers.ToolDefinition, query string, k int)
 	}
 	return out
 }
+
 // transientLLMRetryReason classifies an LLM error as transient (safe to retry)
 // using the provider error classifier first, then falling back to string patterns.
 // Returns the reason string and true if the error is transient.
