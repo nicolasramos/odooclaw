@@ -572,6 +572,12 @@ type ModelConfig struct {
 	// fine-tunes (v26-native) require the native "tools" array to reach 100%
 	// exact-match. Set explicitly per model when the heuristic is wrong.
 	PromptToolsInText *bool `json:"prompt_tools_in_text,omitempty"`
+
+	// MaxCloudToolsInPrompt overrides the default cap (~64) on how many tools
+	// are sent to non-local (cloud) models. Cloud providers have a hard limit
+	// of 128 tools; OdooClaw exposes 133+. When nil, the built-in default is
+	// used. Local small models are unaffected — their cap stays fixed at 5.
+	MaxCloudToolsInPrompt *int `json:"max_cloud_tools_in_prompt,omitempty"`
 }
 
 // Validate checks if the ModelConfig has all required fields.

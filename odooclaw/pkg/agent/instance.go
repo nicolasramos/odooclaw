@@ -39,6 +39,11 @@ type AgentInstance struct {
 	// heuristic in the agent loop: true forces text injection of tools,
 	// false sends the native OpenAI "tools" array. Nil keeps the heuristic.
 	PromptToolsInText *bool
+
+	// MaxCloudToolsInPrompt, when non-nil, overrides the default cap on how
+	// many tools are sent to non-local (cloud) models. Local models keep a
+	// fixed cap of 5 regardless of this value.
+	MaxCloudToolsInPrompt *int
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -177,6 +182,17 @@ func NewAgentInstance(
 		}
 	}
 
+	// Per-model max_cloud_tools_in_prompt override: when the primary model's
+	// ModelConfig pins a value, it overrides the built-in default cap on tools
+	// sent to cloud providers. Local small models are unaffected.
+	var maxCloudToolsInPrompt *int
+	if cfg != nil {
+		if mc, err := cfg.GetModelConfig(model); err == nil && mc != nil && mc.MaxCloudToolsInPrompt != nil {
+			v := *mc.MaxCloudToolsInPrompt
+			maxCloudToolsInPrompt = &v
+		}
+	}
+
 	return &AgentInstance{
 		ID:             agentID,
 		Name:           agentName,
@@ -195,6 +211,7 @@ func NewAgentInstance(
 		SkillsFilter:   skillsFilter,
 		Candidates:     candidates,
 		PromptToolsInText: promptToolsInText,
+		MaxCloudToolsInPrompt: maxCloudToolsInPrompt,
 	}
 }
 
