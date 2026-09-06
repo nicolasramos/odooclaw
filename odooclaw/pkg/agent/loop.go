@@ -1599,7 +1599,11 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey, channel, c
 
 // forceCompression aggressively reduces context when the limit is hit.
 // It drops the oldest 50% of messages (keeping system prompt and last user message).
+// When rlm-kernel is available, it snapshots the kernel before compression.
 func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) bool {
+	// RLM hook: snapshot kernel before compression
+	al.rlmSnapshotBeforeCompression(agent)
+
 	history := agent.Sessions.GetHistory(sessionKey)
 	newHistory, droppedCount, compressed := compressedHistory(history)
 	if !compressed {
@@ -1616,6 +1620,37 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) b
 		"new_count":    len(newHistory),
 	})
 	return true
+}
+
+// rlmSnapshotBeforeCompression snapshots the rlm-kernel before context compression.
+// This preserves the kernel namespace across compaction so the model can
+// continue working with persistent variables after history is trimmed.
+func (al *AgentLoop) rlmSnapshotBeforeCompression(agent *AgentInstance) {
+	// Check if rlm-kernel MCP server is available
+	mcpTools := agent.Tools.List()
+	hasRLMKernel := false
+	for _, name := range mcpTools {
+		if name == "rlm_snapshot" || name == "ipython" {
+			hasRLMKernel = true
+			break
+		}
+	}
+	if !hasRLMKernel {
+		return
+	}
+
+	// Try to call rlm_snapshot
+	snapshotTool, ok := agent.Tools.Get("rlm_snapshot")
+	if !ok || snapshotTool == nil {
+		return
+	}
+
+	result := snapshotTool.Execute(context.Background(), map[string]any{})
+	if result != nil && !result.IsError {
+		logger.Debug("RLM: kernel snapshot saved before compression")
+	} else {
+		logger.Debug("RLM: kernel snapshot skipped (kernel may not be running)")
+	}
 }
 
 // GetStartupInfo returns information about loaded tools and skills for logging.
