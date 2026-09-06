@@ -1551,6 +1551,9 @@ func (al *AgentLoop) runLLMIteration(
 			}
 			messages = append(messages, toolResultMsg)
 
+			// RLM auto-capture: store large tool outputs to context lake
+			al.rlmAutoCapture(agent, tc.Name, contentForLLM)
+
 			// Save tool result message to session
 			agent.Sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
 		}
@@ -1650,6 +1653,41 @@ func (al *AgentLoop) rlmSnapshotBeforeCompression(agent *AgentInstance) {
 		logger.Debug("RLM: kernel snapshot saved before compression")
 	} else {
 		logger.Debug("RLM: kernel snapshot skipped (kernel may not be running)")
+	}
+}
+
+// rlmAutoCapture stores large tool outputs to the context lake transparently.
+// When a tool returns output >10KB, it's automatically stored in the lake
+// so the model can reference it later without re-fetching.
+func (al *AgentLoop) rlmAutoCapture(agent *AgentInstance, toolName, content string) {
+	const autoCaptureThreshold = 10_000 // 10KB
+
+	if len(content) < autoCaptureThreshold {
+		return
+	}
+
+	// Check if rlm-kernel is available
+	storeTool, ok := agent.Tools.Get("rlm_store")
+	if !ok || storeTool == nil {
+		return
+	}
+
+	// Build key and tags
+	key := fmt.Sprintf("auto:%s:%d", toolName, len(content))
+	tags := []string{"auto-capture", fmt.Sprintf("tool:%s", toolName)}
+
+	result := storeTool.Execute(context.Background(), map[string]any{
+		"key":     key,
+		"content": content,
+		"tags":    tags,
+	})
+
+	if result != nil && !result.IsError {
+		logger.DebugCF("agent", "RLM: auto-captured tool output", map[string]any{
+			"tool":    toolName,
+			"key":     key,
+			"content_len": len(content),
+		})
 	}
 }
 
