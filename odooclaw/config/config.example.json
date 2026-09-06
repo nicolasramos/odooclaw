@@ -402,6 +402,17 @@
             "PYTHONUNBUFFERED": "1",
             "WORKSPACE_PATH": "${ODOOCLAW_WORKSPACE_PATH}"
           }
+        },
+        "rlm-kernel": {
+          "enabled": true,
+          "command": "python3",
+          "args": ["-m", "server"],
+          "env": {
+            "PYTHONUNBUFFERED": "1",
+            "WORKSPACE_PATH": "${ODOOCLAW_WORKSPACE_PATH}",
+            "RLM_LAKE_DIR": "${ODOOCLAW_WORKSPACE_PATH}/rlm-lake"
+          },
+          "_comment": "RLM Kernel: persistent Python + context lake. See workspace/skills/rlm-kernel/"
         }
       }
     },

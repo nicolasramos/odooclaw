@@ -202,6 +202,12 @@ The following skills extend your capabilities. To use a skill, read its SKILL.md
 		parts = append(parts, "# Memory\n\n"+memoryContext)
 	}
 
+	// RLM context — hint about persistent kernel availability
+	rlmHint := cb.buildRLMContextHint()
+	if rlmHint != "" {
+		parts = append(parts, rlmHint)
+	}
+
 	// Join with "---" separator
 	return strings.Join(parts, "\n\n---\n\n")
 }
@@ -1001,4 +1007,30 @@ func (cb *ContextBuilder) GetSkillsInfo() map[string]any {
 		"available": len(allSkills),
 		"names":     skillNames,
 	}
+}
+
+// buildRLMContextHint returns a hint about the RLM kernel if rlm-kernel tools
+// are registered. This tells the model it has persistent Python execution
+// available and should use it for large data processing.
+func (cb *ContextBuilder) buildRLMContextHint() string {
+	// Only inject RLM hint for models that benefit from it
+	// (small local models and frontier models in long conversations)
+	if !cb.isLocalSmallModel() {
+		return ""
+	}
+
+	return `# RLM Kernel
+
+You have a persistent Python kernel available (rlm-kernel MCP tools):
+- **ipython**: Execute Python code. Variables, imports, functions survive across calls.
+- **rlm_store/rlm_get/rlm_search**: Context lake for large data (never enters prompt).
+
+When processing large Odoo datasets:
+1. Load data into ipython (variables persist between calls)
+2. Process with Python (filter, aggregate, analyze)
+3. Store results with rlm_store
+4. Only return summaries to the user
+
+Example: "Analyze 500 invoices" → ipython loads data → Python filters → rlm_store saves → summary returned.
+This avoids context overflow (4K limit) by keeping raw data in the kernel, not in the prompt.`
 }
