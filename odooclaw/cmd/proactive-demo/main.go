@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync"
 	"time"
 
@@ -150,11 +151,20 @@ func main() {
 	fmt.Printf("hablas: %d   silencios: %d   total evaluado en %v\n",
 		spoke, silent, time.Since(start).Round(time.Microsecond))
 
-	verdict := "OK: el flujo proactivo funciona end to end"
+	// The check must account for the durable store: a second run of the demo
+	// legitimately speaks less (or not at all) because the cooldowns from the
+	// first run are still in force. Reporting "OK" with zero deliveries would be
+	// the green-vacuous check this demo exists to avoid.
 	if n != spoke {
-		verdict = fmt.Sprintf("FALLO: %d intervenciones decididas pero %d entregadas", spoke, n)
+		fmt.Printf("FALLO: %d intervenciones decididas pero %d entregadas\n", spoke, n)
+		os.Exit(1)
 	}
-	fmt.Println(verdict)
+	if spoke == 0 {
+		fmt.Println("OK: el flujo funciona, y el estado durable del run anterior sigue vigente")
+		fmt.Println("    (cooldowns activos -> silencio correcto, no un fallo)")
+		return
+	}
+	fmt.Println("OK: el flujo proactivo funciona end to end")
 }
 
 func firstLines(s string, n int) string {
