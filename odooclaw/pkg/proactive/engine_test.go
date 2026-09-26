@@ -3,6 +3,7 @@ package proactive
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -32,7 +33,7 @@ func TestSpeaksWhenSignalAboveThreshold(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 
 	dec := e.Evaluate(Signal{
-		UserID: 7, Area: "contabilidad",
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad",
 		Counters: map[string]int{"unposted_invoices": 12},
 	})
 
@@ -61,7 +62,7 @@ func TestDoesNotCrossAreas(t *testing.T) {
 	// "unposted_invoices" belongs to contabilidad. Entering ventas with only
 	// that counter must not fire the VeriFactu or contabilidad playbook.
 	dec := e.Evaluate(Signal{
-		UserID: 7, Area: "ventas",
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "ventas",
 		Counters: map[string]int{"unposted_invoices": 99, "verifactu_unconfigured": 1},
 	})
 
@@ -75,7 +76,7 @@ func TestSilentWhenNoFunctionalArea(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 
 	dec := e.Evaluate(Signal{
-		UserID: 7, Area: "",
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "",
 		Counters: map[string]int{"unposted_invoices": 50},
 	})
 	if dec.Speak {
@@ -87,7 +88,7 @@ func TestSilentBelowThreshold(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 
 	dec := e.Evaluate(Signal{
-		UserID: 7, Area: "contabilidad",
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad",
 		Counters: map[string]int{"unposted_invoices": 3}, // threshold is 5
 	})
 	if dec.Speak {
@@ -98,16 +99,92 @@ func TestSilentBelowThreshold(t *testing.T) {
 	}
 }
 
+// TestFirstContactIsAnInvitationNotAnAssistance pins the distinction the old
+// design got wrong. A user who never opted in must still receive EXACTLY ONE
+// message: the question of whether they want help. What they must never receive
+// is assistance they did not ask for.
+func TestFirstContactIsAnInvitationNotAnAssistance(t *testing.T) {
+	e, _, clock := newTestEngine(t)
+	// newTestEngine opts user 7 in; user 99 has never been asked.
+	sig := Signal{
+		UserID: 99, User: ClassifiedUser{ID: 99, IsInternal: true, IsActive: true},
+		Area:     "contabilidad",
+		At:       *clock,
+		Counters: map[string]int{"unposted_invoices": 12},
+	}
+
+	first := e.Evaluate(sig)
+	if !first.Speak {
+		t.Fatalf("a first-time internal user is never offered help: %q", first.Reason)
+	}
+	if !first.Invitation {
+		t.Fatal("first contact is not marked as an invitation")
+	}
+	if first.PlaybookID != invitationPlaybookID {
+		t.Fatalf("first contact cites playbook %q, want the invitation", first.PlaybookID)
+	}
+
+	// Deliver it, then ask again: the invitation is spent and there is still no
+	// opt-in, so the assistant must go quiet rather than keep asking.
+	if err := e.Record(sig, first); err != nil {
+		t.Fatalf("recording the invitation failed: %v", err)
+	}
+	second := e.Evaluate(sig)
+	if second.Speak {
+		t.Fatal("the assistant asked a second time; one invitation per user, ever")
+	}
+	if second.Reason == "" {
+		t.Fatal("silence must carry an accountable reason")
+	}
+}
+
+// TestNoAssistanceWithoutOptIn is the guard the old test was reaching for: the
+// invitation must never become a back door to unrequested help.
+func TestNoAssistanceWithoutOptIn(t *testing.T) {
+	e, store, clock := newTestEngine(t)
+
+	// Walk several areas for a user who has never opted in. The FIRST evaluation
+	// yields the invitation and nothing else; every later one must be silent,
+	// because the invitation is spent and no assistance was ever requested.
+	areas := []string{"contabilidad", "ventas", "compras"}
+	invitations := 0
+	for _, area := range areas {
+		sig := Signal{
+			UserID: 99, User: ClassifiedUser{ID: 99, IsInternal: true, IsActive: true},
+			Area: area, At: *clock, Counters: map[string]int{"unposted_invoices": 12},
+		}
+		dec := e.Evaluate(sig)
+		if dec.Speak {
+			if !dec.Invitation {
+				t.Fatalf("delivered unrequested assistance in %q", area)
+			}
+			invitations++
+		} else if dec.Reason == "" {
+			t.Fatal("silence must carry an accountable reason")
+		}
+		// Record it as delivered, the way the service does. Without this the
+		// invitation is never spent and every area would ask again.
+		if err := e.Record(sig, dec); err != nil {
+			t.Fatalf("record failed: %v", err)
+		}
+	}
+
+	if invitations != 1 {
+		t.Fatalf("invitations delivered = %d, want exactly 1", invitations)
+	}
+	_ = store
+}
+
 func TestRequiresOptIn(t *testing.T) {
 	e, store, _ := newTestEngine(t)
 
-	// User 99 never opted in.
+	// User 99 never opted in: only the invitation may reach them.
 	dec := e.Evaluate(Signal{
-		UserID: 99, Area: "contabilidad",
+		UserID: 99, User: ClassifiedUser{ID: 99, IsInternal: true, IsActive: true}, Area: "contabilidad",
 		Counters: map[string]int{"unposted_invoices": 12},
 	})
-	if dec.Speak {
-		t.Fatal("spoke to a user who never opted in")
+	if dec.Speak && !dec.Invitation {
+		t.Fatal("delivered assistance to a user who never opted in")
 	}
 	_ = store
 }
@@ -116,7 +193,7 @@ func TestCooldownPerArea(t *testing.T) {
 	e, store, clock := newTestEngine(t)
 
 	sig := Signal{
-		UserID: 7, Area: "contabilidad", At: *clock,
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad", At: *clock,
 		Counters: map[string]int{"unposted_invoices": 12},
 	}
 
@@ -131,7 +208,7 @@ func TestCooldownPerArea(t *testing.T) {
 	// One hour later, same area: still in cooldown.
 	*clock = clock.Add(time.Hour)
 	dec = e.Evaluate(Signal{
-		UserID: 7, Area: "contabilidad", At: *clock,
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad", At: *clock,
 		Counters: map[string]int{"unposted_invoices": 12},
 	})
 	if dec.Speak {
@@ -144,7 +221,7 @@ func TestCooldownPerArea(t *testing.T) {
 	// 25 hours later the cooldown has expired, but dedupe now applies.
 	*clock = clock.Add(25 * time.Hour)
 	dec = e.Evaluate(Signal{
-		UserID: 7, Area: "contabilidad", At: *clock,
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad", At: *clock,
 		Counters: map[string]int{"unposted_invoices": 12},
 	})
 	if dec.Speak {
@@ -160,7 +237,7 @@ func TestDedupeDifferentPlaybookSameAreaStillAllowed(t *testing.T) {
 	e, _, clock := newTestEngine(t)
 
 	// Offer the invoices playbook.
-	sig := Signal{UserID: 7, Area: "contabilidad", At: *clock,
+	sig := Signal{UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad", At: *clock,
 		Counters: map[string]int{"unposted_invoices": 12}}
 	dec := e.Evaluate(sig)
 	if !dec.Speak {
@@ -172,7 +249,7 @@ func TestDedupeDifferentPlaybookSameAreaStillAllowed(t *testing.T) {
 
 	// The statement playbook is a DIFFERENT offer, but the per-area cooldown
 	// still gates it — that is the intended anti-nuisance behaviour.
-	dec = e.Evaluate(Signal{UserID: 7, Area: "contabilidad", At: *clock,
+	dec = e.Evaluate(Signal{UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad", At: *clock,
 		Counters: map[string]int{"unreconciled_statement_lines": 9}})
 	if dec.Speak {
 		t.Fatalf("per-area cooldown did not gate a second offer: %s", dec.Reason)
@@ -185,7 +262,7 @@ func TestQuietHours(t *testing.T) {
 	// 22:00 is inside the default 21:00-08:00 window.
 	*clock = time.Date(2026, 9, 25, 22, 0, 0, 0, time.UTC)
 	dec := e.Evaluate(Signal{
-		UserID: 7, Area: "contabilidad", At: *clock,
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad", At: *clock,
 		Counters: map[string]int{"unposted_invoices": 12},
 	})
 	if dec.Speak {
@@ -209,7 +286,7 @@ func TestDailyCap(t *testing.T) {
 
 	spoke := 0
 	for _, a := range areas {
-		sig := Signal{UserID: 7, Area: a, At: *clock, Counters: counters[a]}
+		sig := Signal{UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: a, At: *clock, Counters: counters[a]}
 		dec := e.Evaluate(sig)
 		if dec.Speak {
 			spoke++
@@ -223,7 +300,7 @@ func TestDailyCap(t *testing.T) {
 	}
 
 	// The third area must be silenced with a cap reason.
-	dec := e.Evaluate(Signal{UserID: 7, Area: "compras", At: *clock,
+	dec := e.Evaluate(Signal{UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "compras", At: *clock,
 		Counters: map[string]int{"draft_purchase_orders": 9}})
 	if !contains(dec.Reason, "tope diario") {
 		t.Errorf("expected a daily-cap reason, got %q", dec.Reason)
@@ -238,7 +315,7 @@ func TestHighRiskRequiresExplicitOptIn(t *testing.T) {
 	e.SetClock(func() time.Time { return now })
 
 	dec := e.Evaluate(Signal{
-		UserID: 7, Area: "contabilidad", At: now,
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad", At: now,
 		Counters: map[string]int{"verifactu_unconfigured": 1},
 	})
 	if dec.Speak {
@@ -280,7 +357,7 @@ func TestStoreDurabilityAcrossRestart(t *testing.T) {
 	e.SetClock(func() time.Time { return now.Add(2 * time.Hour) })
 
 	dec := e.Evaluate(Signal{
-		UserID: 7, Area: "contabilidad", At: now.Add(2 * time.Hour),
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad", At: now.Add(2 * time.Hour),
 		Counters: map[string]int{"unposted_invoices": 12},
 	})
 	if dec.Speak {
@@ -288,6 +365,73 @@ func TestStoreDurabilityAcrossRestart(t *testing.T) {
 	}
 	if !contains(dec.Reason, "cooldown") {
 		t.Errorf("expected a cooldown reason after restart, got %q", dec.Reason)
+	}
+}
+
+func TestInvitationSurvivesRestart(t *testing.T) {
+	// The single-invitation promise has to outlive a deploy. With an in-memory
+	// flag, every restart would ask the user again whether they want help —
+	// which is the most annoying failure an assistant can have, and it would
+	// also let a user who already said "no" be pestered forever.
+	dir := t.TempDir()
+	path := dir + "/proactive.db"
+	now := time.Date(2026, 9, 25, 10, 0, 0, 0, time.UTC)
+
+	store1, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol := DefaultPolicy()
+	e1 := NewEngine(DefaultPlaybooks(), pol, store1)
+	e1.SetClock(func() time.Time { return now })
+
+	sig := Signal{
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true},
+		Area: "contabilidad", At: now,
+		Counters: map[string]int{"unposted_invoices": 12},
+	}
+	first := e1.Evaluate(sig)
+	if !first.Speak || !first.Invitation {
+		t.Fatalf("no invitation on first contact: %q", first.Reason)
+	}
+	if err := e1.Record(sig, first); err != nil {
+		t.Fatal(err)
+	}
+	if err := store1.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// "Restart": same file, brand-new engine and policy (which starts with an
+	// empty in-memory opt-in, exactly like production).
+	store2, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store2.Close()
+	e2 := NewEngine(DefaultPlaybooks(), DefaultPolicy(), store2)
+	e2.SetClock(func() time.Time { return now.Add(time.Hour) })
+
+	second := e2.Evaluate(sig)
+	if second.Speak {
+		t.Fatal("the invitation was sent again after a restart")
+	}
+	if !contains(second.Reason, "invit") {
+		t.Errorf("expected an invitation-related reason, got %q", second.Reason)
+	}
+}
+
+func TestInvitationIsNotSentTwiceWithinSameRun(t *testing.T) {
+	// Two view opens in the same second must not produce two invitations.
+	// INSERT OR IGNORE makes the check atomic; this pins the behaviour.
+	store := NewMemoryStore()
+	now := time.Date(2026, 9, 25, 10, 0, 0, 0, time.UTC)
+
+	if err := store.MarkInvited(7, now); err != nil {
+		t.Fatalf("first MarkInvited failed: %v", err)
+	}
+	err := store.MarkInvited(7, now.Add(time.Second))
+	if !errors.Is(err, ErrInvitationAlreadySent) {
+		t.Fatalf("second MarkInvited returned %v, want ErrInvitationAlreadySent", err)
 	}
 }
 
@@ -360,7 +504,7 @@ func TestDelivererSendsProactivePayload(t *testing.T) {
 	defer srv.Close()
 
 	d := NewDeliverer(srv.URL, "secret123", srv.Client())
-	sig := Signal{UserID: 7, Area: "contabilidad"}
+	sig := Signal{UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad"}
 	dec := Decision{Speak: true, PlaybookID: "contabilidad.unposted_invoices",
 		Message: "hola", Count: 12}
 
@@ -397,7 +541,7 @@ func TestDelivererDoesNotInvokeCallbackOnFailure(t *testing.T) {
 	d := NewDeliverer(srv.URL, "", srv.Client())
 	d.OnDelivered = func(Signal, Decision) { called = true }
 
-	err := d.Deliver(context.Background(), Signal{UserID: 7, Area: "contabilidad"},
+	err := d.Deliver(context.Background(), Signal{UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad"},
 		Decision{Speak: true, Message: "hola"})
 	if err == nil {
 		t.Fatal("expected an error on a 401 response")
@@ -434,7 +578,7 @@ func TestServiceRecordsCooldownOnlyAfterSuccessfulDelivery(t *testing.T) {
 	d := NewDeliverer(srv.URL, "", srv.Client())
 	svc := NewService(e, nil, d)
 
-	sig := Signal{UserID: 7, Area: "contabilidad", At: now,
+	sig := Signal{UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad", At: now,
 		Counters: map[string]int{"unposted_invoices": 12}}
 
 	dec, err := svc.Handle(context.Background(), sig)
@@ -484,7 +628,7 @@ func TestServiceEnrichesWithKnowledgeByArea(t *testing.T) {
 
 	svc := NewService(e, kb, NewDeliverer(srv.URL, "", srv.Client()))
 	dec, err := svc.Handle(context.Background(), Signal{
-		UserID: 7, Area: "contabilidad", At: now,
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad", At: now,
 		Counters: map[string]int{"unposted_invoices": 12},
 	})
 	if err != nil {

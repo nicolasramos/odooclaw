@@ -15,8 +15,8 @@ import (
 // data. This keeps the decision auditable, keeps the cost at microseconds per
 // view open, and means the copy can change without a model call or a redeploy.
 type Service struct {
-	engine *Engine
-	kb     *knowledge.KnowledgeBase
+	engine  *Engine
+	kb      *knowledge.KnowledgeBase
 	deliver *Deliverer
 }
 

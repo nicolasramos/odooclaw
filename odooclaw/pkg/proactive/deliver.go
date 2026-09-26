@@ -32,7 +32,7 @@ type Deliverer struct {
 	// endpoint is the full Odoo URL, e.g. "http://odoo:8069/odooclaw/notify".
 	endpoint string
 	// token is the shared secret presented as X-OdooClaw-Token.
-	token string
+	token  string
 	client *http.Client
 	// OnDelivered, when set, is called after a successful delivery — used to
 	// commit the cooldown only once the message actually left.

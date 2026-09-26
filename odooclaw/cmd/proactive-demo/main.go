@@ -96,23 +96,33 @@ func main() {
 				Counters: map[string]int{"unposted_invoices": 12}, At: now}},
 
 		{"misma pantalla otra vez (cooldown por area)",
-			proactive.Signal{UserID: 7, Area: "contabilidad", Model: "account.move",
+			proactive.Signal{UserID: 7, User: internalUser(7), Area: "contabilidad", Model: "account.move",
 				Counters: map[string]int{"unposted_invoices": 12}, At: now.Add(time.Minute)}},
 
 		{"usuario abre Ventas, 5 presupuestos en borrador",
-			proactive.Signal{UserID: 7, Area: "ventas", Model: "sale.order",
+			proactive.Signal{UserID: 7, User: internalUser(7), Area: "ventas", Model: "sale.order",
 				Counters: map[string]int{"draft_quotations": 5}, At: now}},
 
 		{"usuario entra en Ajustes tecnicos (sin area funcional)",
-			proactive.Signal{UserID: 7, Area: "", Model: "ir.ui.view", At: now}},
+			proactive.Signal{UserID: 7, User: internalUser(7), Area: "", Model: "ir.ui.view", At: now}},
 
 		{"usuario abre Contabilidad a las 23:00 (silencio horario)",
-			proactive.Signal{UserID: 7, Area: "contabilidad", Model: "account.move",
+			proactive.Signal{UserID: 7, User: internalUser(7), Area: "contabilidad", Model: "account.move",
 				Counters: map[string]int{"unposted_invoices": 12}, At: time.Date(2026, 9, 25, 23, 0, 0, 0, time.UTC)}},
 
-		{"usuario NO dado de alta abre Contabilidad",
-			proactive.Signal{UserID: 99, Area: "contabilidad", Model: "account.move",
-				Counters: map[string]int{"unposted_invoices": 40}, At: now}},
+		// --- AUDIENCIA: quien es "usuario interno de DU" ---
+		{"usuario INTERNO de DU abre Contabilidad (la audiencia correcta)",
+			proactive.Signal{UserID: 50, User: internalUser(50), Area: "contabilidad", Model: "account.move",
+				Counters: map[string]int{"unposted_invoices": 12}, At: now}},
+
+		{"usuario de PORTAL abre Contabilidad (fuera de la audiencia)",
+			proactive.Signal{UserID: 51, User: proactive.ClassifiedUser{ID: 51, IsInternal: false, IsActive: true},
+				Area: "contabilidad", Model: "account.move",
+				Counters: map[string]int{"unposted_invoices": 12}, At: now}},
+
+		{"usuario NO clasificado abre Contabilidad (fail-closed)",
+			proactive.Signal{UserID: 52, Area: "contabilidad", Model: "account.move",
+				Counters: map[string]int{"unposted_invoices": 12}, At: now}},
 	}
 
 	start := time.Now()
@@ -165,6 +175,13 @@ func main() {
 		return
 	}
 	fmt.Println("OK: el flujo proactivo funciona end to end")
+}
+
+// internalUser classifies a signal's subject the way Odoo does: share=False,
+// active=True. The demo hardcodes it because it has no Odoo; the real resolver
+// is mail.odooclaw.audience.resolve_for_user.
+func internalUser(id int) proactive.ClassifiedUser {
+	return proactive.ClassifiedUser{ID: id, IsInternal: true, IsActive: true}
 }
 
 func firstLines(s string, n int) string {

@@ -28,6 +28,14 @@ type Store interface {
 	AlreadyOffered(userID int, playbookID string) (bool, error)
 	// RecordSpoke persists a delivered intervention.
 	RecordSpoke(userID int, area, playbookID string, at time.Time) error
+	// MarkInvited persists that the user has been asked whether they want
+	// suggestions. Returns ErrInvitationAlreadySent when they already were:
+	// exactly one invitation per user, ever, and that promise has to survive a
+	// restart — an in-memory flag would re-ask on every deploy, which is the
+	// single most annoying failure mode an assistant can have.
+	MarkInvited(userID int, at time.Time) error
+	// InvitedAt returns when the user was invited, and whether they ever were.
+	InvitedAt(userID int) (time.Time, bool, error)
 	// Close releases the underlying handle.
 	Close() error
 }
@@ -43,7 +51,18 @@ CREATE TABLE IF NOT EXISTS proactive_intervention (
 CREATE INDEX IF NOT EXISTS idx_proactive_user_area ON proactive_intervention(user_id, area);
 CREATE INDEX IF NOT EXISTS idx_proactive_user_playbook ON proactive_intervention(user_id, playbook_id);
 CREATE INDEX IF NOT EXISTS idx_proactive_spoken_at ON proactive_intervention(spoken_at);
+
+CREATE TABLE IF NOT EXISTS proactive_invitation (
+	user_id     INTEGER PRIMARY KEY,
+	invited_at  TEXT    NOT NULL
+);
 `
+
+// ErrInvitationAlreadySent is returned when a user has already been asked
+// whether they want suggestions. It is a sentinel so callers can tell "already
+// invited" apart from a real storage failure — the first is normal, the second
+// must never be swallowed.
+var ErrInvitationAlreadySent = fmt.Errorf("invitation already sent to this user")
 
 // SQLiteStore is the durable Store.
 type SQLiteStore struct {
@@ -131,14 +150,58 @@ func (s *SQLiteStore) RecordSpoke(userID int, area, playbookID string, at time.T
 	return err
 }
 
+// MarkInvited implements Store.
+func (s *SQLiteStore) MarkInvited(userID int, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	res, err := s.db.Exec(
+		`INSERT OR IGNORE INTO proactive_invitation(user_id, invited_at) VALUES (?, ?)`,
+		userID, at.Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return err
+	}
+	// RowsAffected == 0 means the row already existed: this user was invited
+	// before. INSERT OR IGNORE keeps the check atomic, so two concurrent view
+	// opens cannot both send the first invitation.
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return ErrInvitationAlreadySent
+	}
+	return nil
+}
+
+// InvitedAt implements Store.
+func (s *SQLiteStore) InvitedAt(userID int) (time.Time, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var raw string
+	err := s.db.QueryRow(
+		`SELECT invited_at FROM proactive_invitation WHERE user_id = ?`, userID,
+	).Scan(&raw)
+	if err == sql.ErrNoRows {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	at, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	return at, true, nil
+}
+
 // Close implements Store.
 func (s *SQLiteStore) Close() error { return s.db.Close() }
 
 // MemoryStore is a non-durable Store for tests and demos. It shares the exact
 // semantics of SQLiteStore so behaviour verified here matches production.
 type MemoryStore struct {
-	mu   sync.Mutex
-	rows []intervention
+	mu        sync.Mutex
+	rows      []intervention
+	invitedAt map[int]time.Time
 }
 
 type intervention struct {
@@ -205,3 +268,27 @@ func (s *MemoryStore) RecordSpoke(userID int, area, playbookID string, at time.T
 
 // Close implements Store.
 func (s *MemoryStore) Close() error { return nil }
+
+// MarkInvited implements Store.
+func (s *MemoryStore) MarkInvited(userID int, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.invitedAt == nil {
+		s.invitedAt = map[int]time.Time{}
+	}
+	if _, seen := s.invitedAt[userID]; seen {
+		return ErrInvitationAlreadySent
+	}
+	s.invitedAt[userID] = at
+	return nil
+}
+
+// InvitedAt implements Store.
+func (s *MemoryStore) InvitedAt(userID int) (time.Time, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	at, ok := s.invitedAt[userID]
+	return at, ok, nil
+}

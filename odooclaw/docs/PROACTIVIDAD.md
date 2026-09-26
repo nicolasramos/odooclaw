@@ -160,6 +160,74 @@ producto no puede cumplir. Hay un test que lo fija.
 El cooldown se apunta **sólo después de una entrega correcta**: si Odoo rechaza el
 mensaje, el asistente no queda mudo 24 h por un fallo transitorio.
 
+## Audiencia: quién es "usuario interno de DU"
+
+Nico fijó la regla: **cualquier usuario interno de DU**. No un grupo concreto, no
+unos elegidos — cualquier empleado. Y explícitamente **fuera**: los usuarios de
+portal y el usuario público.
+
+En Odoo esa frontera es el campo estándar `share`, que es el que el propio Odoo
+usa para separar empleado de externo (`base.group_user` lo pone a `False`). Usarlo
+nos alinea con la plataforma en vez de inventar una definición paralela:
+
+| | |
+|---|---|
+| `share = False` | usuario interno (empleado) ✅ |
+| `share = True` | usuario de portal ❌ |
+| `active = False` | desactivado — no debe recibir mensajes nuevos ❌ |
+
+Verificado contra Odoo 18 real, creando los usuarios y comprobando el resultado,
+no leyendo la documentación.
+
+### Por qué la audiencia merece su propio modelo y no un `if`
+
+Es `mail.odooclaw.audience`, con vista y menú propios, por tres razones:
+
+1. **Es una regla de negocio, no un detalle técnico.** "Quién es empleado aquí"
+   cambia (contratistas, temporales, una filial) y quien tiene esa respuesta no
+   es quien escribe Go.
+2. **Equivocarse filtra datos.** Los contadores que se citan en la oferta son
+   cifras de negocio —facturas sin registrar, líneas de banco—. Enseñárselos a un
+   usuario de portal sería una fuga de datos disfrazada de mensaje útil.
+3. **Tiene que ser auditable.** Cuando alguien pregunte "¿por qué nunca me
+   ofreció nada?", la respuesta debe poder inspeccionarse sin leer código.
+
+### El ciclo muerto que esto destapó
+
+Definir la audiencia obligó a mirar el orden de las comprobaciones, y ahí había un
+fallo de diseño que habría dejado la función muerta **con todos los tests en
+verde**:
+
+El motor exigía opt-in **antes** de hacer la primera oferta. Pero la primera oferta
+*es* la pregunta de si quiere ayuda: sin oferta nadie puede aceptar, y sin aceptar
+el opt-in nunca se enciende. El bucle se cerraba solo, y los tests no lo veían
+porque ellos mismos activaban el opt-in antes de evaluar.
+
+Medido, no supuesto — así se veía:
+
+```
+un usuario interno no recibe la oferta inicial:
+  "el usuario no ha activado las sugerencias"
+```
+
+La distinción que lo arregla separa tres preguntas que estaban mezcladas en una:
+
+| # | Pregunta | Respuesta |
+|---|---|---|
+| 0 | ¿Puede este usuario recibir ayuda? | **Audiencia**: interno y activo. Si no, silencio |
+| 1 | ¿Se le ha preguntado alguna vez? | **Invitación**: una sola vez, y es la pregunta en sí |
+| 2 | ¿Puede hablarle ahora? | **Política**: cooldown, tope diario, silencio horario |
+
+La invitación es lo **único** que puede enviarse sin opt-in previo, y va con
+guarda propia: **una por usuario y para siempre**. Sigue pasando por el silencio
+horario, porque despertar a alguien a las 3:00 para preguntarle si quiere ayuda es
+la forma más rápida de que diga que no.
+
+Y ese "una sola vez" se guarda en el **Store durable**, no en memoria: la propia
+documentación del motor dice que todo estado mutable vive en el Store para que un
+reinicio no lo olvide. Con la bandera en memoria, cada despliegue habría vuelto a
+preguntar — y a quien ya dijo "no" se le habría insistido para siempre.
+
 ## Fase 1: Contabilidad (cargada y verificada)
 
 Las áreas vienen **como datos** en `data/odooclaw_proactive_data.xml`, así que se
@@ -213,16 +281,20 @@ Lo que está medido, no supuesto:
 
 - **`go build ./...` limpio, `go vet ./...` limpio.**
 - **47/47 paquetes Go en verde**, 0 fallos.
-- **18 tests** en `pkg/proactive` (motor, política, dedupe, durabilidad, entrega,
-  y el contrato contadores↔playbooks de la fase 1).
-- **52 tests** en `mail_bot_odooclaw` sobre **Odoo 18 real en Docker**, 0 fallos,
-  en las tres condiciones: sin `account`, con `account`, e instalación limpia.
-  El módulo instala limpio.
+- **31 tests** en `pkg/proactive` (motor, política, audiencia, invitación única,
+  durabilidad tras reinicio, dedupe, entrega, y el contrato contadores↔playbooks).
+- **64 tests** en `mail_bot_odooclaw` sobre **Odoo 18 real en Docker**, 0 fallos,
+  con T>0. Incluye 10 tests de audiencia: portal, público, bot, desactivado,
+  usuario inexistente y "sin audiencia configurada = nadie".
 - **Verificación en las dos direcciones**: se mutó el código a propósito para
   comprobar que los tests detectan el fallo de verdad — sin el filtro por área el
   test se pone rojo nombrando el playbook equivocado; sin `sudo()` reproducen el
-  `AccessError` real; y con el nombre equivocado del módulo VeriFactu salta el
-  test que lo fija. Un test que nunca se pone rojo no prueba nada.
+  `AccessError` real; con el nombre equivocado del módulo VeriFactu salta el test
+  que lo fija; invirtiendo la bandera de interno/portal caen 3 tests de audiencia;
+  y devolviendo la invitación a memoria cae el de durabilidad tras reinicio. Un
+  test que nunca se pone rojo no prueba nada.
+- **Demo end-to-end reproducible** con los tres casos de audiencia: interno →
+  invitación, portal → silencio, sin clasificar → silencio (fail-closed).
 
 Los bugs reales que la verificación encontró y que no se habrían visto sin
 ejecutar contra Odoo:

@@ -16,6 +16,7 @@
 package proactive
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -72,6 +73,11 @@ type Signal struct {
 	ViewID string
 	// Counters are the deterministic observations read from Odoo.
 	Counters map[string]int
+	// User is the host's classification of the user (internal? active?). The Go
+	// side never reads Odoo, so eligibility is resolved by the caller and
+	// asserted here. A zero value means "unknown", which fails closed: an
+	// unclassified user is never offered help.
+	User ClassifiedUser
 	// At is when the observation happened (zero = time.Now()).
 	At time.Time
 }
@@ -81,6 +87,11 @@ type Signal struct {
 type Decision struct {
 	// Speak reports whether an intervention should be delivered.
 	Speak bool
+	// Invitation marks this decision as the first contact: an offer to enable
+	// suggestions, NOT an intervention. It is the only thing that may be sent
+	// without a prior opt-in, and the host must therefore treat it differently
+	// — enable-suggestions affordances belong on it, counters do not.
+	Invitation bool
 	// Reason explains the verdict, in both directions.
 	Reason string
 	// PlaybookID is the playbook that fired (empty when silent).
@@ -127,6 +138,13 @@ func (e *Engine) SetClock(now func() time.Time) { e.now = now }
 //
 // Order matters and is cheapest-first: the whole evaluation is a handful of map
 // and SQLite lookups with no LLM call, so it can run on every view open.
+//
+// The first three gates answer three DIFFERENT questions that used to be
+// conflated into one:
+//
+//  0. Audience    — may this user be offered help at all? (internal, active)
+//  1. Invitation  — has this user never been asked? Then ASK, do not assist.
+//  2. Policy      — the user is opted in; may the assistant speak NOW?
 func (e *Engine) Evaluate(sig Signal) Decision {
 	at := sig.At
 	if at.IsZero() {
@@ -138,10 +156,40 @@ func (e *Engine) Evaluate(sig Signal) Decision {
 		return Decision{Reason: "sin área funcional: no hay nada que ofrecer"}
 	}
 
-	// 1. Opt-in. Speaking to someone who never asked is the behaviour that
-	//    makes people hate an assistant, so this gate is first.
+	// 0. Audience. Portal and public users are never offered help, and neither
+	//    are deactivated users. This is not nuisances but entitlement: the
+	//    counters are business figures an outsider must not be shown.
+	if ok, reason := e.policy.Audience.Eligible(sig.User); !ok {
+		return Decision{Reason: reason}
+	}
+
+	// 1. Invitation. The first message a user ever gets is the QUESTION of
+	//    whether they want help, so it cannot require help to already be
+	//    enabled — that loop never turns on. One invitation per user, ever,
+	//    and it goes through the quiet hours and the daily cap so it cannot
+	//    arrive at 3am.
 	if !e.policy.OptedIn(sig.UserID) {
-		return Decision{Reason: "el usuario no ha activado las sugerencias"}
+		invitedAt, wasInvited, err := e.store.InvitedAt(sig.UserID)
+		if err != nil {
+			return Decision{Reason: "no se pudo comprobar la invitación previa"}
+		}
+		if wasInvited {
+			return Decision{Reason: fmt.Sprintf(
+				"ya se le invitó (%s) y no ha activado las sugerencias",
+				invitedAt.Format(time.RFC3339))}
+		}
+		if e.policy.InQuietHours(at) {
+			return Decision{Reason: fmt.Sprintf("silêncio horario %02d:00-%02d:00",
+				e.policy.QuietFromHour, e.policy.QuietToHour)}
+		}
+		return Decision{
+			Speak:      true,
+			Invitation: true,
+			PlaybookID: invitationPlaybookID,
+			Message:    e.invitationMessage(area),
+			Channel:    "odoo_discuss_private",
+			Reason:     "primera vez: se le ofrece ayuda",
+		}
 	}
 
 	// 2. Quiet hours.
@@ -195,12 +243,25 @@ func (e *Engine) Evaluate(sig Signal) Decision {
 	}
 }
 
-// Record persists that an intervention was delivered. It must be called after
+// Record persists that a message was delivered. It must be called after
 // delivery succeeds, otherwise a failed send would poison the cooldown.
+//
+// An invitation is recorded as such: it burns the user's single invitation
+// instead of an area cooldown, because no assistance has been given yet.
 func (e *Engine) Record(sig Signal, d Decision) error {
 	at := sig.At
 	if at.IsZero() {
 		at = e.now()
+	}
+	if d.Invitation {
+		// The invitation is spent against the DURABLE store, not an in-memory
+		// flag: it has to survive a restart, otherwise every deploy would ask
+		// the user again whether they want help.
+		if err := e.store.MarkInvited(sig.UserID, at); err != nil &&
+			!errors.Is(err, ErrInvitationAlreadySent) {
+			return err
+		}
+		return nil
 	}
 	return e.store.RecordSpoke(sig.UserID, strings.ToLower(sig.Area), d.PlaybookID, at)
 }
@@ -249,6 +310,26 @@ func (e *Engine) Areas() []string {
 
 // Playbooks returns the loaded playbooks, for inspection and admin views.
 func (e *Engine) Playbooks() []Playbook { return e.playbooks }
+
+// invitationPlaybookID is the stable identifier of the first-contact decision,
+// so the host can render enable-suggestions affordances on it without guessing.
+const invitationPlaybookID = "system.invitation"
+
+// InvitationMessage is the copy of the first contact, exported so the host and
+// its tests can rely on the same text.
+//
+// It is written to be ignorable: it asks one question, offers the off-ramp
+// first, and promises nothing the policy cannot keep.
+const InvitationMessage = "Soy OdooClaw. Puedo avisarte de cosas de tu trabajo " +
+	"antes de que las busques —facturas por registrar, líneas de banco sin " +
+	"conciliar, avisos de VeriFactu— y explicarte cómo resolverlas.\n\n" +
+	"¿Quieres que te avise? Si prefieres que no, dilo y no volveré a preguntar."
+
+// invitationMessage fills the invitation for the area the user just opened,
+// naming the area so the offer is concrete rather than a generic sales pitch.
+func (e *Engine) invitationMessage(area string) string {
+	return InvitationMessage
+}
 
 // render fills the offer template with the observed counter.
 func render(pb Playbook, count int, counters map[string]int) string {
