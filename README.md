@@ -350,6 +350,13 @@ matches nothing exits 0 and looks green.
 > this flag the whole suite reports `0 tests, 0 failed` and exits 0 — a green
 > that proves nothing, because nothing ran.
 
+> **Docker on macOS with Colima: check the bind mount is not empty.** Colima only
+> mounts the directories declared in `~/.colima/default/colima.yaml`, and a path
+> outside that list is mounted as an **empty directory with no error**. Odoo then
+> reports `invalid module names, ignored: <module>` and exits 0 with `0 tests`,
+> which reads exactly like a passing run. Before trusting a result, assert the
+> mount is non-empty (for example `ls` the addon inside the container).
+
 ### Installation in Odoo
 
 1. Spin up your Odoo environment (for instance, using Doodba).
