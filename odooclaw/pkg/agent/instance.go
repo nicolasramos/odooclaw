@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/nicolasramos/odooclaw/pkg/config"
+	"github.com/nicolasramos/odooclaw/pkg/logger"
 	"github.com/nicolasramos/odooclaw/pkg/providers"
 	"github.com/nicolasramos/odooclaw/pkg/routing"
 	"github.com/nicolasramos/odooclaw/pkg/session"
@@ -95,6 +96,19 @@ func NewAgentInstance(
 	// so BuildSystemPrompt can switch to the compact prompt for them.
 	contextBuilder.SetModel(model)
 	contextBuilder.InvalidateCache()
+
+	// NRA-3845: the knowledge base must live in the process that serves the
+	// user. Register knowledge_add as a core tool and attach the retrieval
+	// engine to the registry so tool selection can use KB-driven relevance.
+	toolsRegistry.Register(tools.NewKnowledgeAddTool(contextBuilder.Knowledge()))
+	if engine, err := tools.NewRetrievalEngine(tools.NewSynonymRewriter()); err == nil {
+		if err := engine.IndexTools(toolsRegistry); err != nil {
+			logger.WarnCF("agent", "Failed to index tools for retrieval", map[string]any{"error": err.Error()})
+		}
+		toolsRegistry.SetRetrievalEngine(engine)
+	} else {
+		logger.WarnCF("agent", "Failed to create retrieval engine", map[string]any{"error": err.Error()})
+	}
 
 	agentID := routing.DefaultAgentID
 	agentName := ""

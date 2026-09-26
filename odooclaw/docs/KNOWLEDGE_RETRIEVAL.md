@@ -4,6 +4,17 @@ The Knowledge Base + Retrieval Engine gives OdooClaw domain knowledge about
 Odoo and the tools available, so the model receives **only the relevant
 tools** for the current query instead of all 100+ schemas.
 
+> **Status (NRA-3845):** the KB is **live in the agent binary**. It is built
+> in `pkg/agent` (`KnowledgeStore`, wired in `NewContextBuilder` /
+> `NewAgentInstance`), persisted at `<workspace>/knowledge/kb.sqlite`
+> (WAL), and fed three ways: markdown dropped in
+> `<workspace>/knowledge/**/*.md` (incremental, NFC-normalized), the
+> `knowledge_add` core tool, and `odooclaw knowledge add|index|search|list`.
+> Natural-language queries are tokenized with `BuildMatchQuery` (OR of
+> normalized tokens) before FTS5 `MATCH`. A regression test
+> (`pkg/knowledge/persistence_test.go`) fails if the KB ever reverts to
+> `:memory:` or leaves the binary.
+
 ## Architecture
 
 ```
