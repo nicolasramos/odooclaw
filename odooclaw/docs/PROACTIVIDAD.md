@@ -213,7 +213,8 @@ Lo que está medido, no supuesto:
 
 - **`go build ./...` limpio, `go vet ./...` limpio.**
 - **47/47 paquetes Go en verde**, 0 fallos.
-- **18 tests** en `pkg/proactive` (motor, política, dedupe, durabilidad, entrega).
+- **18 tests** en `pkg/proactive` (motor, política, dedupe, durabilidad, entrega,
+  y el contrato contadores↔playbooks de la fase 1).
 - **52 tests** en `mail_bot_odooclaw` sobre **Odoo 18 real en Docker**, 0 fallos,
   en las tres condiciones: sin `account`, con `account`, e instalación limpia.
   El módulo instala limpio.
