@@ -48,17 +48,17 @@ func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 }
 
 type Config struct {
-	Agents    AgentsConfig    `json:"agents"`
-	Bindings  []AgentBinding  `json:"bindings,omitempty"`
-	Session   SessionConfig   `json:"session,omitempty"`
-	Engram    EngramConfig    `json:"engram,omitempty"`
-	Channels  ChannelsConfig  `json:"channels"`
-	Providers ProvidersConfig `json:"providers,omitempty"`
-	ModelList []ModelConfig   `json:"model_list"` // New model-centric provider configuration
-	Gateway   GatewayConfig   `json:"gateway"`
-	Tools     ToolsConfig     `json:"tools"`
-	Heartbeat HeartbeatConfig `json:"heartbeat"`
-	Devices   DevicesConfig   `json:"devices"`
+	Agents     AgentsConfig     `json:"agents"`
+	Bindings   []AgentBinding   `json:"bindings,omitempty"`
+	Session    SessionConfig    `json:"session,omitempty"`
+	Engram     EngramConfig     `json:"engram,omitempty"`
+	Channels   ChannelsConfig   `json:"channels"`
+	Providers  ProvidersConfig  `json:"providers,omitempty"`
+	ModelList  []ModelConfig    `json:"model_list"` // New model-centric provider configuration
+	Gateway    GatewayConfig    `json:"gateway"`
+	Tools      ToolsConfig      `json:"tools"`
+	Heartbeat  HeartbeatConfig  `json:"heartbeat"`
+	Devices    DevicesConfig    `json:"devices"`
 	Multimodel MultimodelConfig `json:"multimodel,omitempty"`
 }
 
@@ -228,6 +228,23 @@ type OdooConfig struct {
 	AllowGroupMentions bool                `json:"allow_group_mentions" env:"ODOOCLAW_CHANNELS_ODOO_ALLOW_GROUP_MENTIONS"`
 	WebhookToken       string              `json:"webhook_token"        env:"ODOOCLAW_CHANNELS_ODOO_WEBHOOK_TOKEN"`
 	ReasoningChannelID string              `json:"reasoning_channel_id" env:"ODOOCLAW_CHANNELS_ODOO_REASONING_CHANNEL_ID"`
+	// Proactive configures the assistance engine that answers Odoo's "the user
+	// opened this screen; would you say something?". Off by default: an
+	// assistant that starts talking before anyone asked for it should be an
+	// explicit decision, not something a deploy switches on by accident.
+	Proactive ProactiveConfig `json:"proactive"`
+}
+
+// ProactiveConfig configures the proactive assistance engine.
+type ProactiveConfig struct {
+	// Enabled mounts the signal endpoint. When false the engine is not built at
+	// all, so nothing is listening and nothing can be offered.
+	Enabled bool `json:"enabled" env:"ODOOCLAW_ODOO_PROACTIVE_ENABLED"`
+	// StorePath is the SQLite file holding the anti-nuisance state: who was
+	// already invited, cooldowns, daily counts. It MUST be on persistent storage
+	// — on a tmpfs a restart would re-invite every user, including those who
+	// already declined.
+	StorePath string `json:"store_path" env:"ODOOCLAW_ODOO_PROACTIVE_STORE_PATH"`
 }
 
 type ChannelsConfig struct {
@@ -443,16 +460,16 @@ type DevicesConfig struct {
 // specialized models (tool calling, summarization) instead of always
 // using the primary LLM.
 type MultimodelConfig struct {
-	Enabled    bool                    `json:"enabled"`
-	Classifier ClassifierConfig        `json:"classifier"`
-	Router     MultimodelRouterConfig  `json:"router"`
+	Enabled    bool                   `json:"enabled"`
+	Classifier ClassifierConfig       `json:"classifier"`
+	Router     MultimodelRouterConfig `json:"router"`
 }
 
 // ClassifierConfig configures the intent classifier model.
 type ClassifierConfig struct {
-	Endpoint string `json:"endpoint"`   // e.g. "http://n100:8080/v1"
-	APIKey   string `json:"api_key"`    // Often empty for local llama.cpp
-	Model    string `json:"model"`      // e.g. "local-model"
+	Endpoint string `json:"endpoint"` // e.g. "http://n100:8080/v1"
+	APIKey   string `json:"api_key"`  // Often empty for local llama.cpp
+	Model    string `json:"model"`    // e.g. "local-model"
 }
 
 // MultimodelRouterConfig configures model routing per intent.
@@ -464,8 +481,8 @@ type MultimodelRouterConfig struct {
 
 // ModelEndpointConfig describes a model endpoint for the multi-model pipeline.
 type ModelEndpointConfig struct {
-	Endpoint    string  `json:"endpoint"`     // e.g. "http://n100:8080/v1"
-	ModelID     string  `json:"model_id"`     // e.g. "qwen2.5-1.5b-lora"
+	Endpoint    string  `json:"endpoint"` // e.g. "http://n100:8080/v1"
+	ModelID     string  `json:"model_id"` // e.g. "qwen2.5-1.5b-lora"
 	MaxTokens   int     `json:"max_tokens"`
 	Temperature float64 `json:"temperature"`
 }

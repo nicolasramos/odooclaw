@@ -34,6 +34,7 @@ import (
 	"github.com/nicolasramos/odooclaw/pkg/heartbeat"
 	"github.com/nicolasramos/odooclaw/pkg/logger"
 	"github.com/nicolasramos/odooclaw/pkg/media"
+	"github.com/nicolasramos/odooclaw/pkg/proactive"
 	"github.com/nicolasramos/odooclaw/pkg/providers"
 	"github.com/nicolasramos/odooclaw/pkg/state"
 	"github.com/nicolasramos/odooclaw/pkg/tools"
@@ -145,6 +146,48 @@ func gatewayCmd(debug bool) error {
 		},
 	)
 	channelManager.SetSystemHandler(systemHandler)
+
+	// Wire the proactive engine so Odoo can ask "the user just opened this
+	// screen; would you say something?". The engine is stateless per request and
+	// holds no LLM: it counts (Odoo does the counting) and applies the policy.
+	// Delivery is NOT done here — Odoo posts the message itself, inside the
+	// request scope of the user who triggered it (see pkg/proactive.Handler).
+	if cfg.Channels.Odoo.Proactive.Enabled {
+		// Resolve the store path here rather than in config: the default depends
+		// on the workspace, which is only known once the config is loaded. A
+		// relative path is placed next to the rest of the agent state so it lands
+		// on the same persistent volume; a restart must not lose the fact that a
+		// user was already invited.
+		storePath := cfg.Channels.Odoo.Proactive.StorePath
+		if storePath == "" {
+			storePath = filepath.Join(cfg.WorkspacePath(), "proactive.db")
+		} else if !filepath.IsAbs(storePath) {
+			storePath = filepath.Join(cfg.WorkspacePath(), storePath)
+		}
+		proactiveStore, err := proactive.NewSQLiteStore(storePath)
+		if err != nil {
+			logger.WarnCF("proactive", "Proactive engine disabled: store unavailable", map[string]any{
+				"error": err.Error(),
+				"path":  storePath,
+			})
+		} else {
+			engine := proactive.NewEngine(
+				proactive.DefaultPlaybooks(),
+				proactive.DefaultPolicy(),
+				proactiveStore,
+			)
+			handler := proactive.NewHandler(
+				proactive.NewService(engine, nil, nil),
+				cfg.Channels.Odoo.WebhookToken,
+				true,
+			)
+			channelManager.SetProactiveHandler(proactive.SignalPath, handler)
+			logger.InfoCF("proactive", "Proactive engine enabled", map[string]any{
+				"path":      proactive.SignalPath,
+				"playbooks": len(engine.Playbooks()),
+			})
+		}
+	}
 
 	// Inject channel manager and media store into agent loop
 	agentLoop.SetChannelManager(channelManager)

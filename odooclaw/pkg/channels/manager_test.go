@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/nicolasramos/odooclaw/pkg/bus"
+	"github.com/nicolasramos/odooclaw/pkg/config"
 )
 
 // mockChannel is a test double that delegates Send to a configurable function.
@@ -929,5 +931,59 @@ func TestBuildMediaScope_WithMessageID(t *testing.T) {
 	expected := "discord:chat99:msg123"
 	if scope != expected {
 		t.Fatalf("expected %s, got %s", expected, scope)
+	}
+}
+
+// TestProactiveHandlerIsMountedOnTheSharedServer guards the wiring, not the
+// logic. pkg/proactive.Handler was fully implemented and fully tested while this
+// route was mounted nowhere at all: every unit test passed, and in production
+// Odoo would have posted to an endpoint that did not exist. The only way to
+// catch that class of gap is to assert the registration itself.
+func TestProactiveHandlerIsMountedOnTheSharedServer(t *testing.T) {
+	const path = "/odooclaw/signal"
+
+	m := &Manager{
+		channels: map[string]Channel{},
+		config:   &config.Config{},
+	}
+	called := false
+	m.SetProactiveHandler(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	m.SetupHTTPServer("127.0.0.1:0", nil)
+
+	if m.mux == nil {
+		t.Fatal("no mux was built")
+	}
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader("{}"))
+	rec := httptest.NewRecorder()
+	m.mux.ServeHTTP(rec, req)
+
+	if !called {
+		t.Fatalf("%s is not routed: the handler was never reached", path)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+// TestNoProactiveRouteWithoutHandler: the route must not exist when the feature
+// is off. A live endpoint that answers "disabled" forever is a surface with no
+// purpose, and it invites a deploy to think proactivity is wired when it is not.
+func TestNoProactiveRouteWithoutHandler(t *testing.T) {
+	m := &Manager{
+		channels: map[string]Channel{},
+		config:   &config.Config{},
+	}
+	m.SetupHTTPServer("127.0.0.1:0", nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/odooclaw/signal", strings.NewReader("{}"))
+	rec := httptest.NewRecorder()
+	m.mux.ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Fatal("the proactive route answered although no handler was set")
 	}
 }
