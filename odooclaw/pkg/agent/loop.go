@@ -25,6 +25,8 @@ import (
 	"github.com/nicolasramos/odooclaw/pkg/channels"
 	"github.com/nicolasramos/odooclaw/pkg/config"
 	"github.com/nicolasramos/odooclaw/pkg/constants"
+	integration "github.com/nicolasramos/odooclaw/pkg/integration"
+	"github.com/nicolasramos/odooclaw/pkg/knowledge"
 	"github.com/nicolasramos/odooclaw/pkg/logger"
 	"github.com/nicolasramos/odooclaw/pkg/mcp"
 	"github.com/nicolasramos/odooclaw/pkg/media"
@@ -50,6 +52,7 @@ type AgentLoop struct {
 	mediaStore     media.MediaStore
 	mcpManager     *mcp.Manager
 	pipeline       *multimodel.Pipeline // Multi-model pipeline (nil when disabled)
+	integrationPip *integration.Pipeline // End-to-end integration pipeline (nil when disabled)
 }
 
 // processOptions configures how a message is processed
@@ -137,15 +140,87 @@ func NewAgentLoop(
 		})
 	}
 
-	return &AgentLoop{
-		bus:         msgBus,
-		cfg:         cfg,
-		registry:    registry,
-		state:       stateManager,
-		summarizing: sync.Map{},
-		fallback:    fallbackChain,
-		pipeline:    pipeline,
+	// Initialize knowledge base (file-backed, persists across restarts)
+	initKnowledgeBase(registry)
+
+	// Initialize integration pipeline (end-to-end pipeline with tool retrieval,
+	// context optimization, knowledge base, and LLM inference)
+	var integrationPipeline *integration.Pipeline
+	if cfg.Integration.Enabled && defaultAgent != nil {
+		integrationPipeline = integration.NewPipeline(
+			integration.PipelineConfig{
+				RetrievalEnabled:  cfg.Integration.RetrievalEnabled,
+				RetrievalLimit:    cfg.Integration.RetrievalLimit,
+				OptimizeEnabled:   cfg.Integration.OptimizeEnabled,
+				MaxTokenBudget:    cfg.Integration.MaxTokenBudget,
+				KnowledgeEnabled:  cfg.Integration.KnowledgeEnabled,
+				Workspace:         defaultAgent.Workspace,
+				MultiModelEnabled: cfg.Multimodel.Enabled,
+			},
+			defaultAgent.Tools,
+			provider,
+			cfg.Agents.Defaults.Model,
+		)
+		logger.InfoCF("agent", "Integration pipeline initialized", map[string]any{
+			"retrieval_enabled": cfg.Integration.RetrievalEnabled,
+			"optimize_enabled":  cfg.Integration.OptimizeEnabled,
+		})
 	}
+
+	return &AgentLoop{
+		bus:              msgBus,
+		cfg:              cfg,
+		registry:         registry,
+		state:            stateManager,
+		summarizing:      sync.Map{},
+		fallback:         fallbackChain,
+		pipeline:         pipeline,
+		integrationPip:   integrationPipeline,
+	}
+}
+
+// initKnowledgeBase creates a file-backed KB in the default agent's workspace,
+// indexes the knowledge/*.md directory, and wires it into every agent.
+func initKnowledgeBase(registry *AgentRegistry) error {
+	defaultAgent := registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		return nil
+	}
+
+	kb, err := knowledge.NewKnowledgeBase(defaultAgent.Workspace)
+	if err != nil {
+		return fmt.Errorf("failed to create knowledge base: %w", err)
+	}
+
+	// Index knowledge/*.md files
+	count, err := kb.SyncKnowledge(defaultAgent.Workspace)
+	if err != nil {
+		logger.WarnCF("knowledge", "KB sync failed", map[string]any{"error": err.Error()})
+	} else if count > 0 {
+		logger.InfoCF("knowledge", "Indexed knowledge files", map[string]any{"count": count})
+	}
+
+	// Index tool knowledge via Indexer
+	indexer := knowledge.NewIndexer(kb)
+	for _, agentID := range registry.ListAgentIDs() {
+		if agent, ok := registry.GetAgent(agentID); ok {
+			if err := indexer.IndexAll(agent.Tools); err != nil {
+				logger.WarnCF("knowledge", "Indexer failed for agent", map[string]any{"agent": agentID, "error": err.Error()})
+			}
+		}
+	}
+
+	// Wire KB into every agent
+	for _, agentID := range registry.ListAgentIDs() {
+		if agent, ok := registry.GetAgent(agentID); ok {
+			agent.KnowledgeBase = kb
+		}
+	}
+
+	logger.InfoCF("knowledge", "Knowledge base initialized", map[string]any{
+		"db_path": kb.DBPath(),
+	})
+	return nil
 }
 
 // registerSharedTools registers tools that are shared across all agents (web, message, spawn).
@@ -217,6 +292,9 @@ func registerSharedTools(
 		agent.Tools.Register(tools.NewMemoryGetTimelineTool(agent.Workspace))
 		agent.Tools.Register(tools.NewMemoryDebugExplainRetrievalTool(agent.Workspace))
 		agent.Tools.Register(tools.NewMemoryImportHistoryTool(agent.Workspace))
+
+		// Knowledge base tool
+		agent.Tools.Register(tools.NewKnowledgeAddTool(agent.Workspace))
 
 		// NRA-511: structured session memory tools (state + pending confirmations)
 		sessionMemStore := corememory.NewSessionMemoryStore(filepath.Join(agent.Workspace, "memory"))

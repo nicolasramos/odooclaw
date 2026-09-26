@@ -33,6 +33,7 @@ type PipelineConfig struct {
 
 	// Knowledge Base
 	KnowledgeEnabled bool
+	Workspace        string // Workspace path for KB persistence
 
 	// Multi-model pipeline (optional)
 	MultiModelEnabled bool
@@ -149,7 +150,7 @@ func NewPipeline(
 
 	// Initialize knowledge base
 	if cfg.KnowledgeEnabled {
-		kb, err := knowledge.NewKnowledgeBase()
+		kb, err := knowledge.NewKnowledgeBase(cfg.Workspace)
 		if err != nil {
 			logger.WarnCF("integration", "Failed to create knowledge base", map[string]any{
 				"error": err.Error(),

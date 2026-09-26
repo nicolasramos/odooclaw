@@ -6,10 +6,13 @@ package knowledge
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/nicolasramos/odooclaw/pkg/logger"
+	"golang.org/x/text/unicode/norm"
 	_ "modernc.org/sqlite"
 )
 
@@ -65,20 +68,34 @@ type ToolKnowledge struct {
 // KnowledgeBase stores and retrieves domain-specific knowledge entries.
 // It uses SQLite FTS5 for full-text search over knowledge content.
 type KnowledgeBase struct {
-	db  *sql.DB
-	mu  sync.RWMutex
+	db     *sql.DB
+	mu     sync.RWMutex
+	dbPath string
 }
 
-// NewKnowledgeBase creates a new in-memory knowledge base.
-func NewKnowledgeBase() (*KnowledgeBase, error) {
-	db, err := sql.Open("sqlite", ":memory:")
+// NewKnowledgeBase creates a new file-backed knowledge base in the given directory.
+// The database file is kb.sqlite; it is created lazily on first write.
+func NewKnowledgeBase(workspaceDir string) (*KnowledgeBase, error) {
+	kbDir := filepath.Join(workspaceDir, "knowledge")
+	if err := os.MkdirAll(kbDir, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create knowledge directory: %w", err)
+	}
+
+	dbPath := filepath.Join(kbDir, "kb.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open knowledge base: %w", err)
 	}
 
+	// WAL mode for concurrent read/write safety.
+	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to set WAL mode: %w", err)
+	}
+
 	// Create FTS5 table for knowledge entries
 	_, err = db.Exec(`
-		CREATE VIRTUAL TABLE knowledge USING fts5(
+		CREATE VIRTUAL TABLE IF NOT EXISTS knowledge USING fts5(
 			title,
 			content,
 			tags,
@@ -126,7 +143,12 @@ func NewKnowledgeBase() (*KnowledgeBase, error) {
 		return nil, fmt.Errorf("failed to create tool_knowledge table: %w", err)
 	}
 
-	return &KnowledgeBase{db: db}, nil
+	return &KnowledgeBase{db: db, dbPath: dbPath}, nil
+}
+
+// DBPath returns the path to the underlying SQLite file.
+func (kb *KnowledgeBase) DBPath() string {
+	return kb.dbPath
 }
 
 // Add inserts a knowledge entry into the base.
@@ -168,6 +190,122 @@ func (kb *KnowledgeBase) Add(entry KnowledgeEntry) error {
 	return nil
 }
 
+// SyncKnowledge indexes all .md files from the knowledge directory into the KB.
+// It follows the same pattern as memory.SyncFile: walk knowledge/*.md,
+// parse frontmatter for metadata, NFC-normalize content, and index entries.
+func (kb *KnowledgeBase) SyncKnowledge(workspaceDir string) (int, error) {
+	kbDir := filepath.Join(workspaceDir, "knowledge")
+	entries, err := os.ReadDir(kbDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil // no knowledge directory yet
+		}
+		return 0, fmt.Errorf("failed to read knowledge directory: %w", err)
+	}
+
+	var count int
+	for _, fi := range entries {
+		if fi.IsDir() {
+			continue
+		}
+		name := fi.Name()
+		if !strings.HasSuffix(name, ".md") {
+			continue
+		}
+		path := filepath.Join(kbDir, name)
+		if err := kb.indexKnowledgeFile(path); err != nil {
+			logger.WarnCF("knowledge", "Failed to index knowledge file", map[string]any{
+				"file":  path,
+				"error": err.Error(),
+			})
+			continue
+		}
+		count++
+	}
+	return count, nil
+}
+
+// indexKnowledgeFile parses a single .md file and adds it as a KnowledgeEntry.
+func (kb *KnowledgeBase) indexKnowledgeFile(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read file: %w", err)
+	}
+
+	// NFC-normalize content (macOS/NAS can deliver NFD)
+	content := norm.NFC.String(string(data))
+
+	// Parse frontmatter: look for --- delimited blocks at the top
+	var title, category, tagsStr string
+	var aliases []string
+	contentStart := 0
+
+	lines := strings.Split(content, "\n")
+	if len(lines) >= 3 && strings.TrimSpace(lines[0]) == "---" {
+		end := -1
+		for i := 1; i < len(lines); i++ {
+			if strings.TrimSpace(lines[i]) == "---" {
+				end = i
+				break
+			}
+		}
+		if end > 0 {
+			contentStart = end + 1
+			for _, line := range lines[1:end] {
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+				if strings.HasPrefix(line, "title:") {
+					title = strings.TrimSpace(strings.TrimPrefix(line, "title:"))
+				} else if strings.HasPrefix(line, "category:") {
+					category = strings.TrimSpace(strings.TrimPrefix(line, "category:"))
+				} else if strings.HasPrefix(line, "tags:") {
+					tagsStr = strings.TrimSpace(strings.TrimPrefix(line, "tags:"))
+				} else if strings.HasPrefix(line, "aliases:") {
+					aliasStr := strings.TrimSpace(strings.TrimPrefix(line, "aliases:"))
+					aliases = strings.Split(aliasStr, ",")
+					for i := range aliases {
+						aliases[i] = strings.TrimSpace(aliases[i])
+					}
+				}
+			}
+		}
+	}
+
+	// Use filename as title if no frontmatter title
+	if title == "" {
+		title = strings.TrimSuffix(filepath.Base(path), ".md")
+	}
+	if category == "" {
+		category = string(CatToolUsage)
+	}
+
+	var tags []string
+	if tagsStr != "" {
+		tags = strings.Split(tagsStr, ",")
+		for i := range tags {
+			tags[i] = strings.TrimSpace(tags[i])
+		}
+	}
+
+	text := strings.TrimSpace(content[contentStart:])
+	if text == "" {
+		text = "(empty knowledge entry)"
+	}
+
+	entry := KnowledgeEntry{
+		Title:     title,
+		Content:   text,
+		Category:  Category(category),
+		Tags:      tags,
+		Aliases:   aliases,
+		RiskLevel: RiskLow,
+	}
+
+	return kb.Add(entry)
+}
+
 // Search finds knowledge entries matching a query. Returns the most relevant
 // entries limited by count.
 func (kb *KnowledgeBase) Search(query string, category string, limit int) ([]KnowledgeEntry, error) {
@@ -177,6 +315,8 @@ func (kb *KnowledgeBase) Search(query string, category string, limit int) ([]Kno
 	if limit <= 0 {
 		limit = 5
 	}
+
+	query = buildMatchQuery(query)
 
 	var rows *sql.Rows
 	var err error
@@ -650,4 +790,21 @@ func fromJSON(s string) map[string]string {
 		}
 	}
 	return result
+}
+
+// buildMatchQuery tokenizes a natural-language query into an FTS5 MATCH
+// expression. It lowercases, splits on whitespace, and quotes each token
+// so the matching is AND-like (all tokens must appear). This prevents the
+// original bug where a raw natural-language string like "cómo configuro el
+// VeriFactu en Odoo" was passed directly to MATCH and returned zero rows.
+func buildMatchQuery(query string) string {
+	tokens := strings.Fields(strings.ToLower(query))
+	if len(tokens) == 0 {
+		return ""
+	}
+	quoted := make([]string, len(tokens))
+	for i, t := range tokens {
+		quoted[i] = `"` + t + `"`
+	}
+	return strings.Join(quoted, " ")
 }

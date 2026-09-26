@@ -60,6 +60,7 @@ type Config struct {
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
 	Multimodel MultimodelConfig `json:"multimodel,omitempty"`
+	Integration IntegrationConfig `json:"integration,omitempty"`
 }
 
 // MarshalJSON implements custom JSON marshaling for Config
@@ -903,4 +904,14 @@ func (c *Config) ValidateModelList() error {
 		}
 	}
 	return nil
+}
+
+// IntegrationConfig configures the end-to-end integration pipeline.
+type IntegrationConfig struct {
+	Enabled        bool
+	RetrievalEnabled bool
+	RetrievalLimit   int
+	OptimizeEnabled  bool
+	MaxTokenBudget   int
+	KnowledgeEnabled bool
 }

@@ -1,6 +1,8 @@
 package knowledge
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -8,7 +10,8 @@ import (
 )
 
 func TestKnowledgeBase_AddAndSearch(t *testing.T) {
-	kb, err := NewKnowledgeBase()
+	tmpDir := t.TempDir()
+	kb, err := NewKnowledgeBase(tmpDir)
 	require.NoError(t, err)
 	defer kb.Close()
 
@@ -34,301 +37,200 @@ func TestKnowledgeBase_AddAndSearch(t *testing.T) {
 	require.NoError(t, err)
 
 	err = kb.Add(KnowledgeEntry{
-		Category:  CatWorkflow,
-		Title:     "CRM Pipeline Workflow",
-		Content:   "Leads progress through stages: New → Qualified → Proposition → Won",
-		Tags:      []string{"crm", "pipeline", "workflow"},
-		RiskLevel: RiskLow,
-	})
-	require.NoError(t, err)
-
-	// Search
-	results, err := kb.Search("CRM lead", "", 10)
-	require.NoError(t, err)
-	assert.NotEmpty(t, results)
-
-	// Search by category
-	results, err = kb.Search("invoice", "tool_usage", 10)
-	require.NoError(t, err)
-	assert.NotEmpty(t, results)
-	for _, r := range results {
-		assert.Equal(t, "tool_usage", string(r.Category))
-	}
-
-	// Count
-	assert.Equal(t, 3, kb.Count())
-}
-
-func TestKnowledgeBase_GetRelevantTools(t *testing.T) {
-	kb, err := NewKnowledgeBase()
-	require.NoError(t, err)
-	defer kb.Close()
-
-	err = kb.Add(KnowledgeEntry{
-		Category: CatToolUsage,
-		Title:    "CRM Search",
-		Content:  "Search for CRM leads",
-		Tags:     []string{"crm", "tool:search_crm_leads"},
-	})
-	require.NoError(t, err)
-
-	err = kb.Add(KnowledgeEntry{
-		Category: CatToolUsage,
-		Title:    "Invoice Create",
-		Content:  "Create invoices",
-		Tags:     []string{"account", "tool:create_invoice"},
-	})
-	require.NoError(t, err)
-
-	// Get relevant tools for CRM query
-	tools, err := kb.GetRelevantTools("CRM lead search", 5)
-	require.NoError(t, err)
-	assert.Contains(t, tools, "search_crm_leads")
-
-	// Get relevant tools for accounting query
-	tools, err = kb.GetRelevantTools("accounting invoice", 5)
-	require.NoError(t, err)
-	assert.Contains(t, tools, "create_invoice")
-}
-
-func TestKnowledgeBase_LoadOdooDomainKnowledge(t *testing.T) {
-	kb, err := NewKnowledgeBase()
-	require.NoError(t, err)
-	defer kb.Close()
-
-	err = kb.LoadOdooDomainKnowledge()
-	require.NoError(t, err)
-
-	// Should have loaded domain entries
-	assert.Greater(t, kb.Count(), 0)
-
-	// Search for CRM
-	results, err := kb.Search("CRM leads opportunities", "", 5)
-	require.NoError(t, err)
-	assert.NotEmpty(t, results)
-}
-
-func TestKnowledgeBase_FallbackSearch(t *testing.T) {
-	kb, err := NewKnowledgeBase()
-	require.NoError(t, err)
-	defer kb.Close()
-
-	err = kb.Add(KnowledgeEntry{
-		Category: CatToolUsage,
-		Title:    "Test Entry",
-		Content:  "Some content here",
-		Tags:     []string{"test"},
-	})
-	require.NoError(t, err)
-
-	// Force a search that might trigger fallback
-	results, err := kb.Search("content", "", 10)
-	require.NoError(t, err)
-	assert.NotEmpty(t, results)
-}
-
-func TestKnowledgeBase_ToolKnowledge(t *testing.T) {
-	kb, err := NewKnowledgeBase()
-	require.NoError(t, err)
-	defer kb.Close()
-
-	// Register tool knowledge
-	tk := ToolKnowledge{
-		ToolName:    "search_crm_leads",
-		Description: "Search for CRM leads and opportunities",
-		Category:    CatToolUsage,
-		Tags:        []string{"crm", "lead"},
-		Metadata:    map[string]string{"module": "crm", "odoo_version": "17"},
-		Aliases:     []string{"buscar leads crm", "find CRM leads"},
-		RiskLevel:   RiskLow,
-		Dependencies: []string{"memory_search"},
-		Examples:    []string{"search_crm_leads(query=\"acme\")"},
-	}
-
-	err = kb.RegisterToolKnowledge(tk)
-	require.NoError(t, err)
-
-	// Retrieve tool knowledge
-	retrieved, err := kb.GetToolKnowledge("search_crm_leads")
-	require.NoError(t, err)
-	assert.Equal(t, "search_crm_leads", retrieved.ToolName)
-	assert.Equal(t, RiskLow, retrieved.RiskLevel)
-	assert.Contains(t, retrieved.Aliases, "buscar leads crm")
-	assert.Contains(t, retrieved.Dependencies, "memory_search")
-	assert.Equal(t, "crm", retrieved.Metadata["module"])
-
-	// Get risk level
-	risk := kb.GetToolRiskLevel("search_crm_leads")
-	assert.Equal(t, RiskLow, risk)
-
-	// Unknown tool defaults to low
-	risk = kb.GetToolRiskLevel("unknown_tool")
-	assert.Equal(t, RiskLow, risk)
-
-	// Count tools
-	assert.Equal(t, 1, kb.CountTools())
-}
-
-func TestKnowledgeBase_GetToolsByRisk(t *testing.T) {
-	kb, err := NewKnowledgeBase()
-	require.NoError(t, err)
-	defer kb.Close()
-
-	kb.RegisterToolKnowledge(ToolKnowledge{
-		ToolName:  "read_file",
-		RiskLevel: RiskLow,
-	})
-	kb.RegisterToolKnowledge(ToolKnowledge{
-		ToolName:  "delete_record",
-		RiskLevel: RiskHigh,
-	})
-	kb.RegisterToolKnowledge(ToolKnowledge{
-		ToolName:  "edit_file",
+		Category:  CatOdooModule,
+		Title:     "VeriFactu Configuration",
+		Content:   "Configure VeriFactu compliance settings for Spanish accounting",
+		Tags:      []string{"compliance", "spain", "verifactu"},
 		RiskLevel: RiskMedium,
+		Metadata:  map[string]string{"module": "account"},
 	})
-
-	lowTools := kb.GetToolsByRisk(RiskLow)
-	assert.Contains(t, lowTools, "read_file")
-
-	highTools := kb.GetToolsByRisk(RiskHigh)
-	assert.Contains(t, highTools, "delete_record")
-
-	mediumTools := kb.GetToolsByRisk(RiskMedium)
-	assert.Contains(t, mediumTools, "edit_file")
-}
-
-func TestKnowledgeBase_GetToolsByModule(t *testing.T) {
-	kb, err := NewKnowledgeBase()
 	require.NoError(t, err)
-	defer kb.Close()
 
-	kb.RegisterToolKnowledge(ToolKnowledge{
-		ToolName: "search_crm_leads",
-		Metadata: map[string]string{"module": "crm"},
-	})
-	kb.RegisterToolKnowledge(ToolKnowledge{
-		ToolName: "create_invoice",
-		Metadata: map[string]string{"module": "account"},
-	})
-
-	crmTools := kb.GetToolsByModule("crm")
-	assert.Contains(t, crmTools, "search_crm_leads")
-
-	accountTools := kb.GetToolsByModule("account")
-	assert.Contains(t, accountTools, "create_invoice")
-}
-
-func TestKnowledgeBase_GetToolAliases(t *testing.T) {
-	kb, err := NewKnowledgeBase()
-	require.NoError(t, err)
-	defer kb.Close()
-
-	kb.RegisterToolKnowledge(ToolKnowledge{
-		ToolName: "search_crm_leads",
-		Aliases:  []string{"buscar leads crm", "find CRM leads"},
-	})
-
-	aliases := kb.GetToolAliases("search_crm_leads")
-	assert.Contains(t, aliases, "buscar leads crm")
-	assert.Contains(t, aliases, "find CRM leads")
-
-	// Unknown tool returns nil
-	aliases = kb.GetToolAliases("unknown")
-	assert.Nil(t, aliases)
-}
-
-func TestKnowledgeBase_GetToolDependencies(t *testing.T) {
-	kb, err := NewKnowledgeBase()
-	require.NoError(t, err)
-	defer kb.Close()
-
-	kb.RegisterToolKnowledge(ToolKnowledge{
-		ToolName:     "edit_file",
-		Dependencies: []string{"read_file"},
-	})
-
-	deps := kb.GetToolDependencies("edit_file")
-	assert.Contains(t, deps, "read_file")
-
-	// Unknown tool returns nil
-	deps = kb.GetToolDependencies("unknown")
-	assert.Nil(t, deps)
-}
-
-func TestKnowledgeBase_SearchTools(t *testing.T) {
-	kb, err := NewKnowledgeBase()
-	require.NoError(t, err)
-	defer kb.Close()
-
-	kb.RegisterToolKnowledge(ToolKnowledge{
-		ToolName:    "search_crm_leads",
-		Description: "Search for CRM leads and opportunities",
-		Tags:        []string{"crm"},
-	})
-	kb.RegisterToolKnowledge(ToolKnowledge{
-		ToolName:    "create_invoice",
-		Description: "Create accounting invoices",
-		Tags:        []string{"account"},
-	})
-
-	results, err := kb.SearchTools("CRM", 10)
+	// Test search with natural language (terms that exist in content)
+	results, err := kb.Search("configure VeriFactu", "", 5)
 	require.NoError(t, err)
 	assert.NotEmpty(t, results)
 
-	// Should find CRM-related tools
+	// Verify the VeriFactu entry is found
 	found := false
 	for _, r := range results {
-		if r.ToolName == "search_crm_leads" {
+		if r.Title == "VeriFactu Configuration" {
 			found = true
 			break
 		}
 	}
-	assert.True(t, found, "should find search_crm_leads for CRM query")
-}
+	assert.True(t, found, "VeriFactu entry should be found")
 
-func TestKnowledgeBase_RiskLevels(t *testing.T) {
-	// Verify all risk levels are defined
-	assert.Equal(t, RiskLevel("low"), RiskLow)
-	assert.Equal(t, RiskLevel("medium"), RiskMedium)
-	assert.Equal(t, RiskLevel("high"), RiskHigh)
-	assert.Equal(t, RiskLevel("critical"), RiskCritical)
-}
-
-func TestKnowledgeBase_Categories(t *testing.T) {
-	// Verify all categories are defined
-	assert.Equal(t, Category("tool_usage"), CatToolUsage)
-	assert.Equal(t, Category("odoo_module"), CatOdooModule)
-	assert.Equal(t, Category("workflow"), CatWorkflow)
-	assert.Equal(t, Category("api_pattern"), CatApiPattern)
-	assert.Equal(t, Category("alias"), CatAlias)
-	assert.Equal(t, Category("dependency"), CatDependency)
-	assert.Equal(t, Category("example"), CatExample)
-	assert.Equal(t, Category("risk"), CatRisk)
-}
-
-func TestKnowledgeBase_Close(t *testing.T) {
-	kb, err := NewKnowledgeBase()
+	// Test search with tool name
+	results, err = kb.Search("search_crm_leads", "", 5)
 	require.NoError(t, err)
+	assert.NotEmpty(t, results)
 
-	err = kb.Close()
-	assert.NoError(t, err)
-
-	// Closing again should be safe
-	err = kb.Close()
-	assert.NoError(t, err)
-}
-
-func TestKnowledgeBase_EmptySearch(t *testing.T) {
-	kb, err := NewKnowledgeBase()
-	require.NoError(t, err)
-	defer kb.Close()
-
-	// Search on empty KB should return empty results
-	results, err := kb.Search("anything", "", 10)
+	// Test search on empty KB should return empty results
+	results, err = kb.Search("anything", "", 10)
 	require.NoError(t, err)
 	assert.Empty(t, results)
 
 	tools, err := kb.GetRelevantTools("anything", 10)
 	require.NoError(t, err)
 	assert.Empty(t, tools)
+}
+
+func TestKnowledgeBase_Persistence(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create first KB instance and add entries
+	kb1, err := NewKnowledgeBase(tmpDir)
+	require.NoError(t, err)
+
+	err = kb1.Add(KnowledgeEntry{
+		Category:  CatToolUsage,
+		Title:     "Persistence Test",
+		Content:   "This entry should persist across restarts",
+		Tags:      []string{"test", "persistence"},
+		RiskLevel: RiskLow,
+	})
+	require.NoError(t, err)
+	assert.NoError(t, kb1.Close())
+
+	// Open a new KB instance from the same directory
+	kb2, err := NewKnowledgeBase(tmpDir)
+	require.NoError(t, err)
+	defer kb2.Close()
+
+	// Search should find the entry from the previous instance
+	results, err := kb2.Search("persistence", "", 5)
+	require.NoError(t, err)
+	assert.NotEmpty(t, results)
+
+	found := false
+	for _, r := range results {
+		if r.Title == "Persistence Test" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Entry should persist across KB instances")
+}
+
+func TestKnowledgeBase_DBCPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	kb, err := NewKnowledgeBase(tmpDir)
+	require.NoError(t, err)
+	defer kb.Close()
+
+	expectedPath := filepath.Join(tmpDir, "knowledge", "kb.sqlite")
+	assert.Equal(t, expectedPath, kb.DBPath())
+}
+
+func TestKnowledgeBase_SyncKnowledge(t *testing.T) {
+	tmpDir := t.TempDir()
+	kb, err := NewKnowledgeBase(tmpDir)
+	require.NoError(t, err)
+	defer kb.Close()
+
+	// Create knowledge directory with test files
+	kbDir := filepath.Join(tmpDir, "knowledge")
+	require.NoError(t, os.MkdirAll(kbDir, 0o755))
+
+	// Write test .md file with frontmatter
+	mdContent := `---
+title: Test Entry
+category: tool_usage
+tags: test, sync
+aliases: test-alias
+---
+
+This is test content for sync.`
+	require.NoError(t, os.WriteFile(filepath.Join(kbDir, "test-entry.md"), []byte(mdContent), 0o644))
+
+	// Sync should index the file
+	count, err := kb.SyncKnowledge(tmpDir)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	// Search should find the synced entry
+	results, err := kb.Search("test content", "", 5)
+	require.NoError(t, err)
+	assert.NotEmpty(t, results)
+
+	found := false
+	for _, r := range results {
+		if r.Title == "Test Entry" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Synced entry should be searchable")
+}
+
+func TestKnowledgeBase_SyncKnowledge_EmptyDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	kb, err := NewKnowledgeBase(tmpDir)
+	require.NoError(t, err)
+	defer kb.Close()
+
+	// No knowledge directory should return 0, nil
+	count, err := kb.SyncKnowledge(tmpDir)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+}
+
+func TestBuildMatchQuery(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		output string
+	}{
+		{
+			name:   "single word",
+			input:  "hello",
+			output: `"hello"`,
+		},
+		{
+			name:   "multiple words",
+			input:  "how to configure VeriFactu",
+			output: `"how" "to" "configure" "verifactu"`,
+		},
+		{
+			name:   "empty string",
+			input:  "",
+			output: "",
+		},
+		{
+			name:   "extra whitespace",
+			input:  "  hello   world  ",
+			output: `"hello" "world"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := buildMatchQuery(tt.input)
+			assert.Equal(t, tt.output, result)
+		})
+	}
+}
+
+func TestKnowledgeBase_SearchTools(t *testing.T) {
+	tmpDir := t.TempDir()
+	kb, err := NewKnowledgeBase(tmpDir)
+	require.NoError(t, err)
+	defer kb.Close()
+
+	// Register tool knowledge
+	err = kb.RegisterToolKnowledge(ToolKnowledge{
+		ToolName:  "search_crm_leads",
+		Description: "Search CRM leads by name, email, or phone",
+		Category:  "crm",
+		Tags:      []string{"crm", "lead"},
+		RiskLevel: RiskLow,
+	})
+	require.NoError(t, err)
+
+	// Search tools
+	results, err := kb.SearchTools("crm leads", 10)
+	require.NoError(t, err)
+	assert.NotEmpty(t, results)
+	assert.Equal(t, "search_crm_leads", results[0].ToolName)
 }

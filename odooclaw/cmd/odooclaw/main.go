@@ -17,6 +17,7 @@ import (
 	"github.com/nicolasramos/odooclaw/cmd/odooclaw/internal/auth"
 	"github.com/nicolasramos/odooclaw/cmd/odooclaw/internal/cron"
 	"github.com/nicolasramos/odooclaw/cmd/odooclaw/internal/gateway"
+	"github.com/nicolasramos/odooclaw/cmd/odooclaw/internal/knowledge"
 	"github.com/nicolasramos/odooclaw/cmd/odooclaw/internal/migrate"
 	"github.com/nicolasramos/odooclaw/cmd/odooclaw/internal/onboard"
 	"github.com/nicolasramos/odooclaw/cmd/odooclaw/internal/skills"
@@ -38,6 +39,7 @@ func NewOdooclawCommand() *cobra.Command {
 		agent.NewAgentCommand(),
 		auth.NewAuthCommand(),
 		gateway.NewGatewayCommand(),
+		knowledge.NewKnowledgeCommand(""),
 		status.NewStatusCommand(),
 		cron.NewCronCommand(),
 		migrate.NewMigrateCommand(),

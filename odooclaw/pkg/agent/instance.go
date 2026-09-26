@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/nicolasramos/odooclaw/pkg/config"
+	"github.com/nicolasramos/odooclaw/pkg/knowledge"
 	"github.com/nicolasramos/odooclaw/pkg/providers"
 	"github.com/nicolasramos/odooclaw/pkg/routing"
 	"github.com/nicolasramos/odooclaw/pkg/session"
@@ -44,6 +45,9 @@ type AgentInstance struct {
 	// many tools are sent to non-local (cloud) models. Local models keep a
 	// fixed cap of 5 regardless of this value.
 	MaxCloudToolsInPrompt *int
+
+	// KnowledgeBase is the domain KB for this agent (nil when disabled).
+	KnowledgeBase *knowledge.KnowledgeBase
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -194,24 +198,25 @@ func NewAgentInstance(
 	}
 
 	return &AgentInstance{
-		ID:             agentID,
-		Name:           agentName,
-		Model:          model,
-		Fallbacks:      fallbacks,
-		Workspace:      workspace,
-		MaxIterations:  maxIter,
-		MaxTokens:      maxTokens,
-		Temperature:    temperature,
-		ContextWindow:  maxTokens,
-		Provider:       provider,
-		Sessions:       sessionsManager,
-		ContextBuilder: contextBuilder,
-		Tools:          toolsRegistry,
-		Subagents:      subagents,
-		SkillsFilter:   skillsFilter,
-		Candidates:     candidates,
+		ID:                agentID,
+		Name:              agentName,
+		Model:             model,
+		Fallbacks:         fallbacks,
+		Workspace:         workspace,
+		MaxIterations:     maxIter,
+		MaxTokens:         maxTokens,
+		Temperature:       temperature,
+		ContextWindow:     maxTokens,
+		Provider:          provider,
+		Sessions:          sessionsManager,
+		ContextBuilder:    contextBuilder,
+		Tools:             toolsRegistry,
+		Subagents:         subagents,
+		SkillsFilter:      skillsFilter,
+		Candidates:        candidates,
 		PromptToolsInText: promptToolsInText,
 		MaxCloudToolsInPrompt: maxCloudToolsInPrompt,
+		KnowledgeBase:     nil, // wired in AgentLoop
 	}
 }
 
