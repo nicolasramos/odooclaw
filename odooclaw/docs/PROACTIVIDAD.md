@@ -160,19 +160,68 @@ producto no puede cumplir. Hay un test que lo fija.
 El cooldown se apunta **sólo después de una entrega correcta**: si Odoo rechaza el
 mensaje, el asistente no queda mudo 24 h por un fallo transitorio.
 
+## Fase 1: Contabilidad (cargada y verificada)
+
+Las áreas vienen **como datos** en `data/odooclaw_proactive_data.xml`, así que se
+instalan solas. Los dominios no están escritos de memoria: cada uno se comprobó
+contra una base de datos Odoo 18 real con `account` instalado, creando registros y
+confirmando que el contador se mueve.
+
+| Contador | Modelo | Cuenta | Umbral |
+|---|---|---|---|
+| `unposted_invoices` | `account.move` | Borradores de cliente (`out_invoice`/`out_refund`) | 5 |
+| `unposted_vendor_bills` | `account.move` | Borradores de proveedor (`in_invoice`/`in_refund`) | 3 |
+| `unreconciled_statement_lines` | `account.bank.statement.line` | Líneas de banco sin conciliar | 1 |
+| `verifactu_unconfigured` | `ir.module.module` | `l10n_es_edi_verifactu` sin instalar | 1 |
+
+Dos hallazgos de la verificación, ambos de la clase que falla **en silencio**:
+
+- **El módulo de VeriFactu en Odoo 18 se llama `l10n_es_edi_verifactu`**, no
+  `l10n_es_verifactu`. Un contador apuntando al nombre equivocado devolvería 0
+  para siempre y al usuario simplemente nunca se le avisaría. Hay un test que lo
+  fija y que se pone rojo si el nombre cambia.
+- **`account.bank.statement.line.is_reconciled`** es el campo que existe para
+  "sin conciliar" (y `account.bank.statement` **no** existe como modelo).
+
+`verifactu_unconfigured` cuenta **el módulo sin instalar**, que es el estado real
+y verificable. Cuando el cliente lo instale, el contador pasa a 0 solo y la oferta
+desaparece: no hay que tocar nada.
+
+### Cómo se personaliza (sin romper nada)
+
+`data` va con `noupdate="0"`: las filas son **valores por defecto que deben seguir
+llegando** a las instalaciones existentes. Si se protegieran, un contador añadido
+en una versión posterior no llegaría nunca — el módulo cargaría limpio y la señal
+simplemente no dispararía, que es invisible desde fuera.
+
+La convención que lo hace seguro: para cambiar un umbral o un dominio, **crear una
+fila nueva** de `mail.odooclaw.area`. El resolvedor elige por acción → vista →
+modelo, así que una fila más específica gana. No editar una fila distribuida: una
+actualización la restaura.
+
+### Sobre `account` no instalado
+
+El módulo sólo depende de `mail`, así que Contabilidad puede estar cargada en un
+Odoo sin `account`. En ese caso los contadores devuelven **0 sin registrar
+error** (un área que todavía no aplica no es un fallo), y los tests se saltan
+limpiamente en vez de fallar. Verificado en las tres condiciones: sin `account`,
+con `account`, e instalación limpia.
+
 ## Verificación
 
 Lo que está medido, no supuesto:
 
 - **`go build ./...` limpio, `go vet ./...` limpio.**
 - **47/47 paquetes Go en verde**, 0 fallos.
-- **17 tests** en `pkg/proactive` (motor, política, dedupe, durabilidad, entrega).
-- **12 tests** en `mail_bot_odooclaw` sobre **Odoo 18 real en Docker**, 41 tests
-  del módulo, **0 fallos**. El módulo instala limpio.
+- **18 tests** en `pkg/proactive` (motor, política, dedupe, durabilidad, entrega).
+- **52 tests** en `mail_bot_odooclaw` sobre **Odoo 18 real en Docker**, 0 fallos,
+  en las tres condiciones: sin `account`, con `account`, e instalación limpia.
+  El módulo instala limpio.
 - **Verificación en las dos direcciones**: se mutó el código a propósito para
   comprobar que los tests detectan el fallo de verdad — sin el filtro por área el
   test se pone rojo nombrando el playbook equivocado; sin `sudo()` reproducen el
-  `AccessError` real. Un test que nunca se pone rojo no prueba nada.
+  `AccessError` real; y con el nombre equivocado del módulo VeriFactu salta el
+  test que lo fija. Un test que nunca se pone rojo no prueba nada.
 
 Los bugs reales que la verificación encontró y que no se habrían visto sin
 ejecutar contra Odoo:
@@ -181,6 +230,14 @@ ejecutar contra Odoo:
    `except Exception` genérico convertía **todo 401 en 500**. Hay que re-lanzarlo.
 2. **`env.ref()` en ruta pública da `AccessError`** al leer `res.users` (usuario
    público id=4): la publicación proactiva necesita `sudo()`.
+3. **Un área apuntando a un modelo de un módulo no instalado** registraba un
+   warning con traceback en **cada apertura de vista**. Ahora devuelve 0 en
+   silencio: un área que todavía no aplica no es un error.
+4. **`noupdate="1"` en los datos por defecto** impedía que un contador nuevo
+   llegara a una instalación existente: el módulo cargaba limpio y la señal
+   simplemente no disparaba nunca. El test de correspondencia
+   contadores↔playbooks lo cazó. Ahora va con `noupdate="0"` y la convención de
+   crear una fila nueva para personalizar.
 
 ## Ficheros
 

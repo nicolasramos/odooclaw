@@ -291,6 +291,32 @@ func TestStoreDurabilityAcrossRestart(t *testing.T) {
 	}
 }
 
+func TestPhaseOneContabilidadCountersAreCovered(t *testing.T) {
+	// Phase 1 ships four Contabilidad signals from the Odoo side
+	// (data/odooclaw_proactive_data.xml). A counter with no playbook is a signal
+	// that can never fire — the user is never offered help and nothing reports
+	// an error. This pins the cross-repo contract.
+	required := []string{
+		"unposted_invoices",
+		"unposted_vendor_bills",
+		"unreconciled_statement_lines",
+		"verifactu_unconfigured",
+	}
+
+	covered := map[string]bool{}
+	for _, pb := range DefaultPlaybooks() {
+		if pb.Area == "contabilidad" {
+			covered[pb.SignalKey] = true
+		}
+	}
+
+	for _, key := range required {
+		if !covered[key] {
+			t.Errorf("Contabilidad counter %q has no playbook: it can never fire", key)
+		}
+	}
+}
+
 func TestPlaybookAreasCoverKnowledgeAreas(t *testing.T) {
 	// Every playbook must declare an area, otherwise it can never fire.
 	for _, pb := range DefaultPlaybooks() {

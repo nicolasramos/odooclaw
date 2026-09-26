@@ -23,6 +23,17 @@ func DefaultPlaybooks() []Playbook {
 				"¿Quieres que te explique cómo publicarlas en bloque, o prefieres revisarlas una a una?",
 		},
 		{
+			ID:        "contabilidad.unposted_vendor_bills",
+			Area:      "contabilidad",
+			Title:     "Facturas de proveedor sin registrar",
+			SignalKey: "unposted_vendor_bills",
+			MinCount:  3,
+			Priority:  15,
+			Risk:      knowledge.RiskMedium,
+			Template: "Tienes {n} factura(s) de proveedor en borrador sin registrar. " +
+				"¿Quieres que te explique cómo registrarlas y dejarlas listas para pago?",
+		},
+		{
 			ID:        "contabilidad.unreconciled_statement",
 			Area:      "contabilidad",
 			Title:     "Extracto bancario sin conciliar",
