@@ -88,6 +88,11 @@ type Manager struct {
 	typingStops   sync.Map // "channel:chatID" → func()
 	reactionUndos sync.Map // "channel:chatID" → reactionEntry
 	systemHandler *SystemHandler
+	// proactiveHandler, when set, is mounted on the shared HTTP server so Odoo
+	// can ask the engine whether to offer help. It is injected rather than built
+	// here so pkg/channels stays independent of pkg/proactive.
+	proactiveHandler http.Handler
+	proactivePath    string
 }
 
 type HTTPServerTLSConfig struct {
@@ -176,6 +181,17 @@ func NewManager(cfg *config.Config, messageBus *bus.MessageBus, store media.Medi
 // shared HTTP server.
 func (m *Manager) SetSystemHandler(h *SystemHandler) {
 	m.systemHandler = h
+}
+
+// SetProactiveHandler mounts an extra handler on the shared HTTP server, served
+// at path. It exists so the proactive engine can answer Odoo's "would you say
+// something?" without pkg/channels having to import pkg/proactive — the
+// dependency would be backwards.
+//
+// Must be called before SetupHTTPServer, like SetSystemHandler.
+func (m *Manager) SetProactiveHandler(path string, h http.Handler) {
+	m.proactivePath = path
+	m.proactiveHandler = h
 }
 
 // initChannel is a helper that looks up a factory by name and creates the channel.
@@ -309,6 +325,14 @@ func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
 		m.mux.Handle(m.systemHandler.WebhookPath(), m.systemHandler)
 		logger.InfoCF("channels", "System handler registered", map[string]any{
 			"path": m.systemHandler.WebhookPath(),
+		})
+	}
+
+	// Register the proactive signal endpoint, when the engine is wired up.
+	if m.proactiveHandler != nil && m.proactivePath != "" {
+		m.mux.Handle(m.proactivePath, m.proactiveHandler)
+		logger.InfoCF("channels", "Proactive signal endpoint registered", map[string]any{
+			"path": m.proactivePath,
 		})
 	}
 

@@ -212,6 +212,151 @@ The billing module that powers the **Next Generation OCR flow** (Odoo 16/17/18):
 - Backported for Odoo 16/17/18 — same behavior on every version
 - Lives at `odoo-addons` branch [`18`](https://github.com/nicolasramos/odoo-addons/tree/18/account_dynamic_rules) → `account_dynamic_rules/`
 
+### Proactive assistance (`mail_bot_odooclaw_*`)
+
+The bot can open a private chat when a user lands on a screen where it has
+something useful to say — for example "you have 12 draft invoices, want me to
+show you how to post them in bulk?".
+
+**It is off by default.** An assistant that starts talking unasked should be an
+explicit decision, not something a deploy switches on by accident.
+
+> **Deep dive:** `odooclaw/docs/PROACTIVE-ASSISTANCE.md` explains the design in
+> full — why the trigger is deterministic rather than a RAG lookup, the reply
+> token, the audience rule, and every bug the verification found. This section is
+> the practical guide: how to feed it and how to extend it.
+
+#### How it works
+
+Three separate problems, and only the third involves the model:
+
+| # | Problem | Question | Where it lives |
+|---|---------|----------|----------------|
+| 1 | **Trigger** | *When* does it speak? | Counted in Odoo — deterministic |
+| 2 | **Knowledge** | *What* does it know? | Playbooks in the FTS5 knowledge base |
+| 3 | **Delivery** | *How*, with permission? | Private chat + anti-nuisance policy |
+
+The model does **not** decide when to speak; it phrases the message. With small
+local models, "you decide when to interrupt" produces an assistant that speaks
+when it should not and stays silent when it should.
+
+The flow, end to end:
+
+1. A user opens a screen. Odoo resolves which **area** that screen belongs to
+   (`mail.odooclaw.area`, matched on action → view → model).
+2. Odoo counts the records matching that area's **counters** (plain Odoo
+   domains, e.g. "draft customer invoices").
+3. Odoo asks the engine: `POST /odooclaw/signal` with the counters and the user.
+4. The engine answers `speak` + `reason` + `message`. It applies the audience
+   check, the invitation rule and the anti-nuisance policy.
+5. If the answer is `speak`, **Odoo posts the message itself**, inside the
+   request scope of the user who triggered it.
+
+Step 5 matters: the engine never delivers. There is no window where a suggestion
+arrives after the user has logged out, and the route cannot write to a business
+record — only to the bot's own private chat with that user.
+
+#### Who receives it
+
+**Any internal user.** Not a chosen group. Portal users, the public user and
+archived users are excluded. In Odoo that boundary is the standard `share`
+field (`share = False` and `active = True`).
+
+The classification **fails closed**: a user the payload does not classify is
+treated as NOT eligible. A missing field silences the feature rather than
+exposing figures to the wrong person.
+
+#### Modules
+
+The base module depends only on `mail`; the functional knowledge ships in
+per-area modules you install as needed:
+
+| Module | Depends on | Ships |
+|--------|-----------|-------|
+| `mail_bot_odooclaw` | `mail` | Engine: area model, routes, audience |
+| `mail_bot_odooclaw_account` | `+ account` | Accounting |
+| `mail_bot_odooclaw_sale` | `+ sale_management, crm` | Sales and CRM |
+| `mail_bot_odooclaw_purchase` | `+ purchase` | Purchase |
+| `mail_bot_odooclaw_stock` | `+ stock` | Inventory |
+| `mail_bot_odooclaw_hr` | `+ hr_holidays` | Human resources |
+
+This split is deliberate: a generic Discuss integration must not carry
+Accounting knowledge, and an area whose module is absent simply stays silent.
+
+#### Configuration
+
+```bash
+ODOOCLAW_ODOO_PROACTIVE_ENABLED=true          # mount the signal endpoint
+ODOOCLAW_ODOO_PROACTIVE_STORE_PATH=...        # default: <workspace>/proactive.db
+```
+
+The store is the anti-nuisance state (who was already invited, cooldowns, daily
+counts). It **must** be on persistent storage: on a tmpfs a restart would
+re-invite every user, including those who already declined.
+
+#### Adding a new area — it is data, not code
+
+No Go, no Python, no release of the engine. Create a `mail.odooclaw.area` row
+(or add one to your own module) with two things:
+
+- `model_name` — the model whose screen belongs to this area, e.g. `sale.order`.
+- `signal_definition` — a JSON object mapping a signal key to the counter:
+
+```json
+{"draft_quotations": {"model": "sale.order",
+                      "domain": [["state", "=", "draft"]]}}
+```
+
+Then add the playbook, which is what the assistant actually says. Two options:
+
+- **In the knowledge base** (recommended, no code): add an entry to the FTS5 KB
+  with `area` metadata matching the area key. This is the supported path and
+  survives upgrades.
+- **In the engine** — `pkg/proactive/playbooks.go`, for defaults you want to
+  ship with the binary. Each playbook declares `SignalKey` (must match the
+  counter key), `MinCount` (threshold) and `Template` (the sentence, with `{n}`
+  for the count).
+
+> **Three pitfalls, all silent.**
+>
+> 1. The text of `signal_definition` is parsed by the application code with
+>    **`json.loads`**, so inside it you write JSON literals — `true`/`false`,
+>    not `True`/`False`. (The `__manifest__.py` is the opposite: Python
+>    `literal_eval`, so there you use `True`/`False`.)
+> 2. `signal_definition` sits inside XML, so `<` must be escaped as `&lt;`.
+> 3. A domain naming a field, a state or a module that does not exist returns
+>    **0 forever**: the user is simply never told, with no error anywhere.
+>
+> Always verify a new counter in both directions — a record that must match
+> moves it, and one that must not leaves it unchanged.
+
+#### Testing a new area
+
+Each area module ships tests asserting its counters in both directions. Run
+them with:
+
+```bash
+odoo -d <db> -i <module> \
+     --test-enable --test-tags /<module> --stop-after-init --without-demo=all
+```
+
+`--without-demo=all` matters: it is the closest thing to a real database. And
+check the run actually reports a **non-zero** number of tests — a filter that
+matches nothing exits 0 and looks green.
+
+> **Sharing a test base class: set `allow_inherited_tests_method = True`.**
+> Odoo's loader reads `test_case_class.__dict__`, so test methods a class
+> *inherits* are invisible. If your area modules share a base class, without
+> this flag the whole suite reports `0 tests, 0 failed` and exits 0 — a green
+> that proves nothing, because nothing ran.
+
+> **Docker on macOS with Colima: check the bind mount is not empty.** Colima only
+> mounts the directories declared in `~/.colima/default/colima.yaml`, and a path
+> outside that list is mounted as an **empty directory with no error**. Odoo then
+> reports `invalid module names, ignored: <module>` and exits 0 with `0 tests`,
+> which reads exactly like a passing run. Before trusting a result, assert the
+> mount is non-empty (for example `ls` the addon inside the container).
+
 ### Installation in Odoo
 
 1. Spin up your Odoo environment (for instance, using Doodba).

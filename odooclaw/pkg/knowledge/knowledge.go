@@ -107,6 +107,19 @@ func NewKnowledgeBase() (*KnowledgeBase, error) {
 		return nil, fmt.Errorf("failed to create metadata table: %w", err)
 	}
 
+	// Additive migration: link the metadata row to its FTS5 row so metadata
+	// (area, module, risk, ...) can be read back and filtered through Search.
+	// The duplicate-column error makes this idempotent on existing databases.
+	if _, err := db.Exec(`ALTER TABLE knowledge_meta ADD COLUMN knowledge_id INTEGER`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column name") {
+		db.Close()
+		return nil, fmt.Errorf("failed to add knowledge_id column: %w", err)
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_meta_kid ON knowledge_meta(knowledge_id)`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to index knowledge_id: %w", err)
+	}
+
 	// Tool knowledge table: links tools to their enriched metadata
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS tool_knowledge (
@@ -137,12 +150,19 @@ func (kb *KnowledgeBase) Add(entry KnowledgeEntry) error {
 	tags := strings.Join(entry.Tags, " ")
 	aliases := strings.Join(entry.Aliases, ";")
 
-	_, err := kb.db.Exec(
+	res, err := kb.db.Exec(
 		"INSERT INTO knowledge(title, content, tags, category) VALUES (?, ?, ?, ?)",
 		entry.Title, entry.Content, tags, entry.Category,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to insert knowledge: %w", err)
+	}
+
+	// Capture the FTS5 rowid so the metadata row can point back at it — this
+	// is what makes metadata readable and filterable from Search.
+	knowledgeID, err := res.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("failed to read knowledge rowid: %w", err)
 	}
 
 	// Store metadata separately
@@ -153,8 +173,8 @@ func (kb *KnowledgeBase) Add(entry KnowledgeEntry) error {
 	}
 
 	_, err = kb.db.Exec(
-		"INSERT INTO knowledge_meta(title, category, aliases, risk_level, metadata) VALUES (?, ?, ?, ?, ?)",
-		entry.Title, entry.Category, aliases, riskStr, metaJSON,
+		"INSERT INTO knowledge_meta(knowledge_id, title, category, aliases, risk_level, metadata) VALUES (?, ?, ?, ?, ?, ?)",
+		knowledgeID, entry.Title, entry.Category, aliases, riskStr, metaJSON,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to insert metadata: %w", err)
@@ -181,18 +201,25 @@ func (kb *KnowledgeBase) Search(query string, category string, limit int) ([]Kno
 	var rows *sql.Rows
 	var err error
 
+	// NOTE: the FTS5 table must be named in full (no alias) in a MATCH clause —
+	// `k MATCH ?` fails with "no such column: k" in SQLite, which would silently
+	// send every search down the LIKE fallback.
 	if category != "" {
 		rows, err = kb.db.Query(`
-			SELECT title, content, tags, category
+			SELECT knowledge.title, knowledge.content, knowledge.tags, knowledge.category,
+			       COALESCE(m.risk_level, ''), COALESCE(m.metadata, '')
 			FROM knowledge
-			WHERE knowledge MATCH ? AND category = ?
+			LEFT JOIN knowledge_meta m ON m.knowledge_id = knowledge.rowid
+			WHERE knowledge MATCH ? AND knowledge.category = ?
 			ORDER BY rank
 			LIMIT ?
 		`, query, category, limit)
 	} else {
 		rows, err = kb.db.Query(`
-			SELECT title, content, tags, category
+			SELECT knowledge.title, knowledge.content, knowledge.tags, knowledge.category,
+			       COALESCE(m.risk_level, ''), COALESCE(m.metadata, '')
 			FROM knowledge
+			LEFT JOIN knowledge_meta m ON m.knowledge_id = knowledge.rowid
 			WHERE knowledge MATCH ?
 			ORDER BY rank
 			LIMIT ?
@@ -208,15 +235,64 @@ func (kb *KnowledgeBase) Search(query string, category string, limit int) ([]Kno
 	var results []KnowledgeEntry
 	for rows.Next() {
 		var entry KnowledgeEntry
-		var tags string
-		if err := rows.Scan(&entry.Title, &entry.Content, &tags, &entry.Category); err != nil {
+		var tags, risk, metaJSON string
+		if err := rows.Scan(&entry.Title, &entry.Content, &tags, &entry.Category, &risk, &metaJSON); err != nil {
 			continue
 		}
 		entry.Tags = strings.Fields(tags)
+		entry.RiskLevel = RiskLevel(risk)
+		entry.Metadata = fromJSON(metaJSON)
 		results = append(results, entry)
 	}
 
 	return results, nil
+}
+
+// SearchByArea finds knowledge entries belonging to a functional Odoo area
+// ("contabilidad", "ventas", ...) as declared in entry Metadata under the
+// "area" key. This is the retrieval path the proactive engine relies on:
+// FTS5 MATCH is unusable for natural-language questions, so the area — a
+// structured field — is what selects the corpus, and the free-text query only
+// ranks within it. An empty query returns the area's entries by rank order.
+func (kb *KnowledgeBase) SearchByArea(area string, query string, limit int) ([]KnowledgeEntry, error) {
+	kb.mu.RLock()
+	defer kb.mu.RUnlock()
+
+	if limit <= 0 {
+		limit = 5
+	}
+	area = strings.ToLower(strings.TrimSpace(area))
+	if area == "" {
+		return nil, fmt.Errorf("SearchByArea requires a non-empty area")
+	}
+
+	rows, err := kb.db.Query(`
+		SELECT k.title, k.content, k.tags, k.category,
+		       COALESCE(m.risk_level, ''), COALESCE(m.metadata, '')
+		FROM knowledge k
+		JOIN knowledge_meta m ON m.knowledge_id = k.rowid
+		WHERE lower(json_extract(m.metadata, '$.area')) = ?
+		ORDER BY k.rowid
+		LIMIT ?
+	`, area, limit)
+	if err != nil {
+		return nil, fmt.Errorf("area lookup failed: %w", err)
+	}
+	defer rows.Close()
+
+	var results []KnowledgeEntry
+	for rows.Next() {
+		var entry KnowledgeEntry
+		var tags, risk, metaJSON string
+		if err := rows.Scan(&entry.Title, &entry.Content, &tags, &entry.Category, &risk, &metaJSON); err != nil {
+			continue
+		}
+		entry.Tags = strings.Fields(tags)
+		entry.RiskLevel = RiskLevel(risk)
+		entry.Metadata = fromJSON(metaJSON)
+		results = append(results, entry)
+	}
+	return results, rows.Err()
 }
 
 // fallbackSearch does a LIKE-based search when FTS5 fails.
