@@ -221,6 +221,11 @@ show you how to post them in bulk?".
 **It is off by default.** An assistant that starts talking unasked should be an
 explicit decision, not something a deploy switches on by accident.
 
+> **Deep dive:** `odooclaw/docs/PROACTIVE-ASSISTANCE.md` explains the design in
+> full — why the trigger is deterministic rather than a RAG lookup, the reply
+> token, the audience rule, and every bug the verification found. This section is
+> the practical guide: how to feed it and how to extend it.
+
 #### How it works
 
 Three separate problems, and only the third involves the model:
@@ -312,12 +317,18 @@ Then add the playbook, which is what the assistant actually says. Two options:
   counter key), `MinCount` (threshold) and `Template` (the sentence, with `{n}`
   for the count).
 
-> **Two pitfalls, both silent.** The text of `signal_definition` is parsed by
-> Odoo as **Python**, not JSON — write `True`/`False`, not `true`/`false`, and
-> escape `<` as `&lt;`. And a domain naming a field or a state that does not
-> exist returns **0 forever**: the user is simply never told, with no error
-> anywhere. Always verify a new counter in both directions — a record that must
-> match moves it, and one that must not leaves it unchanged.
+> **Three pitfalls, all silent.**
+>
+> 1. The text of `signal_definition` is parsed by the application code with
+>    **`json.loads`**, so inside it you write JSON literals — `true`/`false`,
+>    not `True`/`False`. (The `__manifest__.py` is the opposite: Python
+>    `literal_eval`, so there you use `True`/`False`.)
+> 2. `signal_definition` sits inside XML, so `<` must be escaped as `&lt;`.
+> 3. A domain naming a field, a state or a module that does not exist returns
+>    **0 forever**: the user is simply never told, with no error anywhere.
+>
+> Always verify a new counter in both directions — a record that must match
+> moves it, and one that must not leaves it unchanged.
 
 #### Testing a new area
 
@@ -332,6 +343,12 @@ odoo -d <db> -i <module> \
 `--without-demo=all` matters: it is the closest thing to a real database. And
 check the run actually reports a **non-zero** number of tests — a filter that
 matches nothing exits 0 and looks green.
+
+> **Sharing a test base class: set `allow_inherited_tests_method = True`.**
+> Odoo's loader reads `test_case_class.__dict__`, so test methods a class
+> *inherits* are invisible. If your area modules share a base class, without
+> this flag the whole suite reports `0 tests, 0 failed` and exits 0 — a green
+> that proves nothing, because nothing ran.
 
 ### Installation in Odoo
 
