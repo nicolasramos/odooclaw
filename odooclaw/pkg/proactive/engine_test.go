@@ -461,6 +461,67 @@ func TestPhaseOneContabilidadCountersAreCovered(t *testing.T) {
 	}
 }
 
+func TestEveryShippedAreaCounterHasAPlaybook(t *testing.T) {
+	// The Odoo side ships counters in mail_bot_odooclaw_<area>/data/. A counter
+	// with no playbook on this side is a signal that can never fire: the user is
+	// never offered help and NOTHING reports an error, which makes it invisible
+	// in production. This is the cross-repo contract, area by area.
+	//
+	// If a counter is added on the Odoo side and forgotten here, this test is the
+	// only place that notices.
+	required := map[string][]string{
+		"contabilidad": {
+			"unposted_invoices",
+			"unposted_vendor_bills",
+			"unreconciled_statement_lines",
+			"verifactu_unconfigured",
+		},
+		"ventas": {"draft_quotations"},
+		"crm": {
+			"stale_opportunities",
+			"open_opportunities",
+			"overdue_opportunities",
+		},
+		"compras":    {"draft_purchase_orders"},
+		"inventario": {"negative_stock_products"},
+		"rrhh":       {"pending_leave_requests"},
+		"gastos": {
+			"draft_expenses",
+			"expenses_awaiting_approval",
+		},
+		"proyectos": {
+			"open_projects",
+			"overdue_projects",
+			"overdue_tasks",
+			"waiting_tasks",
+			"urgent_tasks",
+		},
+		"flota": {
+			"unregistered_vehicles",
+			"vehicles_without_driver",
+		},
+	}
+
+	covered := map[string]map[string]bool{}
+	for _, pb := range DefaultPlaybooks() {
+		if covered[pb.Area] == nil {
+			covered[pb.Area] = map[string]bool{}
+		}
+		covered[pb.Area][pb.SignalKey] = true
+	}
+
+	for area, keys := range required {
+		for _, key := range keys {
+			if !covered[area][key] {
+				t.Errorf(
+					"area %q counter %q has no playbook: it can never fire",
+					area, key,
+				)
+			}
+		}
+	}
+}
+
 func TestPlaybookAreasCoverKnowledgeAreas(t *testing.T) {
 	// Every playbook must declare an area, otherwise it can never fire.
 	for _, pb := range DefaultPlaybooks() {

@@ -275,13 +275,23 @@ per-area modules you install as needed:
 |--------|-----------|-------|
 | `mail_bot_odooclaw` | `mail` | Engine: area model, routes, audience |
 | `mail_bot_odooclaw_account` | `+ account` | Accounting |
-| `mail_bot_odooclaw_sale` | `+ sale_management, crm` | Sales and CRM |
+| `mail_bot_odooclaw_sale` | `+ sale_management` | Sales |
+| `mail_bot_odooclaw_crm` | `+ crm` | CRM |
 | `mail_bot_odooclaw_purchase` | `+ purchase` | Purchase |
 | `mail_bot_odooclaw_stock` | `+ stock` | Inventory |
 | `mail_bot_odooclaw_hr` | `+ hr_holidays` | Human resources |
+| `mail_bot_odooclaw_expense` | `+ hr_expense` | Expenses |
+| `mail_bot_odooclaw_project` | `+ project` | Projects |
+| `mail_bot_odooclaw_fleet` | `+ fleet` | Fleet |
 
 This split is deliberate: a generic Discuss integration must not carry
 Accounting knowledge, and an area whose module is absent simply stays silent.
+
+Installing one area gives you that area's counters *and* its tests, so a module
+you do not use costs you nothing. CRM is separate from Sales on purpose: the
+model is different (`crm.lead`, not `sale.order`) and the person who lives in
+the pipeline is not the person who lives in quotations. `sale_management` does
+not depend on `crm`, so bundling them would force CRM on every sales install.
 
 #### Configuration
 
@@ -317,7 +327,27 @@ Then add the playbook, which is what the assistant actually says. Two options:
   counter key), `MinCount` (threshold) and `Template` (the sentence, with `{n}`
   for the count).
 
-> **Three pitfalls, all silent.**
+The counter key is the contract between the two halves: the key in
+`signal_definition` must match a `SignalKey` in the engine, or the signal can
+**never** fire. A Go test (`TestEveryShippedAreaCounterHasAPlaybook`) pins this
+per area and names the orphan counter when it breaks.
+
+##### Dates that must not rot: `$today`
+
+An overdue counter needs "before today", and a literal date only reads
+correctly on the day you write it:
+
+```json
+{"overdue_tasks": {"model": "project.task",
+                   "domain": [["date_deadline", "<", "$today"]]}}
+```
+
+`$today` is replaced with today's date at count time, anywhere in the domain.
+Use it for anything that means "already passed" — a hardcoded date silently
+turns an overdue counter into a wrong one, and a wrong count is not an error.
+
+> **Pitfalls, all silent.** Every one of these produces *no* error message; the
+> counter just returns 0 or a number nobody can trust.
 >
 > 1. The text of `signal_definition` is parsed by the application code with
 >    **`json.loads`**, so inside it you write JSON literals — `true`/`false`,
@@ -326,9 +356,21 @@ Then add the playbook, which is what the assistant actually says. Two options:
 > 2. `signal_definition` sits inside XML, so `<` must be escaped as `&lt;`.
 > 3. A domain naming a field, a state or a module that does not exist returns
 >    **0 forever**: the user is simply never told, with no error anywhere.
+> 4. A field that is `store=False` is generally **not searchable**, and a domain
+>    using one raises or matches nothing. Three that bite, all measured on real
+>    Odoo 18: `project.project.task_count`, `fleet.vehicle` odometer, and
+>    `hr.expense.is_editable`. The occasional exception proves the rule:
+>    `crm.lead.activity_date_deadline` is `store=False` but searchable, because
+>    it is computed from the related activities.
+> 5. Fields you assume exist often do not. `project.project` has **no `state`**
+>    (it uses `stage_id`, and "closed" is `stage_id.fold = true`);
+>    `project.task.user_id` does **not** exist (it is `user_ids`). Both raise on
+>    search, but a wrong *value* — a state that no longer exists — matches
+>    nothing and returns 0 in silence.
 >
 > Always verify a new counter in both directions — a record that must match
-> moves it, and one that must not leaves it unchanged.
+> moves it, and one that must not leaves it unchanged. A domain that returns 0
+> is not proof of anything; it is what a broken domain looks like too.
 
 #### Testing a new area
 
@@ -356,6 +398,36 @@ matches nothing exits 0 and looks green.
 > reports `invalid module names, ignored: <module>` and exits 0 with `0 tests`,
 > which reads exactly like a passing run. Before trusting a result, assert the
 > mount is non-empty (for example `ls` the addon inside the container).
+
+> **The disk can fill and kill the database mid-run.** On Colima, Docker's data
+> root lives on its own small device (here `/dev/vdb1`, 20G) *separate from the
+> VM's root*, so `df /` looks healthy while Postgres dies with
+> `could not create directory "base/...": No space left on device`. The symptom
+> is a connection error, not a disk error. Check the right filesystem
+> (`colima ssh -- df -h /var/lib/docker`) and reclaim with `docker rmi` on images
+> no container uses — it refuses to delete anything in use, so it is safe.
+
+Because two unrelated faults — the empty mount and the mis-matched test filter —
+both present as `0 tests, 0 failed, exit 0`, do not read that summary by eye.
+A wrapper that asserts the mount is non-empty *and* `tests > 0`, and fails loudly
+otherwise, turns a silent pass into a real one:
+
+```bash
+# run_area_tests.sh — refuses to report success on a vacuous run
+count=$(docker run --rm -v "$BASE/$MODULE:/probe:ro" --entrypoint bash "$IMAGE" \
+        -c 'ls /probe 2>/dev/null | wc -l')
+[ "${count:-0}" -ge 3 ] || { echo "mount vacio"; exit 1; }
+# ... run, then:
+grep -qiE "invalid module" "$LOG" && { echo "modulo ignorado"; exit 1; }
+tests=$(grep -oE 'of [0-9]+ tests' "$LOG" | tail -1 | grep -oE '[0-9]+')
+[ "${tests:-0}" -gt 0 ] || { echo "verde vacuo"; exit 1; }
+```
+
+Two habits make this cheap. Run one module per container: back-to-back
+`docker run` calls hit a mount race and report `invalid module names` even when
+the module is fine. And verify a counter by **mutation** — break the domain on
+purpose and confirm the test goes red; a test that stays green when the code is
+wrong is not a test.
 
 ### Installation in Odoo
 

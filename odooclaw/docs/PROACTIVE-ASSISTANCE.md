@@ -233,6 +233,45 @@ engine's own documentation says all mutable state lives in the Store so that a
 restart does not forget it. With the flag in memory, every deployment would have
 asked again — and someone who already said "no" would have been pestered forever.
 
+## The areas that ship
+
+Areas ship **as data** in `data/odooclaw_proactive_<area>_data.xml`, so they
+install themselves. None of the domains are written from memory: each one was
+checked against a real Odoo 18 database, by creating records and confirming the
+counter moves — and, just as important, confirming it does *not* move for a
+record that must not match.
+
+Every area follows the same shape: a counter that is cheap to compute, a
+threshold that keeps it from nagging on a normal day, and a template that offers
+a next step instead of a reproach.
+
+| Area | Counter | Model | Counts |
+|---|---|---|---|
+| `contabilidad` | `unposted_invoices` | `account.move` | Customer drafts |
+| `contabilidad` | `unposted_vendor_bills` | `account.move` | Vendor drafts |
+| `contabilidad` | `unreconciled_statement_lines` | `account.bank.statement.line` | Unreconciled bank lines |
+| `contabilidad` | `verifactu_unconfigured` | `ir.module.module` | VeriFactu not installed |
+| `ventas` | `draft_quotations` | `sale.order` | Quotations in draft |
+| `crm` | `stale_opportunities` | `crm.lead` | Opportunities with no activity planned |
+| `crm` | `open_opportunities` | `crm.lead` | Opportunities not won |
+| `crm` | `overdue_opportunities` | `crm.lead` | Expected closing in the past |
+| `compras` | `draft_purchase_orders` | `purchase.order` | Purchase orders in draft |
+| `inventario` | `negative_stock_products` | `product.product` | Negative stock |
+| `rrhh` | `pending_leave_requests` | `hr.leave` | Leave awaiting approval |
+| `gastos` | `draft_expenses` | `hr.expense` | Expenses not yet sent |
+| `gastos` | `expenses_awaiting_approval` | `hr.expense` | Expenses submitted or approved |
+| `proyectos` | `open_projects` | `project.project` | Projects not closed |
+| `proyectos` | `overdue_projects` | `project.project` | End date in the past, still open |
+| `proyectos` | `overdue_tasks` | `project.task` | Deadline past, not closed |
+| `proyectos` | `waiting_tasks` | `project.task` | Tasks in the "waiting" state |
+| `proyectos` | `urgent_tasks` | `project.task` | Tasks flagged urgent, still open |
+| `flota` | `unregistered_vehicles` | `fleet.vehicle` | Vehicles not yet registered |
+| `flota` | `vehicles_without_driver` | `fleet.vehicle` | Registered with no driver |
+
+The threshold for each one lives in the playbook (`MinCount` in the engine, or
+the KB entry), not in the domain: what changes the count is data, what changes
+the decision to speak is policy.
+
 ## Phase 1: Accounting (loaded and verified)
 
 Areas ship **as data** in `data/odooclaw_proactive_data.xml`, so they install
@@ -292,13 +331,42 @@ So the base ships the engine and each functional area ships in its own module:
 |---|---|---|
 | `mail_bot_odooclaw` | `mail` | the engine: area model, routes, audience |
 | `mail_bot_odooclaw_account` | base + `account` | the Accounting areas |
-| `mail_bot_odooclaw_sale` | base + `sale_management`, `crm` | Sales and CRM areas |
+| `mail_bot_odooclaw_sale` | base + `sale_management` | Sales areas |
+| `mail_bot_odooclaw_crm` | base + `crm` | CRM areas |
 | `mail_bot_odooclaw_purchase` | base + `purchase` | Purchase areas |
 | `mail_bot_odooclaw_stock` | base + `stock` | Inventory areas |
 | `mail_bot_odooclaw_hr` | base + `hr_holidays` | HR areas |
+| `mail_bot_odooclaw_expense` | base + `hr_expense` | Expense areas |
+| `mail_bot_odooclaw_project` | base + `project` | Project areas |
+| `mail_bot_odooclaw_fleet` | base + `fleet` | Fleet areas |
 
 Adding an area is then adding a module, and an installation only pays for the
 areas it actually uses.
+
+CRM is deliberately its own module rather than part of Sales. Two reasons, both
+mechanical: the counters live on a different model (`crm.lead`, not
+`sale.order`), and `sale_management` does **not** depend on `crm` — so
+bundling them would force CRM onto every sales installation, which is exactly
+the coupling this split exists to avoid.
+
+### The overdue problem, and `$today`
+
+Areas with a deadline — overdue tasks, projects past their end date,
+opportunities past their expected closing — need a domain meaning "before
+today". Writing a literal date works only on the day it is written and then
+rots: the counter keeps returning a number, and it is the wrong one.
+
+The engine resolves a `$today` placeholder at count time, anywhere in the
+domain, so the definition stays true:
+
+```json
+{"overdue_tasks": {"model": "project.task",
+                   "domain": [["date_deadline", "<", "$today"]]}}
+```
+
+This is deliberately narrow: no expression evaluation, no computed values, one
+token. The alternative — letting administrators write Python in a data field —
+would put arbitrary code execution in an XML record.
 
 ## Verification
 
@@ -306,9 +374,9 @@ What is measured, not assumed:
 
 - **`go build ./...` clean, `go vet ./...` clean.**
 - **47/47 Go packages green**, 0 failures.
-- **41 tests** in `pkg/proactive` (engine, policy, audience, single invitation,
-  durability across a restart, dedupe, delivery, the HTTP contract, and the
-  counters↔playbooks contract).
+- **42 tests** in `pkg/proactive` (engine, policy, audience, single invitation,
+  durability across a restart, dedupe, delivery, the HTTP contract, the
+  counters↔playbooks contract, and `$today` resolution).
 - **Odoo tests on real Odoo 18 in Docker**, 0 failures, with T>0 — always check
   the run reports a **non-zero** number of tests, because a filter that matches
   nothing exits 0 and looks green.
