@@ -485,18 +485,18 @@ func TestEveryShippedAreaCounterHasAPlaybook(t *testing.T) {
 		"compras":    {"draft_purchase_orders"},
 		"inventario": {"negative_stock_products"},
 		"rrhh":       {"pending_leave_requests"},
-		"gastos": {
+		"expenses": {
 			"draft_expenses",
 			"expenses_awaiting_approval",
 		},
-		"proyectos": {
+		"projects": {
 			"open_projects",
 			"overdue_projects",
 			"overdue_tasks",
 			"waiting_tasks",
 			"urgent_tasks",
 		},
-		"flota": {
+		"fleet": {
 			"unregistered_vehicles",
 			"vehicles_without_driver",
 		},
