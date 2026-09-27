@@ -258,15 +258,15 @@ a next step instead of a reproach.
 | `compras` | `draft_purchase_orders` | `purchase.order` | Purchase orders in draft |
 | `inventario` | `negative_stock_products` | `product.product` | Negative stock |
 | `rrhh` | `pending_leave_requests` | `hr.leave` | Leave awaiting approval |
-| `gastos` | `draft_expenses` | `hr.expense` | Expenses not yet sent |
-| `gastos` | `expenses_awaiting_approval` | `hr.expense` | Expenses submitted or approved |
-| `proyectos` | `open_projects` | `project.project` | Projects not closed |
-| `proyectos` | `overdue_projects` | `project.project` | End date in the past, still open |
-| `proyectos` | `overdue_tasks` | `project.task` | Deadline past, not closed |
-| `proyectos` | `waiting_tasks` | `project.task` | Tasks in the "waiting" state |
-| `proyectos` | `urgent_tasks` | `project.task` | Tasks flagged urgent, still open |
-| `flota` | `unregistered_vehicles` | `fleet.vehicle` | Vehicles not yet registered |
-| `flota` | `vehicles_without_driver` | `fleet.vehicle` | Registered with no driver |
+| `expenses` | `draft_expenses` | `hr.expense` | Expenses not yet sent |
+| `expenses` | `expenses_awaiting_approval` | `hr.expense` | Expenses submitted or approved |
+| `projects` | `open_projects` | `project.project` | Projects not closed |
+| `projects` | `overdue_projects` | `project.project` | End date in the past, still open |
+| `projects` | `overdue_tasks` | `project.task` | Deadline past, not closed |
+| `projects` | `waiting_tasks` | `project.task` | Tasks in the "waiting" state |
+| `projects` | `urgent_tasks` | `project.task` | Tasks flagged urgent, still open |
+| `fleet` | `unregistered_vehicles` | `fleet.vehicle` | Vehicles not yet registered |
+| `fleet` | `vehicles_without_driver` | `fleet.vehicle` | Registered with no driver |
 
 The threshold for each one lives in the playbook (`MinCount` in the engine, or
 the KB entry), not in the domain: what changes the count is data, what changes

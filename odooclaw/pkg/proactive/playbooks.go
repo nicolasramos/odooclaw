@@ -149,7 +149,7 @@ func DefaultPlaybooks() []Playbook {
 		},
 		{
 			ID:        "gastos.draft_expenses",
-			Area:      "gastos",
+			Area:      "expenses",
 			Title:     "Gastos sin enviar",
 			SignalKey: "draft_expenses",
 			MinCount:  3,
@@ -160,7 +160,7 @@ func DefaultPlaybooks() []Playbook {
 		},
 		{
 			ID:        "gastos.expenses_awaiting_approval",
-			Area:      "gastos",
+			Area:      "expenses",
 			Title:     "Gastos esperando aprobación",
 			SignalKey: "expenses_awaiting_approval",
 			MinCount:  3,
@@ -171,7 +171,7 @@ func DefaultPlaybooks() []Playbook {
 		},
 		{
 			ID:        "proyectos.open_projects",
-			Area:      "proyectos",
+			Area:      "projects",
 			Title:     "Proyectos abiertos",
 			SignalKey: "open_projects",
 			MinCount:  10,
@@ -182,7 +182,7 @@ func DefaultPlaybooks() []Playbook {
 		},
 		{
 			ID:        "proyectos.overdue_projects",
-			Area:      "proyectos",
+			Area:      "projects",
 			Title:     "Proyectos con la fecha de fin vencida",
 			SignalKey: "overdue_projects",
 			MinCount:  1,
@@ -193,7 +193,7 @@ func DefaultPlaybooks() []Playbook {
 		},
 		{
 			ID:        "proyectos.overdue_tasks",
-			Area:      "proyectos",
+			Area:      "projects",
 			Title:     "Tareas vencidas sin cerrar",
 			SignalKey: "overdue_tasks",
 			MinCount:  5,
@@ -204,7 +204,7 @@ func DefaultPlaybooks() []Playbook {
 		},
 		{
 			ID:        "proyectos.waiting_tasks",
-			Area:      "proyectos",
+			Area:      "projects",
 			Title:     "Tareas en espera",
 			SignalKey: "waiting_tasks",
 			MinCount:  5,
@@ -215,7 +215,7 @@ func DefaultPlaybooks() []Playbook {
 		},
 		{
 			ID:        "proyectos.urgent_tasks",
-			Area:      "proyectos",
+			Area:      "projects",
 			Title:     "Tareas marcadas como urgentes",
 			SignalKey: "urgent_tasks",
 			MinCount:  3,
@@ -226,7 +226,7 @@ func DefaultPlaybooks() []Playbook {
 		},
 		{
 			ID:        "flota.unregistered_vehicles",
-			Area:      "flota",
+			Area:      "fleet",
 			Title:     "Vehículos sin matricular",
 			SignalKey: "unregistered_vehicles",
 			MinCount:  1,
@@ -237,7 +237,7 @@ func DefaultPlaybooks() []Playbook {
 		},
 		{
 			ID:        "flota.vehicles_without_driver",
-			Area:      "flota",
+			Area:      "fleet",
 			Title:     "Vehículos sin conductor asignado",
 			SignalKey: "vehicles_without_driver",
 			MinCount:  1,
