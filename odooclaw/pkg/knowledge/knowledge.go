@@ -249,7 +249,7 @@ func (kb *KnowledgeBase) Search(query string, category string, limit int) ([]Kno
 }
 
 // SearchByArea finds knowledge entries belonging to a functional Odoo area
-// ("contabilidad", "ventas", ...) as declared in entry Metadata under the
+// ("accounting", "sales", ...) as declared in entry Metadata under the
 // "area" key. This is the retrieval path the proactive engine relies on:
 // FTS5 MATCH is unusable for natural-language questions, so the area — a
 // structured field — is what selects the corpus, and the free-text query only

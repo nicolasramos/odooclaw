@@ -51,13 +51,13 @@ func main() {
 	for _, e := range []knowledge.KnowledgeEntry{
 		{Category: knowledge.CatWorkflow, Title: "VeriFactu: plazos vigentes",
 			Content:  "Los plazos vigentes son 1-ene-2027 para sociedades y 1-jul-2027 para el resto (RDL 15/2025).",
-			Metadata: map[string]string{"area": "contabilidad", "module": "account"}},
+			Metadata: map[string]string{"area": "accounting", "module": "account"}},
 		{Category: knowledge.CatWorkflow, Title: "Conciliación bancaria",
 			Content:  "El extracto se concilia desde Contabilidad > Banco > Conciliación.",
-			Metadata: map[string]string{"area": "contabilidad", "module": "account"}},
+			Metadata: map[string]string{"area": "accounting", "module": "account"}},
 		{Category: knowledge.CatWorkflow, Title: "Presupuestos: seguimiento",
 			Content:  "El seguimiento se programa con actividades sobre la oportunidad.",
-			Metadata: map[string]string{"area": "ventas", "module": "sale"}},
+			Metadata: map[string]string{"area": "sales", "module": "sale"}},
 	} {
 		if err := kb.Add(e); err != nil {
 			panic(err)
@@ -92,36 +92,36 @@ func main() {
 	}
 	steps := []step{
 		{"usuario abre Contabilidad, 12 facturas sin publicar",
-			proactive.Signal{UserID: 7, UserName: "Ana", Area: "contabilidad", Model: "account.move",
+			proactive.Signal{UserID: 7, UserName: "Ana", Area: "accounting", Model: "account.move",
 				Counters: map[string]int{"unposted_invoices": 12}, At: now}},
 
 		{"misma pantalla otra vez (cooldown por area)",
-			proactive.Signal{UserID: 7, User: internalUser(7), Area: "contabilidad", Model: "account.move",
+			proactive.Signal{UserID: 7, User: internalUser(7), Area: "accounting", Model: "account.move",
 				Counters: map[string]int{"unposted_invoices": 12}, At: now.Add(time.Minute)}},
 
 		{"usuario abre Ventas, 5 presupuestos en borrador",
-			proactive.Signal{UserID: 7, User: internalUser(7), Area: "ventas", Model: "sale.order",
+			proactive.Signal{UserID: 7, User: internalUser(7), Area: "sales", Model: "sale.order",
 				Counters: map[string]int{"draft_quotations": 5}, At: now}},
 
 		{"usuario entra en Ajustes tecnicos (sin area funcional)",
 			proactive.Signal{UserID: 7, User: internalUser(7), Area: "", Model: "ir.ui.view", At: now}},
 
 		{"usuario abre Contabilidad a las 23:00 (silencio horario)",
-			proactive.Signal{UserID: 7, User: internalUser(7), Area: "contabilidad", Model: "account.move",
+			proactive.Signal{UserID: 7, User: internalUser(7), Area: "accounting", Model: "account.move",
 				Counters: map[string]int{"unposted_invoices": 12}, At: time.Date(2026, 9, 25, 23, 0, 0, 0, time.UTC)}},
 
 		// --- AUDIENCIA: quien es "usuario interno de DU" ---
 		{"usuario INTERNO de DU abre Contabilidad (la audiencia correcta)",
-			proactive.Signal{UserID: 50, User: internalUser(50), Area: "contabilidad", Model: "account.move",
+			proactive.Signal{UserID: 50, User: internalUser(50), Area: "accounting", Model: "account.move",
 				Counters: map[string]int{"unposted_invoices": 12}, At: now}},
 
 		{"usuario de PORTAL abre Contabilidad (fuera de la audiencia)",
 			proactive.Signal{UserID: 51, User: proactive.ClassifiedUser{ID: 51, IsInternal: false, IsActive: true},
-				Area: "contabilidad", Model: "account.move",
+				Area: "accounting", Model: "account.move",
 				Counters: map[string]int{"unposted_invoices": 12}, At: now}},
 
 		{"usuario NO clasificado abre Contabilidad (fail-closed)",
-			proactive.Signal{UserID: 52, Area: "contabilidad", Model: "account.move",
+			proactive.Signal{UserID: 52, Area: "accounting", Model: "account.move",
 				Counters: map[string]int{"unposted_invoices": 12}, At: now}},
 	}
 

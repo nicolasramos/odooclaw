@@ -32,10 +32,10 @@ import (
 // copy can be rewritten without touching Go, which matters for material like
 // VeriFactu whose deadlines have already changed once.
 type Playbook struct {
-	// ID is stable and used for dedupe ("contabilidad.unposted_invoices").
+	// ID is stable and used for dedupe ("accounting.unposted_invoices").
 	ID string
-	// Area is the functional Odoo area this belongs to: "contabilidad",
-	// "ventas", ... It is the key that selects the corpus.
+	// Area is the functional Odoo area this belongs to: "accounting",
+	// "sales", ... It is the key that selects the corpus.
 	Area string
 	// Title is the human label shown in logs and admin views.
 	Title string
@@ -65,7 +65,7 @@ type Signal struct {
 	// UserName is used for logging and message personalisation.
 	UserName string
 	// Area is the functional area the user just entered, already normalised
-	// to lowercase ("contabilidad"). Empty means no functional area, which
+	// to lowercase ("accounting"). Empty means no functional area, which
 	// always ends in silence.
 	Area string
 	// Model and ViewID locate the screen, kept for auditability.

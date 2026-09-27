@@ -33,7 +33,7 @@ func TestInternalUserReceivesExactlyOneInvitation(t *testing.T) {
 	e, now := newAudienceEngine(t)
 
 	dec := e.Evaluate(Signal{
-		UserID: 7, User: internal(7), Area: "contabilidad",
+		UserID: 7, User: internal(7), Area: "accounting",
 		Counters: map[string]int{"unposted_invoices": 12}, At: *now,
 	})
 	if !dec.Speak || !dec.Invitation {
@@ -63,7 +63,7 @@ func TestAudienceIsInternalUsersOnly(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dec := e.Evaluate(Signal{
-				UserID: tc.user.ID, User: tc.user, Area: "contabilidad",
+				UserID: tc.user.ID, User: tc.user, Area: "accounting",
 				Counters: map[string]int{"unposted_invoices": 12}, At: *now,
 			})
 			if dec.Speak != tc.want {
@@ -85,7 +85,7 @@ func TestUnknownUserFailsClosed(t *testing.T) {
 
 	dec := e.Evaluate(Signal{
 		UserID:   42, // no User classification supplied at all
-		Area:     "contabilidad",
+		Area:     "accounting",
 		Counters: map[string]int{"unposted_invoices": 12},
 		At:       *now,
 	})
@@ -102,7 +102,7 @@ func TestInvitationRespectsQuietHours(t *testing.T) {
 	night := time.Date(2026, 9, 25, 3, 0, 0, 0, time.UTC)
 
 	dec := e.Evaluate(Signal{
-		UserID: 7, User: internal(7), Area: "contabilidad",
+		UserID: 7, User: internal(7), Area: "accounting",
 		Counters: map[string]int{"unposted_invoices": 12}, At: night,
 	})
 	if dec.Speak {

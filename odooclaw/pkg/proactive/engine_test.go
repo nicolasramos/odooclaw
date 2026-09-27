@@ -33,14 +33,14 @@ func TestSpeaksWhenSignalAboveThreshold(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 
 	dec := e.Evaluate(Signal{
-		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad",
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "accounting",
 		Counters: map[string]int{"unposted_invoices": 12},
 	})
 
 	if !dec.Speak {
 		t.Fatalf("expected an intervention, got silence: %s", dec.Reason)
 	}
-	if dec.PlaybookID != "contabilidad.unposted_invoices" {
+	if dec.PlaybookID != "accounting.unposted_invoices" {
 		t.Errorf("wrong playbook: %q", dec.PlaybookID)
 	}
 	if dec.Channel != "odoo_discuss_private" {
@@ -59,15 +59,15 @@ func TestSpeaksWhenSignalAboveThreshold(t *testing.T) {
 func TestDoesNotCrossAreas(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 
-	// "unposted_invoices" belongs to contabilidad. Entering ventas with only
-	// that counter must not fire the VeriFactu or contabilidad playbook.
+	// "unposted_invoices" belongs to accounting. Entering sales with only
+	// that counter must not fire the VeriFactu or accounting playbook.
 	dec := e.Evaluate(Signal{
-		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "ventas",
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "sales",
 		Counters: map[string]int{"unposted_invoices": 99, "verifactu_unconfigured": 1},
 	})
 
 	if dec.Speak {
-		t.Fatalf("ventas fired a contabilidad/verifactu playbook: %s (%s)",
+		t.Fatalf("sales fired a accounting/verifactu playbook: %s (%s)",
 			dec.PlaybookID, dec.Message)
 	}
 }
@@ -88,7 +88,7 @@ func TestSilentBelowThreshold(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 
 	dec := e.Evaluate(Signal{
-		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad",
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "accounting",
 		Counters: map[string]int{"unposted_invoices": 3}, // threshold is 5
 	})
 	if dec.Speak {
@@ -108,7 +108,7 @@ func TestFirstContactIsAnInvitationNotAnAssistance(t *testing.T) {
 	// newTestEngine opts user 7 in; user 99 has never been asked.
 	sig := Signal{
 		UserID: 99, User: ClassifiedUser{ID: 99, IsInternal: true, IsActive: true},
-		Area:     "contabilidad",
+		Area:     "accounting",
 		At:       *clock,
 		Counters: map[string]int{"unposted_invoices": 12},
 	}
@@ -146,7 +146,7 @@ func TestNoAssistanceWithoutOptIn(t *testing.T) {
 	// Walk several areas for a user who has never opted in. The FIRST evaluation
 	// yields the invitation and nothing else; every later one must be silent,
 	// because the invitation is spent and no assistance was ever requested.
-	areas := []string{"contabilidad", "ventas", "compras"}
+	areas := []string{"accounting", "sales", "purchases"}
 	invitations := 0
 	for _, area := range areas {
 		sig := Signal{
@@ -180,7 +180,7 @@ func TestRequiresOptIn(t *testing.T) {
 
 	// User 99 never opted in: only the invitation may reach them.
 	dec := e.Evaluate(Signal{
-		UserID: 99, User: ClassifiedUser{ID: 99, IsInternal: true, IsActive: true}, Area: "contabilidad",
+		UserID: 99, User: ClassifiedUser{ID: 99, IsInternal: true, IsActive: true}, Area: "accounting",
 		Counters: map[string]int{"unposted_invoices": 12},
 	})
 	if dec.Speak && !dec.Invitation {
@@ -193,7 +193,7 @@ func TestCooldownPerArea(t *testing.T) {
 	e, store, clock := newTestEngine(t)
 
 	sig := Signal{
-		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad", At: *clock,
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "accounting", At: *clock,
 		Counters: map[string]int{"unposted_invoices": 12},
 	}
 
@@ -208,7 +208,7 @@ func TestCooldownPerArea(t *testing.T) {
 	// One hour later, same area: still in cooldown.
 	*clock = clock.Add(time.Hour)
 	dec = e.Evaluate(Signal{
-		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad", At: *clock,
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "accounting", At: *clock,
 		Counters: map[string]int{"unposted_invoices": 12},
 	})
 	if dec.Speak {
@@ -221,7 +221,7 @@ func TestCooldownPerArea(t *testing.T) {
 	// 25 hours later the cooldown has expired, but dedupe now applies.
 	*clock = clock.Add(25 * time.Hour)
 	dec = e.Evaluate(Signal{
-		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad", At: *clock,
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "accounting", At: *clock,
 		Counters: map[string]int{"unposted_invoices": 12},
 	})
 	if dec.Speak {
@@ -237,7 +237,7 @@ func TestDedupeDifferentPlaybookSameAreaStillAllowed(t *testing.T) {
 	e, _, clock := newTestEngine(t)
 
 	// Offer the invoices playbook.
-	sig := Signal{UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad", At: *clock,
+	sig := Signal{UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "accounting", At: *clock,
 		Counters: map[string]int{"unposted_invoices": 12}}
 	dec := e.Evaluate(sig)
 	if !dec.Speak {
@@ -249,7 +249,7 @@ func TestDedupeDifferentPlaybookSameAreaStillAllowed(t *testing.T) {
 
 	// The statement playbook is a DIFFERENT offer, but the per-area cooldown
 	// still gates it — that is the intended anti-nuisance behaviour.
-	dec = e.Evaluate(Signal{UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad", At: *clock,
+	dec = e.Evaluate(Signal{UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "accounting", At: *clock,
 		Counters: map[string]int{"unreconciled_statement_lines": 9}})
 	if dec.Speak {
 		t.Fatalf("per-area cooldown did not gate a second offer: %s", dec.Reason)
@@ -262,7 +262,7 @@ func TestQuietHours(t *testing.T) {
 	// 22:00 is inside the default 21:00-08:00 window.
 	*clock = time.Date(2026, 9, 25, 22, 0, 0, 0, time.UTC)
 	dec := e.Evaluate(Signal{
-		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad", At: *clock,
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "accounting", At: *clock,
 		Counters: map[string]int{"unposted_invoices": 12},
 	})
 	if dec.Speak {
@@ -277,11 +277,11 @@ func TestDailyCap(t *testing.T) {
 	e, _, clock := newTestEngine(t)
 	e.policy.DailyCap = 2
 
-	areas := []string{"contabilidad", "ventas", "compras"}
+	areas := []string{"accounting", "sales", "purchases"}
 	counters := map[string]map[string]int{
-		"contabilidad": {"unposted_invoices": 12},
-		"ventas":       {"draft_quotations": 9},
-		"compras":      {"draft_purchase_orders": 9},
+		"accounting": {"unposted_invoices": 12},
+		"sales":       {"draft_quotations": 9},
+		"purchases":      {"draft_purchase_orders": 9},
 	}
 
 	spoke := 0
@@ -300,7 +300,7 @@ func TestDailyCap(t *testing.T) {
 	}
 
 	// The third area must be silenced with a cap reason.
-	dec := e.Evaluate(Signal{UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "compras", At: *clock,
+	dec := e.Evaluate(Signal{UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "purchases", At: *clock,
 		Counters: map[string]int{"draft_purchase_orders": 9}})
 	if !contains(dec.Reason, "tope diario") {
 		t.Errorf("expected a daily-cap reason, got %q", dec.Reason)
@@ -315,7 +315,7 @@ func TestHighRiskRequiresExplicitOptIn(t *testing.T) {
 	e.SetClock(func() time.Time { return now })
 
 	dec := e.Evaluate(Signal{
-		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad", At: now,
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "accounting", At: now,
 		Counters: map[string]int{"verifactu_unconfigured": 1},
 	})
 	if dec.Speak {
@@ -337,7 +337,7 @@ func TestStoreDurabilityAcrossRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store1.RecordSpoke(7, "contabilidad", "contabilidad.unposted_invoices", now); err != nil {
+	if err := store1.RecordSpoke(7, "accounting", "accounting.unposted_invoices", now); err != nil {
 		t.Fatal(err)
 	}
 	if err := store1.Close(); err != nil {
@@ -357,7 +357,7 @@ func TestStoreDurabilityAcrossRestart(t *testing.T) {
 	e.SetClock(func() time.Time { return now.Add(2 * time.Hour) })
 
 	dec := e.Evaluate(Signal{
-		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad", At: now.Add(2 * time.Hour),
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "accounting", At: now.Add(2 * time.Hour),
 		Counters: map[string]int{"unposted_invoices": 12},
 	})
 	if dec.Speak {
@@ -387,7 +387,7 @@ func TestInvitationSurvivesRestart(t *testing.T) {
 
 	sig := Signal{
 		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true},
-		Area: "contabilidad", At: now,
+		Area: "accounting", At: now,
 		Counters: map[string]int{"unposted_invoices": 12},
 	}
 	first := e1.Evaluate(sig)
@@ -449,7 +449,7 @@ func TestPhaseOneContabilidadCountersAreCovered(t *testing.T) {
 
 	covered := map[string]bool{}
 	for _, pb := range DefaultPlaybooks() {
-		if pb.Area == "contabilidad" {
+		if pb.Area == "accounting" {
 			covered[pb.SignalKey] = true
 		}
 	}
@@ -479,7 +479,7 @@ func TestPlaybookAreasCoverKnowledgeAreas(t *testing.T) {
 	}
 
 	e, _, _ := newTestEngine(t)
-	for _, a := range []string{"contabilidad", "ventas", "compras", "inventario", "rrhh"} {
+	for _, a := range []string{"accounting", "sales", "purchases", "inventory", "hr"} {
 		if !containsSlice(e.Areas(), a) {
 			t.Errorf("area %q is not covered by any playbook", a)
 		}
@@ -504,8 +504,8 @@ func TestDelivererSendsProactivePayload(t *testing.T) {
 	defer srv.Close()
 
 	d := NewDeliverer(srv.URL, "secret123", srv.Client())
-	sig := Signal{UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad"}
-	dec := Decision{Speak: true, PlaybookID: "contabilidad.unposted_invoices",
+	sig := Signal{UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "accounting"}
+	dec := Decision{Speak: true, PlaybookID: "accounting.unposted_invoices",
 		Message: "hola", Count: 12}
 
 	if err := d.Deliver(context.Background(), sig, dec); err != nil {
@@ -520,7 +520,7 @@ func TestDelivererSendsProactivePayload(t *testing.T) {
 	if got.Source != "proactive" {
 		t.Errorf("payload source = %q, want proactive", got.Source)
 	}
-	if got.PlaybookID != "contabilidad.unposted_invoices" {
+	if got.PlaybookID != "accounting.unposted_invoices" {
 		t.Errorf("payload playbook = %q", got.PlaybookID)
 	}
 	if gotToken != "secret123" {
@@ -541,7 +541,7 @@ func TestDelivererDoesNotInvokeCallbackOnFailure(t *testing.T) {
 	d := NewDeliverer(srv.URL, "", srv.Client())
 	d.OnDelivered = func(Signal, Decision) { called = true }
 
-	err := d.Deliver(context.Background(), Signal{UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad"},
+	err := d.Deliver(context.Background(), Signal{UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "accounting"},
 		Decision{Speak: true, Message: "hola"})
 	if err == nil {
 		t.Fatal("expected an error on a 401 response")
@@ -578,7 +578,7 @@ func TestServiceRecordsCooldownOnlyAfterSuccessfulDelivery(t *testing.T) {
 	d := NewDeliverer(srv.URL, "", srv.Client())
 	svc := NewService(e, nil, d)
 
-	sig := Signal{UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad", At: now,
+	sig := Signal{UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "accounting", At: now,
 		Counters: map[string]int{"unposted_invoices": 12}}
 
 	dec, err := svc.Handle(context.Background(), sig)
@@ -610,7 +610,7 @@ func TestServiceEnrichesWithKnowledgeByArea(t *testing.T) {
 		Category: knowledge.CatWorkflow,
 		Title:    "VeriFactu: plazos vigentes",
 		Content:  "Los plazos vigentes son 1-ene-2027 para sociedades y 1-jul-2027 para el resto.",
-		Metadata: map[string]string{"area": "contabilidad", "module": "account"},
+		Metadata: map[string]string{"area": "accounting", "module": "account"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -628,7 +628,7 @@ func TestServiceEnrichesWithKnowledgeByArea(t *testing.T) {
 
 	svc := NewService(e, kb, NewDeliverer(srv.URL, "", srv.Client()))
 	dec, err := svc.Handle(context.Background(), Signal{
-		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "contabilidad", At: now,
+		UserID: 7, User: ClassifiedUser{ID: 7, IsInternal: true, IsActive: true}, Area: "accounting", At: now,
 		Counters: map[string]int{"unposted_invoices": 12},
 	})
 	if err != nil {

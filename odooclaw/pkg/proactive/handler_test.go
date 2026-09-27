@@ -49,7 +49,7 @@ func TestHandlerAcceptsTheWireFormatOdooActuallySends(t *testing.T) {
 	// the classification nested under "user".
 	body := `{
 		"user_id": 7,
-		"area": "contabilidad",
+		"area": "accounting",
 		"model": "account.move",
 		"view_id": 123,
 		"counters": {"unposted_invoices": 12},
@@ -66,8 +66,8 @@ func TestHandlerAcceptsTheWireFormatOdooActuallySends(t *testing.T) {
 	if !resp.Invitation {
 		t.Fatal("first contact should be an invitation")
 	}
-	if resp.Area != "contabilidad" {
-		t.Fatalf("area = %q, want contabilidad", resp.Area)
+	if resp.Area != "accounting" {
+		t.Fatalf("area = %q, want accounting", resp.Area)
 	}
 	if resp.Message == "" {
 		t.Fatal("a speaking decision must carry a message")
@@ -76,7 +76,7 @@ func TestHandlerAcceptsTheWireFormatOdooActuallySends(t *testing.T) {
 
 func TestHandlerRejectsBadToken(t *testing.T) {
 	h, _ := newHandlerTest(t, "s3cret")
-	body := `{"user_id": 7, "area": "contabilidad", "user": {"id": 7, "is_internal": true, "is_active": true}}`
+	body := `{"user_id": 7, "area": "accounting", "user": {"id": 7, "is_internal": true, "is_active": true}}`
 
 	code, _ := postSignal(t, h, body, "wrong")
 	if code != http.StatusUnauthorized {
@@ -106,7 +106,7 @@ func TestHandlerRejectsMalformedJSONAndMissingUser(t *testing.T) {
 	if code, _ := postSignal(t, h, `{"user_id":`, ""); code != http.StatusBadRequest {
 		t.Fatalf("malformed JSON: status = %d, want 400", code)
 	}
-	if code, _ := postSignal(t, h, `{"area":"contabilidad"}`, ""); code != http.StatusBadRequest {
+	if code, _ := postSignal(t, h, `{"area":"accounting"}`, ""); code != http.StatusBadRequest {
 		t.Fatalf("missing user_id: status = %d, want 400", code)
 	}
 }
@@ -118,7 +118,7 @@ func TestHandlerRejectsMalformedJSONAndMissingUser(t *testing.T) {
 func TestHandlerFailsClosedWithoutClassification(t *testing.T) {
 	h, _ := newHandlerTest(t, "")
 
-	body := `{"user_id": 7, "area": "contabilidad", "counters": {"unposted_invoices": 12}}`
+	body := `{"user_id": 7, "area": "accounting", "counters": {"unposted_invoices": 12}}`
 	code, resp := postSignal(t, h, body, "")
 
 	if code != http.StatusOK {
@@ -134,7 +134,7 @@ func TestHandlerFailsClosedWithoutClassification(t *testing.T) {
 
 func TestHandlerSilentForPortalUser(t *testing.T) {
 	h, _ := newHandlerTest(t, "")
-	body := `{"user_id": 8, "area": "contabilidad",
+	body := `{"user_id": 8, "area": "accounting",
 		"counters": {"unposted_invoices": 12},
 		"user": {"id": 8, "is_internal": false, "is_active": true}}`
 
@@ -153,7 +153,7 @@ func TestHandlerSilentWhenDisabled(t *testing.T) {
 	e.SetClock(func() time.Time { return now })
 	h := NewHandler(NewService(e, nil, nil), "", false)
 
-	body := `{"user_id": 7, "area": "contabilidad", "user": {"id": 7, "is_internal": true, "is_active": true}}`
+	body := `{"user_id": 7, "area": "accounting", "user": {"id": 7, "is_internal": true, "is_active": true}}`
 	code, resp := postSignal(t, h, body, "")
 	if code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 when disabled", code)
@@ -167,7 +167,7 @@ func TestHandlerWithoutEngineRefusesCleanly(t *testing.T) {
 	// A misconfigured deployment must degrade to silence, never to a 500: a view
 	// open must not break because the assistant is missing.
 	h := NewHandler(nil, "", true)
-	body := `{"user_id": 7, "area": "contabilidad"}`
+	body := `{"user_id": 7, "area": "accounting"}`
 
 	code, resp := postSignal(t, h, body, "")
 	if code != http.StatusOK {
@@ -183,7 +183,7 @@ func TestHandlerWithoutEngineRefusesCleanly(t *testing.T) {
 // Odoo posts the message itself, inside the triggering user's request scope.
 func TestHandlerDecidesButDoesNotDeliver(t *testing.T) {
 	h, _ := newHandlerTest(t, "") // NewService(e, nil, nil): no deliverer
-	body := `{"user_id": 7, "area": "contabilidad",
+	body := `{"user_id": 7, "area": "accounting",
 		"counters": {"unposted_invoices": 12},
 		"user": {"id": 7, "is_internal": true, "is_active": true}}`
 
@@ -201,7 +201,7 @@ func TestHandlerDecidesButDoesNotDeliver(t *testing.T) {
 // the invitation.
 func TestHandlerCarriesTheInvitationFlag(t *testing.T) {
 	h, _ := newHandlerTest(t, "")
-	base := `"area": "contabilidad", "counters": {"unposted_invoices": 12},
+	base := `"area": "accounting", "counters": {"unposted_invoices": 12},
 		"user": {"id": 7, "is_internal": true, "is_active": true}`
 
 	_, first := postSignal(t, h, `{"user_id": 7, `+base+`}`, "")
