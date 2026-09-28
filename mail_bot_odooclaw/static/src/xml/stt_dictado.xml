@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Dictation button template -->
+    <template id="mail_bot_dictation_button" name="Mail Bot Dictation Button">
+        <button
+            t-att-class="'btn btn-sm ' + ('btn-danger' if status == 'listening' or status == 'error' else 'btn-outline-secondary') + ' mail-bot-dictation-btn'"
+            t-att-disabled="status == 'transcribing'"
+            t-on-click="toggleRecording"
+            t-att-title="buttonText"
+        >
+            <span t-esc="buttonText"/>
+        </button>
+        <t t-if="status == 'error'">
+            <small class="text-danger" t-esc="errorMessage"/>
+        </t>
+    </template>
+</odoo>

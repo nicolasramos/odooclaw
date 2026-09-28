@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- runonweb.stt.model tree and form views -->
+    <record id="view_runonweb_stt_model_tree" model="ir.ui.view">
+        <field name="name">runonweb.stt.model.tree</field>
+        <field name="model">runonweb.stt.model</field>
+        <field name="arch" type="tree">
+            <field name="sequence" widget="handle"/>
+            <field name="name"/>
+            <field name="display_name"/>
+            <field name="is_multilingual"/>
+            <field name="size_mb"/>
+            <field name="quality_rating"/>
+            <field name="is_default"/>
+            <field name="active"/>
+        </field>
+    </record>
+
+    <record id="view_runonweb_stt_model_form" model="ir.ui.view">
+        <field name="name">runonweb.stt.model.form</field>
+        <field name="model">runonweb.stt.model</field>
+        <field name="arch" type="form">
+            <group>
+                <field name="name"/>
+                <field name="model_type"/>
+                <field name="is_multilingual"/>
+                <field name="size_mb"/>
+                <field name="quality_rating"/>
+                <field name="sample_rate"/>
+                <field name="is_default"/>
+            </group>
+            <group string="Model files">
+                <field name="encoder_url"/>
+                <field name="decoder_url"/>
+                <field name="tokens_url"/>
+            </group>
+        </field>
+    </record>
+
+    <record id="action_runonweb_stt_model" model="ir.actions.act_window">
+        <field name="name">STT Models</field>
+        <field name="res_model">runonweb.stt.model</field>
+        <field name="view_mode">tree,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Configure speech-to-text models.
+            </p>
+        </field>
+    </record>
+
+    <!-- Menu items -->
+    <menuitem id="menu_runonweb_root"
+              name="runonweb"
+              parent="mail.menu_mail_root"
+              sequence="100"/>
+
+    <menuitem id="menu_runonweb_settings"
+              name="Settings"
+              parent="menu_runonweb_root"
+              action="view_runonweb_settings_form"
+              sequence="10"/>
+
+    <menuitem id="menu_runonweb_feature_flags"
+              name="Feature Flags"
+              parent="menu_runonweb_root"
+              action="view_runonweb_feature_flag_tree"
+              sequence="20"/>
+
+    <menuitem id="menu_runonweb_stt_models"
+              name="STT Models"
+              parent="menu_runonweb_root"
+              action="action_runonweb_stt_model"
+              sequence="30"/>
+</odoo>
