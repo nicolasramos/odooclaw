@@ -6,24 +6,22 @@
  *   1. Compositor de Discuss (botón de dictado en el footer)
  *   2. Campos de texto marcados (data-runonweb-dictation="true")
  *
- * Modelo elegido: whisper-tiny (multilingüe, ~75 MB)
- * Justificación: equilibrio entre calidad y tamaño de descarga.
+ * API real de la etapa 1:
+ *   RunOnWebBridge.getOrCreate()
+ *   bridge.getStt({ model, language, ... })
+ *   stt.transcribe(audioSamples, options)
+ *
+ * Modelo default: onnx-community/whisper-tiny (multilingüe, ~75 MB)
+ * Alternativas: onnx-community/whisper-base, onnx-community/whisper-small
  */
-import { RunOnWebBridge, STT_BRIDGE } from "./runonweb_bridge";
+import { RunOnWebBridge } from "./runonweb_bridge";
 import { log } from "@web/utils/logger";
 
 // ──────────────────────────────────────────────────────────────────────────
 // 0. Configuración
 // ──────────────────────────────────────────────────────────────────────────
-const STT_MODEL_ID = "whisper-tiny";
+const STT_MODEL_ID = "onnx-community/whisper-tiny";
 const STT_SAMPLE_RATE = 16000;
-
-// URLs de los archivos del modelo (se descargan la primera vez)
-const STT_MODEL_FILES = {
-    encoder: "/mail_bot_odooclaw/static/src/js/models/whisper-tiny-encoder.onnx",
-    decoder: "/mail_bot_odooclaw/static/src/js/models/whisper-tiny-decoder.onnx",
-    tokens: "/mail_bot_odooclaw/static/src/js/models/whisper-tiny-tokens.txt",
-};
 
 // ──────────────────────────────────────────────────────────────────────────
 // 1. Estado del dictado
@@ -43,6 +41,7 @@ export class DictationService {
         this.state = DictationState.IDLE;
         this._listeners = [];
         this._bridge = null;
+        this._stt = null;
         this._capturing = false;
         this._audioChunks = [];
     }
@@ -64,17 +63,21 @@ export class DictationService {
 
     /**
      * Carga el modelo STT si no está ya cargado.
+     * Usa la API real de la etapa 1:
+     *   RunOnWebBridge.getOrCreate() -> bridge.getStt() -> stt.load()
      */
     async _ensureModelLoaded() {
         if (!this._bridge) {
             this._bridge = await RunOnWebBridge.getOrCreate();
         }
-        const sttBridge = STT_BRIDGE(this._bridge);
-        if (sttBridge.isModelLoaded(STT_MODEL_ID)) {
-            return;
+        if (!this._stt) {
+            this._stt = this._bridge.getStt({
+                model: STT_MODEL_ID,
+                sampleRate: STT_SAMPLE_RATE,
+            });
+            await this._stt.load();
+            log.info(`[runonweb] STT model ${STT_MODEL_ID} loaded`);
         }
-        await sttBridge.loadModel(STT_MODEL_ID, STT_MODEL_FILES, STT_SAMPLE_RATE);
-        log.info(`[runonweb] STT model ${STT_MODEL_ID} loaded`);
     }
 
     /**
@@ -83,8 +86,7 @@ export class DictationService {
     async startRecording(targetField) {
         try {
             await this._ensureModelLoaded();
-            const sttBridge = STT_BRIDGE(this._bridge);
-            const capture = sttBridge.createAudioCapture();
+            const capture = this._stt.createAudioCapture();
 
             this._capturing = true;
             this._audioChunks = [];
@@ -117,8 +119,7 @@ export class DictationService {
         this._notify(DictationState.TRANSCRIBING);
 
         try {
-            const sttBridge = STT_BRIDGE(this._bridge);
-            const capture = sttBridge._captures.get(STT_MODEL_ID);
+            const capture = this._stt._captures.get(STT_MODEL_ID);
             if (capture) {
                 capture.stop();
             }
@@ -132,11 +133,10 @@ export class DictationService {
                 offset += chunk.length;
             }
 
-            // Transcribir
-            const result = await sttBridge.transcribe(allSamples, STT_MODEL_ID);
-
-            // Limpiar modelo
-            await sttBridge.unloadModel(STT_MODEL_ID);
+            // Transcribir usando la API real
+            const result = await this._stt.transcribe(allSamples, {
+                model: STT_MODEL_ID,
+            });
 
             this.state = DictationState.IDLE;
             this._notify(DictationState.IDLE, result.text);
@@ -159,8 +159,7 @@ export class DictationService {
     async cancelRecording() {
         if (!this._capturing) return;
         try {
-            const sttBridge = STT_BRIDGE(this._bridge);
-            const capture = sttBridge._captures.get(STT_MODEL_ID);
+            const capture = this._stt._captures.get(STT_MODEL_ID);
             if (capture) {
                 capture.stop();
             }
@@ -177,6 +176,7 @@ export class DictationService {
     destroy() {
         this._listeners = [];
         this._bridge = null;
+        this._stt = null;
     }
 }
 
@@ -400,4 +400,4 @@ function _insertTextIntoField(field, text) {
 // ──────────────────────────────────────────────────────────────────────────
 // 6. Exportación
 // ──────────────────────────────────────────────────────────────────────────
-export { DictationState, STT_MODEL_ID, STT_SAMPLE_RATE, STT_MODEL_FILES };
+export { DictationState, STT_MODEL_ID, STT_SAMPLE_RATE };

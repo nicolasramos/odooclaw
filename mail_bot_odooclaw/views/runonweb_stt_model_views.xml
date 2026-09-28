@@ -4,7 +4,7 @@
     <record id="view_runonweb_stt_model_tree" model="ir.ui.view">
         <field name="name">runonweb.stt.model.tree</field>
         <field name="model">runonweb.stt.model</field>
-        <field name="arch" type="tree">
+        <field name="arch" type="xml">
             <field name="sequence" widget="handle"/>
             <field name="name"/>
             <field name="display_name"/>
@@ -19,7 +19,7 @@
     <record id="view_runonweb_stt_model_form" model="ir.ui.view">
         <field name="name">runonweb.stt.model.form</field>
         <field name="model">runonweb.stt.model</field>
-        <field name="arch" type="form">
+        <field name="arch" type="xml">
             <group>
                 <field name="name"/>
                 <field name="model_type"/>
@@ -51,7 +51,7 @@
     <!-- Menu items -->
     <menuitem id="menu_runonweb_root"
               name="runonweb"
-              parent="mail.menu_mail_root"
+              parent="mail.menu_root_discuss"
               sequence="100"/>
 
     <menuitem id="menu_runonweb_settings"
