@@ -42,7 +42,7 @@
     </record>
 
     <!-- Menu items (after actions) -->
-    <menuitem id="menu_runonweb_root" name="runonweb" parent="mail.menu_mail_config_root"
+    <menuitem id="menu_runonweb_root" name="runonweb" parent="mail.menu_root_discuss"
               sequence="99"/>
 
     <menuitem id="menu_runonweb_settings" name="Settings" parent="menu_runonweb_root"

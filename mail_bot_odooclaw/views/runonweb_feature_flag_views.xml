@@ -4,7 +4,7 @@
         <field name="name">runonweb.feature.flag.tree</field>
         <field name="model">runonweb.feature.flag</field>
         <field name="arch" type="xml">
-            <tree>
+            <list>
                 <field name="sequence" widget="handle"/>
                 <field name="name"/>
                 <field name="module_id"/>
@@ -12,7 +12,7 @@
                 <field name="field_id"/>
                 <field name="user_ids" widget="many2many_tags"/>
                 <field name="active"/>
-            </tree>
+            </list>
         </field>
     </record>
 
