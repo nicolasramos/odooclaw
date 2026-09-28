@@ -4,8 +4,8 @@
   "description": "runonweb AI integration for Odoo webclient",
   "type": "module",
   "scripts": {
-    "build": "esbuild mail_bot_odooclaw/static/src/js/runonweb_bridge.js --bundle --outfile=mail_bot_odooclaw/static/src/js/runonweb_bundle.js --format=iife --global-name=runonwebBundle --minify --target=chrome89,firefox89,safari15 --external:runonweb --external:runonweb/core --external:runonweb/stt --external:runonweb/ocr --external:runonweb/embed --allow-overwrite",
-    "build:dev": "esbuild mail_bot_odooclaw/static/src/js/runonweb_bridge.js --bundle --outfile=mail_bot_odooclaw/static/src/js/runonweb_bundle.js --format=iife --global-name=runonwebBundle --sourcemap --external:runonweb --external:runonweb/core --external:runonweb/stt --external:runonweb/ocr --external:runonweb/embed --allow-overwrite",
+    "build": "esbuild mail_bot_odooclaw/static/src/js/runonweb_bridge.js --bundle --outfile=mail_bot_odooclaw/static/src/js/runonweb_bundle.js --format=iife --global-name=runonwebBundle --minify --target=chrome89,firefox89,safari15 --allow-overwrite",
+    "build:dev": "esbuild mail_bot_odooclaw/static/src/js/runonweb_bridge.js --bundle --outfile=mail_bot_odooclaw/static/src/js/runonweb_bundle.js --format=iife --global-name=runonwebBundle --sourcemap --allow-overwrite",
     "test": "echo 'No JS tests yet'"
   },
   "dependencies": {

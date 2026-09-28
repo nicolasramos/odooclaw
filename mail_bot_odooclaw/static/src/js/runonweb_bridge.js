@@ -503,7 +503,41 @@ export class RunonwebBridge {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// 10. Odoo integration helper — injects into webclient
+// 10. Odoo RPC helpers
+// ──────────────────────────────────────────────────────────────────────────
+async function _rpcSettings() {
+  // Fetch default settings from runonweb.settings
+  try {
+    const result = await odoo.rpc({
+      model: "runonweb.settings",
+      method: "get_default_settings",
+      args: [],
+    });
+    return result || {};
+  } catch (e) {
+    console.warn("[runonweb] Failed to fetch settings:", e);
+    return {};
+  }
+}
+
+async function _rpcFeatureFlags() {
+  // Fetch enabled feature flags from runonweb.feature.flag
+  try {
+    const result = await odoo.rpc({
+      model: "runonweb.feature.flag",
+      method: "search_read",
+      args: [[["active", "=", true]]],
+      kwargs: { fields: ["feature_type", "user_ids"] },
+    });
+    return result || [];
+  } catch (e) {
+    console.warn("[runonweb] Failed to fetch feature flags:", e);
+    return [];
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 11. Odoo integration helper — injects into webclient
 // ──────────────────────────────────────────────────────────────────────────
 export function injectRunonwebBridge(odoo) {
   if (!odoo || !odoo.__session_info__) {
@@ -517,13 +551,43 @@ export function injectRunonwebBridge(odoo) {
     defaultDevice: "auto",
   });
 
-  // Expose on global for Odoo JS modules to access
-  window.runonwebBridge = bridge;
+  // Fetch settings and feature flags from backend
+  Promise.all([_rpcSettings(), _rpcFeatureFlags()]).then(([settings, flags]) => {
+    // Apply settings to bridge
+    bridge.setSettings(settings);
 
-  console.log(`[runonweb] Bridge v${RUNONWEB_VERSION} initialized for user ${userId}`);
+    // Load feature flags into resolver
+    const flagResolver = bridge.featureResolver;
+    if (flagResolver && flagResolver.setFlags) {
+      flagResolver.setFlags(flags, userId);
+    }
+
+    // Expose on global for Odoo JS modules to access
+    window.runonwebBridge = bridge;
+
+    console.log(
+      `[runonweb] Bridge v${RUNONWEB_VERSION} initialized for user ${userId}`,
+      "settings:",
+      settings,
+      "flags:",
+      flags
+    );
+  }).catch((e) => {
+    console.error("[runonweb] Failed to initialize bridge:", e);
+  });
 
   return bridge;
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// 12. Top-level initialization — auto-inject when Odoo is available
+// ──────────────────────────────────────────────────────────────────────────
+(function init() {
+  if (typeof window !== "undefined" && window.odoo) {
+    // Odoo is loaded — inject the bridge
+    injectRunonwebBridge(window.odoo);
+  }
+})();
 
 // ──────────────────────────────────────────────────────────────────────────
 // All classes and utilities are individually exported above.
