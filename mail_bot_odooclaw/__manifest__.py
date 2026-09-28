@@ -17,9 +17,6 @@
         "web.assets_backend": [
             "mail_bot_odooclaw/static/src/js/runonweb_bundle.js",
         ],
-        "web.assets_frontend": [
-            "mail_bot_odooclaw/static/src/js/runonweb_bundle.js",
-        ],
     },
     "installable": True,
     "auto_install": False,
