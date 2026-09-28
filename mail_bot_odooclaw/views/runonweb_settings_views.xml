@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- runonweb.settings form view -->
+    <record id="view_runonweb_settings_form" model="ir.ui.view">
+        <field name="name">runonweb.settings.form</field>
+        <field name="model">runonweb.settings</field>
+        <field name="arch" type="xml">
+            <form>
+                <group>
+                    <field name="runonweb_version"/>
+                    <field name="default_device"/>
+                </group>
+                <group string="Feature toggles">
+                    <field name="enable_stt"/>
+                    <field name="enable_ocr"/>
+                    <field name="enable_embed"/>
+                </group>
+                <group>
+                    <field name="model_cache_dir" readonly="1"/>
+                </group>
+            </form>
+        </field>
+    </record>
+
+    <!-- Actions (must come before menus) -->
+    <record id="action_runonweb_settings" model="ir.actions.act_window">
+        <field name="name">runonweb Settings</field>
+        <field name="res_model">runonweb.settings</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <record id="action_runonweb_feature_flags" model="ir.actions.act_window">
+        <field name="name">runonweb Feature Flags</field>
+        <field name="res_model">runonweb.feature.flag</field>
+        <field name="view_mode">tree,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first feature flag.
+            </p>
+        </field>
+    </record>
+
+    <!-- Menu items (after actions) -->
+    <menuitem id="menu_runonweb_root" name="runonweb" parent="mail.menu_root_discuss"
+              sequence="99"/>
+
+    <menuitem id="menu_runonweb_settings" name="Settings" parent="menu_runonweb_root"
+              action="action_runonweb_settings"/>
+
+    <menuitem id="menu_runonweb_feature_flags" name="Feature Flags" parent="menu_runonweb_root"
+              action="action_runonweb_feature_flags"/>
+</odoo>
