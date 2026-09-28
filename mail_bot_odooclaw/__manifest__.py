@@ -4,7 +4,7 @@
     "summary": "runonweb AI integration for Odoo webclient",
     "version": "0.0.1",
     "category": "Discuss",
-    "license": "MIT",
+    "license": "Other OSI approved licence",
     "author": "Nicolás Ramos",
     "website": "https://github.com/nicolasramos/odooclaw",
     "depends": ["mail"],

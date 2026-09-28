@@ -503,17 +503,39 @@ export class RunonwebBridge {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// 10. Odoo RPC helpers
+// 10. Odoo RPC helpers — use proper Odoo APIs (session + dataset RPC)
 // ──────────────────────────────────────────────────────────────────────────
-async function _rpcSettings() {
-  // Fetch default settings from runonweb.settings
+async function _getCsrfToken() {
   try {
-    const result = await odoo.rpc({
-      model: "runonweb.settings",
-      method: "get_default_settings",
-      args: [],
+    const resp = await fetch("/web/session/get_session_info", {
+      credentials: "same-origin",
     });
-    return result || {};
+    const data = await resp.json();
+    return data.session_info.csrf_token || "";
+  } catch {
+    return "";
+  }
+}
+
+async function _rpcSettings() {
+  const csrf = await _getCsrfToken();
+  try {
+    const resp = await fetch("/web/dataset/call_kw", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": csrf,
+      },
+      body: JSON.stringify({
+        model: "runonweb.settings",
+        method: "get_default_settings",
+        args: [],
+        kwargs: {},
+      }),
+    });
+    const result = await resp.json();
+    if (result.error) throw result.error;
+    return result.result || {};
   } catch (e) {
     console.warn("[runonweb] Failed to fetch settings:", e);
     return {};
@@ -521,15 +543,24 @@ async function _rpcSettings() {
 }
 
 async function _rpcFeatureFlags() {
-  // Fetch enabled feature flags from runonweb.feature.flag
+  const csrf = await _getCsrfToken();
   try {
-    const result = await odoo.rpc({
-      model: "runonweb.feature.flag",
-      method: "search_read",
-      args: [[["active", "=", true]]],
-      kwargs: { fields: ["feature_type", "user_ids"] },
+    const resp = await fetch("/web/dataset/call_kw", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": csrf,
+      },
+      body: JSON.stringify({
+        model: "runonweb.feature.flag",
+        method: "search_read",
+        args: [[["active", "=", true]]],
+        kwargs: { fields: ["feature_type", "user_ids"] },
+      }),
     });
-    return result || [];
+    const result = await resp.json();
+    if (result.error) throw result.error;
+    return result.result || [];
   } catch (e) {
     console.warn("[runonweb] Failed to fetch feature flags:", e);
     return [];
@@ -540,55 +571,54 @@ async function _rpcFeatureFlags() {
 // 11. Odoo integration helper — injects into webclient
 // ──────────────────────────────────────────────────────────────────────────
 export function injectRunonwebBridge(odoo) {
-  if (!odoo || !odoo.__session_info__) {
-    console.warn("[runonweb] Odoo session info not available");
-    return;
-  }
-
-  const userId = odoo.__session_info__.user_id;
-  const bridge = new RunonwebBridge({
-    runonwebVersion: RUNONWEB_VERSION,
-    defaultDevice: "auto",
-  });
-
-  // Fetch settings and feature flags from backend
-  Promise.all([_rpcSettings(), _rpcFeatureFlags()]).then(([settings, flags]) => {
-    // Apply settings to bridge
-    bridge.setSettings(settings);
-
-    // Load feature flags into resolver
-    const flagResolver = bridge.featureResolver;
-    if (flagResolver && flagResolver.setFlags) {
-      flagResolver.setFlags(flags, userId);
+  // Fetch session info via Odoo HTTP API (works in 17 and 18)
+  _getSessionInfo().then((sessionInfo) => {
+    if (!sessionInfo || !sessionInfo.user_id) {
+      console.warn("[runonweb] Odoo session info not available");
+      return;
     }
 
-    // Expose on global for Odoo JS modules to access
-    window.runonwebBridge = bridge;
+    const userId = sessionInfo.user_id;
+    const bridge = new RunonwebBridge({
+      runonwebVersion: RUNONWEB_VERSION,
+      defaultDevice: "auto",
+    });
 
-    console.log(
-      `[runonweb] Bridge v${RUNONWEB_VERSION} initialized for user ${userId}`,
-      "settings:",
-      settings,
-      "flags:",
-      flags
-    );
-  }).catch((e) => {
-    console.error("[runonweb] Failed to initialize bridge:", e);
+    // Fetch settings and feature flags from backend
+    Promise.all([_rpcSettings(), _rpcFeatureFlags()]).then(([settings, flags]) => {
+      // Apply settings to bridge
+      bridge.setSettings(settings);
+
+      // Load feature flags into resolver
+      const flagResolver = bridge.featureResolver;
+      if (flagResolver && flagResolver.setFlags) {
+        flagResolver.setFlags(flags, userId);
+      }
+
+      // Expose on global for Odoo JS modules to access
+      window.runonwebBridge = bridge;
+
+      console.log(
+        `[runonweb] Bridge v${RUNONWEB_VERSION} initialized for user ${userId}`
+      );
+
+      return bridge;
+    });
   });
+}
 
-  return bridge;
+async function _getSessionInfo() {
+  try {
+    const resp = await fetch("/web/session/get_session_info", {
+      credentials: "same-origin",
+    });
+    const data = await resp.json();
+    return data.session_info || null;
+  } catch {
+    return null;
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// 12. Top-level initialization — auto-inject when Odoo is available
-// ──────────────────────────────────────────────────────────────────────────
-(function init() {
-  if (typeof window !== "undefined" && window.odoo) {
-    // Odoo is loaded — inject the bridge
-    injectRunonwebBridge(window.odoo);
-  }
-})();
-
-// ──────────────────────────────────────────────────────────────────────────
-// All classes and utilities are individually exported above.
+// 
 // ──────────────────────────────────────────────────────────────────────────
