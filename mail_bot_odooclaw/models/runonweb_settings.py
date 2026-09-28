@@ -1,12 +1,12 @@
 # © 2026 Nicolás Ramos — MIT License
 """
 Configuration model for runonweb integration.
-Stores the fixed runonweb version and module-level settings.
+Stores the fixed runonweb version and module-level settings persistently.
 """
 from odoo import api, fields, models
 
 
-class RunonwebSettings(models.TransientModel):
+class RunonwebSettings(models.Model):
     _name = "runonweb.settings"
     _description = "runonweb integration settings"
 
@@ -44,14 +44,23 @@ class RunonwebSettings(models.TransientModel):
     )
 
     @api.model
+    def _get_single_record(self):
+        """Return the single persistent settings record, creating it if needed."""
+        rec = self.search([], limit=1)
+        if not rec:
+            rec = self.create({})
+        return rec
+
+    @api.model
     def get_default_settings(self):
-        """Return default settings as a dict for JS consumption."""
+        """Return current settings as a dict for JS consumption."""
+        rec = self._get_single_record()
         return {
-            "runonweb_version": self.runonweb_version,
-            "enable_stt": self.enable_stt,
-            "enable_ocr": self.enable_ocr,
-            "enable_embed": self.enable_embed,
-            "default_device": self.default_device,
+            "runonweb_version": rec.runonweb_version,
+            "enable_stt": rec.enable_stt,
+            "enable_ocr": rec.enable_ocr,
+            "enable_embed": rec.enable_embed,
+            "default_device": rec.default_device,
         }
 
     @api.model

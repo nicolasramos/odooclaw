@@ -37,6 +37,20 @@ class TestRunonwebSettings(TransactionCase):
         uid = settings.current_user_id()
         self.assertEqual(uid, self.env.uid)
 
+    def test_04_persistent_record_reuse(self):
+        """Test that get_default_settings reuses the single persistent record."""
+        rec1 = self.Settings._get_single_record()
+        rec2 = self.Settings._get_single_record()
+        self.assertEqual(rec1.id, rec2.id)
+
+    def test_05_settings_persist_values(self):
+        """Test that settings persist across get_default_settings calls."""
+        rec = self.Settings._get_single_record()
+        rec.write({"enable_stt": True, "default_device": "wasm"})
+        result = rec.get_default_settings()
+        self.assertTrue(result["enable_stt"])
+        self.assertEqual(result["default_device"], "wasm")
+
 
 @tagged("-standard", "mail_bot_odooclaw")
 class TestRunonwebFeatureFlag(TransactionCase):
@@ -81,7 +95,6 @@ class TestRunonwebFeatureFlag(TransactionCase):
                 "user_ids": [(4, other_user.id)],
             }
         )
-        self.assertIn(self.user, flag.user_ids)  # creator is added by default? No, check
         self.assertNotIn(self.user, flag.user_ids)
 
     def test_03_toggle_active(self):
