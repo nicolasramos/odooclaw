@@ -270,8 +270,12 @@ Before sharing your setup publicly:
 - Ensure module path exists in your addons tree:
 
 ```text
-odoo/custom/src/16.0/mail_bot_odooclaw/
+odoo/custom/src/private/mail_bot_odooclaw/
 ```
+
+- The module does not live in this repository. Get it from the `16.0` branch of
+  https://github.com/nicolasramos/odoo-addons, or let `scripts/install_doodba.sh`
+  place it for you.
 
 - In Odoo UI, set system parameter:
 
