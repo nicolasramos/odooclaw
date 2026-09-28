@@ -1,0 +1,17 @@
+{
+  "name": "mail_bot_odooclaw",
+  "version": "0.0.1",
+  "description": "runonweb AI integration for Odoo webclient",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild mail_bot_odooclaw/static/src/js/runonweb_bundle.js --bundle --outfile=mail_bot_odooclaw/static/src/js/runonweb_bundle.js --format=esm --minify --target=chrome89,firefox89,safari15",
+    "build:dev": "esbuild mail_bot_odooclaw/static/src/js/runonweb_bundle.js --bundle --outfile=mail_bot_odooclaw/static/src/js/runonweb_bundle.js --format=esm --sourcemap",
+    "test": "echo 'No JS tests yet'"
+  },
+  "dependencies": {
+    "runonweb": "0.0.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

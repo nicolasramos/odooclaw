@@ -1,0 +1,41 @@
+/**
+ * @module generation/parameters
+ */
+
+/**
+ * @typedef {Object} GenerationFunctionParametersBase
+ * @property {import('../utils/tensor.js').Tensor} [inputs=null] (`Tensor` of varying shape depending on the modality, *optional*):
+ * The sequence used as a prompt for generation or as model inputs to the encoder. If `null`, the
+ * method initializes it with `bos_token_id` and a batch size of 1. For decoder-only models `inputs`
+ * should be in the format of `input_ids`. For encoder-decoder models *inputs* can represent any of
+ * `input_ids`, `input_values`, `input_features`, or `pixel_values`.
+ * @property {import('./configuration_utils.js').GenerationConfig} [generation_config=null] (`GenerationConfig`, *optional*):
+ * The generation configuration to use as the base parameters for the generation call.
+ * `**kwargs` passed to generate that match attributes of `generation_config` will override them.
+ * If `generation_config` is not provided, the default is used, with the following loading
+ * priority:
+ * - (1) from the `generation_config.json` model file, if it exists;
+ * - (2) from the model configuration. Unspecified parameters inherit the default values documented by `GenerationConfig`.
+ * @property {import('./logits_process.js').LogitsProcessorList} [logits_processor=null] (`LogitsProcessorList`, *optional*):
+ * Custom logits processors that complement the default logits processors built from arguments and
+ * the generation config. If a logits processor duplicates one already created from the arguments or
+ * generation config, an error is thrown. This feature is intended for advanced users.
+ * @property {import('./stopping_criteria.js').StoppingCriteria|import('./stopping_criteria.js').StoppingCriteria[]|import('./stopping_criteria.js').StoppingCriteriaList} [stopping_criteria=null] (`StoppingCriteriaList`, *optional*):
+ * Custom stopping criteria that complement the default stopping criteria built from arguments and the
+ * generation config. If a stopping criterion duplicates one already created from the arguments or
+ * generation config, an error is thrown. This feature is intended for advanced users.
+ * @property {import('./streamers.js').BaseStreamer} [streamer=null] (`BaseStreamer`, *optional*):
+ * Streamer object used to stream the generated sequences. Generated tokens are passed
+ * through `streamer.put(token_ids)` and the streamer is responsible for any further processing.
+ * @property {number[]|import('../utils/tensor.js').Tensor} [decoder_input_ids=null] (`number[]` or `Tensor`, *optional*):
+ * If the model is an encoder-decoder model, this argument is used to pass the `decoder_input_ids`.
+ * @property {import('../cache_utils.js').DynamicCache | null} [past_key_values=null] (`DynamicCache`, *optional*):
+ * A cache object that stores previously computed key/value states. When provided, the model will
+ * use these cached states to avoid recomputing them, significantly speeding up sequential generation.
+ */
+
+/**
+ * @typedef {GenerationFunctionParametersBase & Partial<import('./configuration_utils.js').GenerationConfig> & {[key: string]: unknown}} GenerationFunctionParameters
+ */
+
+export {}; // Ensure this file is treated as a module

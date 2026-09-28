@@ -1,0 +1,289 @@
+/**
+ * @file Global configuration for the library. Mutate fields on the exported
+ * `env` object at startup to change where models are loaded from, how files
+ * are cached, and how verbose logging is.
+ *
+ * **Example:** Load models from your own server and disable remote downloads.
+ * ```javascript
+ * import { env } from '@huggingface/transformers';
+ * env.allowRemoteModels = false;
+ * env.localModelPath = '/path/to/local/models/';
+ * ```
+ *
+ * **Example:** Point the filesystem cache at a custom directory (Node.js).
+ * ```javascript
+ * import { env } from '@huggingface/transformers';
+ * env.cacheDir = '/path/to/cache/directory/';
+ * ```
+ *
+ * @module env
+ */
+
+import fs from 'node:fs';
+import path from 'node:path';
+import url from 'node:url';
+
+const VERSION = '4.3.0';
+
+const HAS_SELF = typeof self !== 'undefined';
+
+const IS_FS_AVAILABLE = !isEmpty(fs);
+const IS_PATH_AVAILABLE = !isEmpty(path);
+const IS_WEB_CACHE_AVAILABLE = HAS_SELF && 'caches' in self;
+
+// Runtime detection
+const IS_DENO_RUNTIME = typeof globalThis.Deno !== 'undefined';
+const IS_BUN_RUNTIME = typeof globalThis.Bun !== 'undefined';
+
+const IS_DENO_WEB_RUNTIME = IS_DENO_RUNTIME && IS_WEB_CACHE_AVAILABLE && !IS_FS_AVAILABLE;
+
+const IS_PROCESS_AVAILABLE = typeof process !== 'undefined';
+const IS_NODE_ENV = IS_PROCESS_AVAILABLE && process?.release?.name === 'node' && !IS_DENO_WEB_RUNTIME;
+
+// Check if various APIs are available (depends on environment)
+const IS_BROWSER_ENV = typeof window !== 'undefined' && typeof window.document !== 'undefined';
+const IS_WEBWORKER_ENV =
+    HAS_SELF &&
+    ['DedicatedWorkerGlobalScope', 'ServiceWorkerGlobalScope', 'SharedWorkerGlobalScope'].includes(
+        self.constructor?.name,
+    );
+const IS_WEB_ENV = IS_BROWSER_ENV || IS_WEBWORKER_ENV || IS_DENO_WEB_RUNTIME;
+
+const IS_WEBGPU_AVAILABLE = IS_NODE_ENV || (typeof navigator !== 'undefined' && 'gpu' in navigator);
+const IS_WEBNN_AVAILABLE = typeof navigator !== 'undefined' && 'ml' in navigator;
+const IS_CRYPTO_AVAILABLE = typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function';
+
+const IS_CHROME_AVAILABLE =
+    // @ts-ignore - chrome may not exist in all environments
+    typeof chrome !== 'undefined' && typeof chrome.runtime !== 'undefined' && typeof chrome.runtime.id === 'string';
+
+const IS_SERVICE_WORKER_ENV =
+    // @ts-ignore - ServiceWorkerGlobalScope may not exist in all environments
+    typeof ServiceWorkerGlobalScope !== 'undefined' && HAS_SELF && self instanceof ServiceWorkerGlobalScope;
+
+/**
+ * Check whether the current environment is a Safari browser older than version 26 (Safari >= 26 enables WebGPU by default).
+ * @returns {boolean} Whether the current environment is Safari older than version 26.
+ */
+const isSafariBelow26 = () => {
+    if (typeof navigator === 'undefined') {
+        return false;
+    }
+
+    const userAgent = navigator.userAgent;
+
+    // Safari has "Apple" in its vendor string. Exclude Chrome on iOS (CriOS),
+    // Firefox on iOS (FxiOS), Edge on iOS (EdgiOS), and other browsers.
+    const isSafari =
+        (navigator.vendor || '').indexOf('Apple') > -1 &&
+        !userAgent.match(/CriOS|FxiOS|EdgiOS|OPiOS|mercury|brave/i) &&
+        !userAgent.includes('Chrome') &&
+        !userAgent.includes('Android');
+    if (!isSafari) {
+        return false;
+    }
+
+    // Safari reports its version via the "Version/<major>.<minor>" token in the user agent.
+    // If the version is missing/unparseable, assume a modern Safari (i.e. not below 26).
+    const match = userAgent.match(/Version\/(\d+)/);
+    return match ? parseInt(match[1], 10) < 26 : false;
+};
+const IS_SAFARI_BELOW_26 = isSafariBelow26();
+
+/**
+ * A read-only object containing information about the APIs available in the current environment.
+ */
+export const apis = Object.freeze({
+    /** Whether we are running in a browser environment (and not a web worker) */
+    IS_BROWSER_ENV,
+
+    /** Whether we are running in a web worker environment */
+    IS_WEBWORKER_ENV,
+
+    /** Whether we are running in a web-like environment (browser, web worker, or Deno web runtime) */
+    IS_WEB_ENV,
+
+    /** Whether we are running in a service worker environment */
+    IS_SERVICE_WORKER_ENV,
+
+    /** Whether we are running in Deno's web runtime (CDN imports, Cache API available, no filesystem) */
+    IS_DENO_WEB_RUNTIME,
+
+    /** Whether the Cache API is available */
+    IS_WEB_CACHE_AVAILABLE,
+
+    /** Whether the WebGPU API is available */
+    IS_WEBGPU_AVAILABLE,
+
+    /** Whether the WebNN API is available */
+    IS_WEBNN_AVAILABLE,
+
+    /** Whether we are running in a Safari browser older than version 26. */
+    IS_SAFARI_BELOW_26,
+
+    /** Whether the Node.js process API is available */
+    IS_PROCESS_AVAILABLE,
+
+    /** Whether we are running in a Node.js-like environment (node, deno, bun) */
+    IS_NODE_ENV,
+
+    /** Whether the filesystem API is available */
+    IS_FS_AVAILABLE,
+
+    /** Whether the path API is available */
+    IS_PATH_AVAILABLE,
+
+    /** Whether the crypto API is available */
+    IS_CRYPTO_AVAILABLE,
+
+    /** Whether the Chrome runtime API is available */
+    IS_CHROME_AVAILABLE,
+});
+
+const RUNNING_LOCALLY = IS_FS_AVAILABLE && IS_PATH_AVAILABLE;
+
+let dirname__ = './';
+if (RUNNING_LOCALLY) {
+    const _import_meta_url = import.meta.url;
+
+    if (_import_meta_url) {
+        dirname__ = path.dirname(path.dirname(url.fileURLToPath(_import_meta_url))); // ESM
+    } else if (typeof __dirname !== 'undefined') {
+        dirname__ = path.dirname(__dirname); // CommonJS
+    }
+}
+
+// Only used for environments with access to file system
+const DEFAULT_CACHE_DIR = RUNNING_LOCALLY ? path.join(dirname__, '/.cache/') : null;
+
+// Set local model path, based on available APIs
+const DEFAULT_LOCAL_MODEL_PATH = '/models/';
+const localModelPath = RUNNING_LOCALLY ? path.join(dirname__, DEFAULT_LOCAL_MODEL_PATH) : DEFAULT_LOCAL_MODEL_PATH;
+
+// Ensure default fetch is called with the correct receiver in browser environments.
+const DEFAULT_FETCH = typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined;
+
+/**
+ * Log-level enum. Assign to `env.logLevel` to control how verbose the library
+ * is. Higher values silence more: `DEBUG` (10) surfaces everything,
+ * `NONE` (50) suppresses all output. Default is `WARNING` (30).
+ *
+ * | Level     | Value | Shows                                     |
+ * |-----------|-------|-------------------------------------------|
+ * | `DEBUG`   | 10    | Every message, including debug traces.    |
+ * | `INFO`    | 20    | Errors, warnings, and info messages.      |
+ * | `WARNING` | 30    | Errors and warnings.                      |
+ * | `ERROR`   | 40    | Only errors.                              |
+ * | `NONE`    | 50    | Nothing.                                  |
+ *
+ * ```javascript
+ * import { env, LogLevel } from '@huggingface/transformers';
+ * env.logLevel = LogLevel.ERROR;
+ * ```
+ */
+export const LogLevel = Object.freeze({
+    /** All messages including debug output (value: 10) */
+    DEBUG: 10,
+    /** Errors, warnings, and info messages (value: 20) */
+    INFO: 20,
+    /** Errors and warnings (value: 30) */
+    WARNING: 30,
+    /** Only error messages (value: 40) */
+    ERROR: 40,
+    /** No logging output (value: 50) */
+    NONE: 50,
+});
+
+/**
+ * Shape of the `env` object. Every field is mutable.
+ * @typedef {Object} TransformersEnvironment
+ * @property {string} version This version of Transformers.js.
+ * @property {{onnx: Partial<import('onnxruntime-common').Env> & { setLogLevel?: (logLevel: number) => void }}} backends Exposes backend environment settings that users can override.
+ * @property {number} logLevel The logging level. Use LogLevel enum values. Defaults to LogLevel.WARNING.
+ * @property {boolean} allowRemoteModels Whether to allow loading of remote files, defaults to `true`.
+ * If set to `false`, it will have the same effect as setting `local_files_only=true` when loading pipelines, models, tokenizers, processors, etc.
+ * @property {string} remoteHost Host URL to load models from. Defaults to the Hugging Face Hub.
+ * @property {string} remotePathTemplate Path template to fill in and append to `remoteHost` when loading models.
+ * @property {boolean} allowLocalModels Whether to allow loading of local files, defaults to `false` if running in-browser, and `true` otherwise.
+ * If set to `false`, it will skip the local file check and try to load the model from the remote host.
+ * @property {string} localModelPath Path to load local models from. By default, it is `/models/` relative to the library's installed location when a file system is available (e.g., Node.js), and the `/models/` URL path otherwise (e.g., browsers).
+ * @property {boolean} useFS Whether to use the file system to load files. By default, it is `true` if available.
+ * @property {boolean} useBrowserCache Whether to use Cache API to cache models. By default, it is `true` if available.
+ * @property {boolean} useFSCache Whether to use the file system to cache files. By default, it is `true` if available.
+ * @property {string|null} cacheDir The directory to use for caching files with the file system. By default, it is `.cache` relative to the library's installed location when a file system is available (e.g., Node.js), and `null` otherwise (e.g., browsers).
+ * @property {boolean} useCustomCache Whether to use a custom cache system (defined by `customCache`), defaults to `false`.
+ * @property {import('./utils/cache.js').CacheInterface|null} customCache The custom cache to use. Defaults to `null`. This must be an object that
+ * implements the `match` and `put` functions of the Web Cache API. For more information, see https://developer.mozilla.org/en-US/docs/Web/API/Cache.
+ * @property {boolean} useWasmCache Whether to pre-load and cache WASM binaries and the WASM factory (.mjs) for ONNX Runtime.
+ * Defaults to `true` when cache is available. This can improve performance and enables offline usage by avoiding repeated downloads.
+ * @property {string} cacheKey The cache key to use for storing models and WASM binaries. Defaults to `transformers-cache`.
+ * @property {boolean} experimental_useCrossOriginStorage Whether to use the Cross-Origin Storage API to cache model files
+ * across origins, allowing different sites to share the same cached model weights. Defaults to `false`.
+ * Requires the Cross-Origin Storage Chrome extension: {@link https://chromewebstore.google.com/detail/cross-origin-storage/denpnpcgjgikjpoglpjefakmdcbmlgih}.
+ * The `experimental_` prefix indicates that the underlying browser API is not yet standardized and may change or be
+ * removed without a major version bump. For more information, see {@link https://github.com/WICG/cross-origin-storage}.
+ * @property {(input: string | URL, init?: any) => Promise<any>} fetch The fetch function to use. Defaults to `fetch`.
+ */
+
+let logLevel = LogLevel.WARNING; // Default log level
+/**
+ * The global configuration object. See `TransformersEnvironment` below for the
+ * full set of fields.
+ * @type {TransformersEnvironment}
+ */
+export const env = {
+    version: VERSION,
+
+    /////////////////// Backends settings ///////////////////
+    // NOTE: These will be populated later by the backends themselves.
+    backends: {
+        // onnxruntime-web/onnxruntime-node
+        onnx: {},
+    },
+
+    /////////////////// Logging settings ///////////////////
+    get logLevel() {
+        return logLevel;
+    },
+    set logLevel(level) {
+        logLevel = level;
+
+        // invoke hook to set ONNX Runtime log level when Transformers.js log level changes
+        env.backends.onnx?.setLogLevel?.(level);
+    },
+    /////////////////// Model settings ///////////////////
+    allowRemoteModels: true,
+    remoteHost: 'https://huggingface.co/',
+    remotePathTemplate: '{model}/resolve/{revision}/',
+
+    allowLocalModels: !(IS_BROWSER_ENV || IS_WEBWORKER_ENV || IS_DENO_WEB_RUNTIME), // Default to true for non-web environments, false for web environments
+    localModelPath: localModelPath,
+    useFS: IS_FS_AVAILABLE,
+
+    /////////////////// Cache settings ///////////////////
+    useBrowserCache: IS_WEB_CACHE_AVAILABLE,
+
+    useFSCache: IS_FS_AVAILABLE,
+    cacheDir: DEFAULT_CACHE_DIR,
+
+    useCustomCache: false,
+    customCache: null,
+
+    useWasmCache: IS_WEB_CACHE_AVAILABLE || IS_FS_AVAILABLE,
+    cacheKey: 'transformers-cache',
+
+    experimental_useCrossOriginStorage: false,
+
+    /////////////////// Custom fetch /////////////////////
+    fetch: DEFAULT_FETCH,
+
+    //////////////////////////////////////////////////////
+};
+
+/**
+ * @param {Object} obj
+ * @private
+ */
+function isEmpty(obj) {
+    return Object.keys(obj).length === 0;
+}

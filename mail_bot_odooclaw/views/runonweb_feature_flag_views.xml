@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_runonweb_feature_flag_tree" model="ir.ui.view">
+        <field name="name">runonweb.feature.flag.tree</field>
+        <field name="model">runonweb.feature.flag</field>
+        <field name="arch" type="tree">
+            <field name="sequence" widget="handle"/>
+            <field name="name"/>
+            <field name="module_id"/>
+            <field name="feature_type"/>
+            <field name="field_id"/>
+            <field name="user_ids" widget="many2many_tags"/>
+            <field name="active"/>
+        </field>
+    </record>
+
+    <record id="view_runonweb_feature_flag_form" model="ir.ui.view">
+        <field name="name">runonweb.feature.flag.form</field>
+        <field name="model">runonweb.feature.flag</field>
+        <field name="arch" type="form">
+            <group>
+                <field name="name"/>
+                <field name="sequence"/>
+                <field name="module_id"/>
+                <field name="feature_type"/>
+                <field name="field_id"/>
+                <field name="user_ids" widget="many2many_tags"/>
+                <field name="active"/>
+            </group>
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,218 @@
+/**
+ * @module pipelines
+ */
+
+import { Pipeline } from './_base.js';
+
+import { Tensor } from '../utils/tensor.js';
+import { pick } from '../utils/core.js';
+
+/**
+ * @typedef {import('./_base.js').TextPipelineConstructorArgs} TextPipelineConstructorArgs
+ * @typedef {import('./_base.js').Disposable} Disposable
+ * @typedef {import('../tokenization_utils.js').Message[]} Chat
+ */
+
+function isChat(x) {
+    return Array.isArray(x) && x.every((x) => 'role' in x && 'content' in x);
+}
+
+/**
+ * @typedef {Object} TextGenerationSingleString
+ * @property {string} generated_text The generated text.
+ * @typedef {TextGenerationSingleString[]} TextGenerationStringOutput
+ *
+ * @typedef {Object} TextGenerationSingleChat
+ * @property {Chat} generated_text The generated chat.
+ * @typedef {TextGenerationSingleChat[]} TextGenerationChatOutput
+ *
+ * @typedef {TextGenerationSingleString | TextGenerationSingleChat} TextGenerationSingle
+ * @typedef {TextGenerationSingle[]} TextGenerationOutput
+ *
+ * @typedef {Object} TextGenerationSpecificParams Parameters specific to text-generation pipelines.
+ * @property {boolean} [add_special_tokens] Whether to add special tokens when tokenizing the sequences.
+ * @property {boolean} [return_full_text=true] If set to `false` only added text is returned, otherwise the full text is returned.
+ * @property {Object[]|null} [tools=null] A list of tools to expose to chat templates that support tool use.
+ * @property {Record<string, string>[]|null} [documents=null] A list of documents to expose to chat templates that support RAG.
+ * @property {string|null} [chat_template=null] A specific chat template (or template name) to apply.
+ * @property {Object} [tokenizer_encode_kwargs] Additional keyword arguments to pass along to the encoding step of the tokenizer.
+ * If the text input is a chat, it is passed to `apply_chat_template`. Otherwise, it is passed to the tokenizer's call function.
+ * @typedef {import('../generation/parameters.js').GenerationFunctionParameters & TextGenerationSpecificParams} TextGenerationConfig
+ *
+ * @typedef {TextPipelineConstructorArgs & TextGenerationPipelineCallback & Disposable} TextGenerationPipelineType
+ */
+
+/**
+ * @template T
+ * @typedef {T extends string ? TextGenerationStringOutput : T extends Chat ? TextGenerationChatOutput : T extends string[] ? TextGenerationStringOutput[] : T extends Chat[] ? TextGenerationChatOutput[] : never} TextGenerationResult
+ */
+
+/**
+ * @typedef {<T extends string | Chat | string[] | Chat[]>(texts: T, options?: Partial<TextGenerationConfig>) => Promise<TextGenerationResult<T>>} TextGenerationPipelineCallback
+ */
+
+/**
+ * Language generation pipeline using compatible causal language models.
+ * This pipeline predicts the words that will follow a specified text prompt.
+ * For all generation parameters, see `GenerationConfig`.
+ *
+ * **Example:** Text generation with `onnx-community/SmolLM2-135M-ONNX` (default settings).
+ * ```javascript
+ * import { pipeline } from '@huggingface/transformers';
+ *
+ * const generator = await pipeline('text-generation', 'onnx-community/SmolLM2-135M-ONNX');
+ * const text = 'Once upon a time,';
+ * const output = await generator(text, { max_new_tokens: 8 });
+ * // [{ generated_text: 'Once upon a time, there was a little girl named Lily.' }]
+ * ```
+ *
+ * **Example:** Chat completion with `onnx-community/Qwen3-0.6B-ONNX`.
+ * ```javascript
+ * import { pipeline, TextStreamer } from '@huggingface/transformers';
+ *
+ * // Create a text generation pipeline
+ * const generator = await pipeline(
+ *   'text-generation',
+ *   'onnx-community/Qwen3-0.6B-ONNX',
+ *   { dtype: 'q4f16' },
+ * );
+ *
+ * // Define the list of messages
+ * const messages = [
+ *   { role: 'system', content: 'You are a helpful assistant.' },
+ *   { role: 'user', content: 'Write me a poem about Machine Learning.' },
+ * ];
+ *
+ * // Generate a response
+ * const output = await generator(messages, {
+ *   max_new_tokens: 512,
+ *   do_sample: false,
+ *   streamer: new TextStreamer(generator.tokenizer, { skip_prompt: true, skip_special_tokens: true }),
+ * });
+ * console.log(output[0].generated_text.at(-1)?.content);
+ * ```
+ */
+export class TextGenerationPipeline
+    extends /** @type {new (options: TextPipelineConstructorArgs) => TextGenerationPipelineType} */ (Pipeline)
+{
+    _default_generation_config = {
+        max_new_tokens: 256,
+        // do_sample: true,
+        // temperature: 0.7,
+    };
+
+    /**
+     * @param {string | string[] | import('../tokenization_utils.js').Message[] | import('../tokenization_utils.js').Message[][]} texts
+     * @param {Partial<TextGenerationConfig>} generate_kwargs
+     */
+    async _call(texts, generate_kwargs = {}) {
+        const {
+            add_special_tokens: add_special_tokens_arg,
+            return_full_text: return_full_text_arg,
+            tools,
+            documents,
+            chat_template,
+            tokenizer_encode_kwargs,
+            ...generation_kwargs
+        } = generate_kwargs;
+
+        let isBatched = false;
+        let isChatInput = false;
+
+        // By default, do not add special tokens, unless the tokenizer specifies otherwise
+        let add_special_tokens =
+            add_special_tokens_arg ?? (this.tokenizer.add_bos_token || this.tokenizer.add_eos_token) ?? false;
+
+        let tokenizer_kwargs = tokenizer_encode_kwargs;
+
+        // Normalize inputs
+        /** @type {string[]} */
+        let inputs;
+        if (typeof texts === 'string') {
+            inputs = texts = [texts];
+        } else if (Array.isArray(texts) && texts.every((x) => typeof x === 'string')) {
+            isBatched = true;
+            inputs = /** @type {string[]} */ (texts);
+        } else {
+            if (isChat(texts)) {
+                texts = [/** @type {Chat} */ (texts)];
+            } else if (Array.isArray(texts) && texts.every(isChat)) {
+                isBatched = true;
+            } else {
+                throw new Error('Input must be a string, an array of strings, a Chat, or an array of Chats');
+            }
+            isChatInput = true;
+
+            // If the input is a chat, we need to apply the chat template
+            const chat_template_kwargs = {
+                tokenize: false,
+                add_generation_prompt: true,
+                ...pick({ tools, documents, chat_template }, ['tools', 'documents', 'chat_template']),
+                ...tokenizer_kwargs,
+            };
+
+            inputs = /** @type {string[]} */ (
+                /** @type {Chat[]} */ (texts).map(
+                    (x) =>
+                        /** @type {string} */ (
+                            /** @type {unknown} */ (this.tokenizer.apply_chat_template(x, chat_template_kwargs))
+                        ),
+                )
+            );
+            // Chat template handles these already
+            add_special_tokens = false;
+            tokenizer_kwargs = undefined;
+        }
+
+        // By default, return full text
+        const return_full_text = isChatInput ? false : (return_full_text_arg ?? true);
+
+        this.tokenizer.padding_side = 'left';
+        const text_inputs = this.tokenizer(inputs, {
+            add_special_tokens,
+            padding: true,
+            truncation: true,
+            ...tokenizer_kwargs,
+        });
+
+        const outputTokenIds = /** @type {Tensor} */ (
+            await this.model.generate({
+                ...text_inputs,
+                ...this._default_generation_config,
+                ...generation_kwargs,
+            })
+        );
+
+        const decoded = this.tokenizer.batch_decode(outputTokenIds, {
+            skip_special_tokens: true,
+        });
+
+        let promptLengths;
+        if (!return_full_text && text_inputs.input_ids.dims.at(-1) > 0) {
+            promptLengths = this.tokenizer
+                .batch_decode(text_inputs.input_ids, {
+                    skip_special_tokens: true,
+                })
+                .map((x) => x.length);
+        }
+
+        /** @type {TextGenerationOutput[]} */
+        const toReturn = Array.from({ length: texts.length }, (_) => []);
+        for (let i = 0; i < decoded.length; ++i) {
+            const textIndex = Math.floor((i / outputTokenIds.dims[0]) * texts.length);
+
+            if (promptLengths) {
+                // Trim the decoded text to only include the generated part
+                decoded[i] = decoded[i].slice(promptLengths[textIndex]);
+            }
+            toReturn[textIndex].push(
+                /** @type {TextGenerationSingle} */ ({
+                    generated_text: isChatInput
+                        ? [.../** @type {Chat[]} */ (texts)[textIndex], { role: 'assistant', content: decoded[i] }]
+                        : decoded[i],
+                }),
+            );
+        }
+        return !isBatched && toReturn.length === 1 ? toReturn[0] : toReturn;
+    }
+}

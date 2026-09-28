@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- runonweb.settings form view -->
+    <record id="view_runonweb_settings_form" model="ir.ui.view">
+        <field name="name">runonweb.settings.form</field>
+        <field name="model">runonweb.settings</field>
+        <field name="arch" type="form">
+            <group>
+                <field name="runonweb_version"/>
+                <field name="default_device"/>
+            </group>
+            <group string="Feature toggles">
+                <field name="enable_stt"/>
+                <field name="enable_ocr"/>
+                <field name="enable_embed"/>
+            </group>
+            <group>
+                <field name="model_cache_dir" readonly="1"/>
+            </group>
+            <footer>
+                <button name="action_save" string="Save" type="object" class="btn-primary"/>
+                <button string="Discard" class="btn-secondary" special="cancel"/>
+            </footer>
+        </field>
+    </record>
+
+    <!-- runonweb.feature.flag tree and form views -->
+    <record id="view_runonweb_feature_flag_tree" model="ir.ui.view">
+        <field name="name">runonweb.feature.flag.tree</field>
+        <field name="model">runonweb.feature.flag</field>
+        <field name="arch" type="tree">
+            <field name="sequence" widget="handle"/>
+            <field name="name"/>
+            <field name="module_id"/>
+            <field name="feature_type"/>
+            <field name="field_id"/>
+            <field name="active"/>
+        </field>
+    </record>
+
+    <record id="view_runonweb_feature_flag_form" model="ir.ui.view">
+        <field name="name">runonweb.feature.flag.form</field>
+        <field name="model">runonweb.feature.flag</field>
+        <field name="arch" type="form">
+            <group>
+                <field name="name"/>
+                <field name="sequence"/>
+                <field name="module_id"/>
+                <field name="feature_type"/>
+                <field name="field_id"/>
+                <field name="user_ids" widget="many2many_tags"/>
+                <field name="active"/>
+            </group>
+        </field>
+    </record>
+
+    <!-- Menu items -->
+    <menuitem id="menu_runonweb_root" name="runonweb" parent="mail.menu_mail_config_root"
+              sequence="99" web_icon="mail_bot_odooclaw,static/description/icon.png"/>
+
+    <menuitem id="menu_runonweb_settings" name="Settings" parent="menu_runonweb_root"
+              action="action_runonweb_settings"/>
+
+    <menuitem id="menu_runonweb_feature_flags" name="Feature Flags" parent="menu_runonweb_root"
+              action="action_runonweb_feature_flags"/>
+
+    <!-- Actions -->
+    <record id="action_runonweb_settings" model="ir.actions.act_window">
+        <field name="name">runonweb Settings</field>
+        <field name="res_model">runonweb.settings</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <record id="action_runonweb_feature_flags" model="ir.actions.act_window">
+        <field name="name">runonweb Feature Flags</field>
+        <field name="res_model">runonweb.feature.flag</field>
+        <field name="view_mode">tree,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Create your first feature flag.
+            </p>
+        </field>
+    </record>
+</odoo>
