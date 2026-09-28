@@ -1,9 +1,10 @@
 """Tests for mail_bot_odooclaw module."""
 # © 2026 Nicolás Ramos — MIT License
 from odoo.tests import TransactionCase, tagged
+from odoo.tools import mute_logger
 
 
-@tagged("-standard", "mail_bot_odooclaw")
+@tagged("mail_bot_odooclaw")
 class TestRunonwebSettings(TransactionCase):
     """Test runonweb.settings model."""
 
@@ -52,7 +53,7 @@ class TestRunonwebSettings(TransactionCase):
         self.assertEqual(result["default_device"], "wasm")
 
 
-@tagged("-standard", "mail_bot_odooclaw")
+@tagged("mail_bot_odooclaw")
 class TestRunonwebFeatureFlag(TransactionCase):
     """Test runonweb.feature.flag model."""
 
@@ -125,15 +126,16 @@ class TestRunonwebFeatureFlag(TransactionCase):
                 "field_id": field.id if field else False,
             }
         )
-        with self.assertRaises(Exception):
-            self.Flag.create(
-                {
-                    "name": "Flag 2",
-                    "module_id": self.module.id,
-                    "feature_type": "stt",
-                    "field_id": field.id if field else False,
-                }
-            )
+        with mute_logger("odoo.sql_db"):
+            with self.assertRaises(Exception):
+                self.Flag.create(
+                    {
+                        "name": "Flag 2",
+                        "module_id": self.module.id,
+                        "feature_type": "stt",
+                        "field_id": field.id if field else False,
+                    }
+                )
 
     def test_05_stt_requires_text_field(self):
         """Test that STT requires a text-compatible field."""
@@ -142,15 +144,16 @@ class TestRunonwebFeatureFlag(TransactionCase):
             [("model", "=", "ir.attachment"), ("name", "=", "datas")], limit=1
         )
         if binary_field:
-            with self.assertRaises(Exception):
-                self.Flag.create(
-                    {
-                        "name": "Invalid STT",
-                        "module_id": self.module.id,
-                        "feature_type": "stt",
-                        "field_id": binary_field.id,
-                    }
-                )
+            with mute_logger("odoo.sql_db"):
+                with self.assertRaises(Exception):
+                    self.Flag.create(
+                        {
+                            "name": "Invalid STT",
+                            "module_id": self.module.id,
+                            "feature_type": "stt",
+                            "field_id": binary_field.id,
+                        }
+                    )
 
     def test_06_feature_flag_ordering(self):
         """Test that feature flags are ordered by sequence."""

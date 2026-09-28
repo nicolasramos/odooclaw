@@ -31,6 +31,21 @@ class RunonwebFeatureFlag(models.Model):
         domain="[('ttype', 'in', ('text', 'html', 'char'))]",
         help="Leave empty to enable for all text fields in the module.",
     )
+    field_ref = fields.Char(
+        string="Field reference",
+        compute="_compute_field_ref",
+        help="Technical 'model.name' reference used by the JS feature resolver.",
+    )
+
+    @api.depends("field_id")
+    def _compute_field_ref(self):
+        for rec in self:
+            rec.field_ref = (
+                "%s.%s" % (rec.field_id.model, rec.field_id.name)
+                if rec.field_id
+                else False
+            )
+
     user_ids = fields.Many2many(
         "res.users",
         string="Allowed users",
