@@ -33,3 +33,6 @@ browser_extension/dist/*.zip
 # Internal planning docs
 docs/slices/
 .atl/
+
+# Node dependencies (build-time only; the compiled bundle is what ships)
+node_modules/
