@@ -173,13 +173,14 @@
 
     function getWebGPUStatus(bridge) {
         try {
-            const device = bridge.getDevice();
+            // getDevice() returns a string like "webgpu" or "wasm"
+            const device = bridge.getDevice ? bridge.getDevice() : "unknown";
             const isWebGPU = device === "webgpu";
             return {
                 available: true,
                 isWebGPU,
                 gpuName: null,
-                type: isWebGPU ? "webgpu" : device || "unknown",
+                type: isWebGPU ? "webgpu" : (typeof device === "string" ? device : "unknown"),
             };
         } catch {
             return { available: false, isWebGPU: false, gpuName: null, type: "unknown" };
@@ -219,15 +220,25 @@
         async init(settings) {
             if (this._ready) return;
 
-            // Fail-closed gating
+            // Get the bridge from Stage 1 (with retry)
+            let bridge = window.runonwebBridge;
+            if (!bridge) {
+                await new Promise((r) => setTimeout(r, 100));
+                bridge = window.runonwebBridge;
+            }
+            if (!bridge) {
+                console.warn("[embed] runonwebBridge not available");
+                return;
+            }
+
+            // Fail-closed gating via bridge API
             const enableEmbed =
                 settings && typeof settings.enable_embed === "boolean"
                     ? settings.enable_embed
-                    : false;
-            const featureEnabled =
-                typeof window.isFeatureEnabled === "function"
-                    ? window.isFeatureEnabled("embed")
-                    : false;
+                    : bridge.settings?.enable_embed ?? false;
+            const featureEnabled = bridge.isFeatureEnabled
+                ? bridge.isFeatureEnabled("embed")
+                : false;
 
             if (!enableEmbed || !featureEnabled) {
                 console.warn(
@@ -236,18 +247,6 @@
                         ", isFeatureEnabled=" +
                         featureEnabled
                 );
-                return;
-            }
-
-            // Get the bridge from Stage 1
-            let bridge = window.runonwebBridge;
-            if (!bridge) {
-                // Retry once in case the bridge hasn't booted yet
-                await new Promise((r) => setTimeout(r, 100));
-                bridge = window.runonwebBridge;
-            }
-            if (!bridge) {
-                console.warn("[embed] runonwebBridge not available");
                 return;
             }
 

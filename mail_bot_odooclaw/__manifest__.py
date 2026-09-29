@@ -19,6 +19,7 @@
             "mail_bot_odooclaw/static/src/js/stt_dictado.js",
             "mail_bot_odooclaw/static/src/js/runonweb_bundle.js",
             "mail_bot_odooclaw/static/src/js/embed_semantic_search.js",
+            "mail_bot_odooclaw/static/src/js/embed_consumer.js",
         ],
     },
     "installable": True,
