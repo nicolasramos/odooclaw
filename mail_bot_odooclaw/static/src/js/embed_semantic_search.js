@@ -200,22 +200,23 @@
     async function getWebGPUStatus() {
         const bridge = window.runonwebBridge;
         if (!bridge || !bridge.getDevice) {
-            return { available: false, isWebGPU: false };
+            return { available: false, isWebGPU: false, gpuName: null, type: "unknown" };
         }
         try {
             const device = await bridge.getDevice();
             if (!device) {
-                return { available: false, isWebGPU: false };
+                return { available: false, isWebGPU: false, gpuName: null, type: "unknown" };
             }
-            const isWebGPU = device.type === "webgpu";
+            // getDevice() returns a string: "webgpu" or "wasm"
+            const isWebGPU = device === "webgpu";
             return {
                 available: true,
                 isWebGPU,
-                gpuName: device.name || null,
-                type: device.type || "unknown",
+                gpuName: null,
+                type: device,
             };
         } catch (err) {
-            return { available: false, isWebGPU: false };
+            return { available: false, isWebGPU: false, gpuName: null, type: "unknown" };
         }
     }
 
