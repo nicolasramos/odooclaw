@@ -16,7 +16,7 @@
  * Modelo default: onnx-community/whisper-tiny (multilingüe, ~75 MB)
  * Alternativas: onnx-community/whisper-base, onnx-community/whisper-small
  */
-import { log } from "@web/utils/logger";
+// No logger module in Odoo 17/18 — use console directly
 
 // ──────────────────────────────────────────────────────────────────────────
 // 0. Configuración
@@ -79,7 +79,7 @@ export class DictationService {
 
         this._sttInstance = new SttBridge({ model: STT_MODEL_ID });
         await this._sttInstance.load();
-        log.info(`[runonweb] STT model ${STT_MODEL_ID} loaded`);
+        console.info(`[runonweb] STT model ${STT_MODEL_ID} loaded`);
     }
 
     /**
@@ -105,11 +105,11 @@ export class DictationService {
             this._mediaRecorder.start();
             this.state = DictationState.LISTENING;
             this._notify(DictationState.LISTENING);
-            log.info("[runonweb] Dictation recording started");
+            console.info("[runonweb] Dictation recording started");
         } catch (error) {
             this.state = DictationState.ERROR;
             this._notify(DictationState.ERROR, "", error.message);
-            log.error("[runonweb] Failed to start dictation recording:", error);
+            console.error("[runonweb] Failed to start dictation recording:", error);
             throw error;
         }
     }
@@ -149,12 +149,12 @@ export class DictationService {
 
                         this.state = DictationState.IDLE;
                         this._notify(DictationState.IDLE, result.text);
-                        log.info(`[runonweb] Dictation result: "${result.text}" (conf: ${result.confidence})`);
+                        console.info(`[runonweb] Dictation result: "${result.text}" (conf: ${result.confidence})`);
                         resolve(result.text);
                     } catch (error) {
                         this.state = DictationState.ERROR;
                         this._notify(DictationState.ERROR, "", error.message);
-                        log.error("[runonweb] Dictation transcription failed:", error);
+                        console.error("[runonweb] Dictation transcription failed:", error);
                         reject(error);
                     } finally {
                         this._isRecording = false;
@@ -167,7 +167,7 @@ export class DictationService {
         } catch (error) {
             this.state = DictationState.ERROR;
             this._notify(DictationState.ERROR, "", error.message);
-            log.error("[runonweb] Dictation error:", error);
+            console.error("[runonweb] Dictation error:", error);
             throw error;
         }
     }
@@ -189,7 +189,7 @@ export class DictationService {
         this._audioChunks = [];
         this.state = DictationState.IDLE;
         this._notify(DictationState.IDLE);
-        log.info("[runonweb] Dictation recording cancelled");
+        console.info("[runonweb] Dictation recording cancelled");
     }
 
     /**
@@ -238,7 +238,7 @@ export function initDiscussDictation(composerEl) {
         || composerEl.querySelector(".o-mail-Composer textarea")
         || composerEl.querySelector(".o-mail-Composer-input textarea");
     if (!textarea) {
-        log.warn("[runonweb] No textarea found in Discuss composer");
+        console.warn("[runonweb] No textarea found in Discuss composer");
         return;
     }
 
@@ -247,7 +247,7 @@ export function initDiscussDictation(composerEl) {
         || composerEl.querySelector(".o-mail-composer-footer")
         || composerEl.querySelector("[class*='footer']");
     if (!footer) {
-        log.warn("[runonweb] No footer found in Discuss composer");
+        console.warn("[runonweb] No footer found in Discuss composer");
         return;
     }
 
@@ -288,7 +288,7 @@ export function initDiscussDictation(composerEl) {
                 btn.className = "btn btn-sm btn-danger mail-bot-dictation-btn error";
                 btn.innerHTML = "❌";
                 btn.disabled = false;
-                log.error("[runonweb] Dictation error:", error);
+                console.error("[runonweb] Dictation error:", error);
                 break;
         }
     });
@@ -299,13 +299,13 @@ export function initDiscussDictation(composerEl) {
                 const text = await service.stopRecording();
                 // Text already inserted via listener
             } catch (e) {
-                log.error("[runonweb] Failed to stop dictation:", e);
+                console.error("[runonweb] Failed to stop dictation:", e);
             }
         } else {
             try {
                 await service.startRecording(textarea);
             } catch (e) {
-                log.error("[runonweb] Failed to start dictation:", e);
+                console.error("[runonweb] Failed to start dictation:", e);
             }
         }
     });
@@ -317,7 +317,7 @@ export function initDiscussDictation(composerEl) {
     composerEl._dictationService = service;
     composerEl._dictationBtn = btn;
 
-    log.info("[runonweb] Dictation button added to Discuss composer");
+    console.info("[runonweb] Dictation button added to Discuss composer");
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -377,7 +377,7 @@ export function initMarkedFieldDictation(fieldEl) {
                 btn.className = "btn btn-sm btn-danger mail-bot-dictation-btn error";
                 btn.innerHTML = "❌";
                 btn.disabled = false;
-                log.error("[runonweb] Dictation error:", error);
+                console.error("[runonweb] Dictation error:", error);
                 break;
         }
     });
@@ -387,13 +387,13 @@ export function initMarkedFieldDictation(fieldEl) {
             try {
                 await service.stopRecording();
             } catch (e) {
-                log.error("[runonweb] Failed to stop dictation:", e);
+                console.error("[runonweb] Failed to stop dictation:", e);
             }
         } else {
             try {
                 await service.startRecording(fieldEl);
             } catch (e) {
-                log.error("[runonweb] Failed to start dictation:", e);
+                console.error("[runonweb] Failed to start dictation:", e);
             }
         }
     });
@@ -402,7 +402,7 @@ export function initMarkedFieldDictation(fieldEl) {
     fieldEl._dictationService = service;
     fieldEl._dictationBtn = btn;
 
-    log.info(`[runonweb] Dictation button added to field: ${fieldEl.id || fieldEl.className}`);
+    console.info(`[runonweb] Dictation button added to field: ${fieldEl.id || fieldEl.className}`);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -416,7 +416,7 @@ function _insertTextAtCursor(textarea, text) {
     const newCursorPos = start + text.length;
     textarea.setSelectionRange(newCursorPos, newCursorPos);
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
-    log.info(`[runonweb] Text inserted at cursor: "${text}"`);
+    console.info(`[runonweb] Text inserted at cursor: "${text}"`);
 }
 
 function _insertTextIntoField(field, text) {
@@ -441,7 +441,7 @@ function _insertTextIntoField(field, text) {
             selection.addRange(range);
         }
     }
-    log.info(`[runonweb] Text inserted into field: "${text}"`);
+    console.info(`[runonweb] Text inserted into field: "${text}"`);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -475,7 +475,7 @@ export function patchMarkedFields() {
 // 8. Inicialización al cargar el webclient
 // ──────────────────────────────────────────────────────────────────────────
 function initDictationIntegration() {
-    log.info("[runonweb] Initializing dictation integration");
+    console.info("[runonweb] Initializing dictation integration");
 
     // Patch fields marked for dictation
     patchMarkedFields();
@@ -513,7 +513,7 @@ function initDictationIntegration() {
         subtree: true,
     });
 
-    log.info("[runonweb] Dictation integration initialized");
+    console.info("[runonweb] Dictation integration initialized");
 }
 
 // Inicializar cuando el DOM esté listo
