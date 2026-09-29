@@ -326,18 +326,15 @@ export function initDiscussDictation(composerEl) {
 export function initMarkedFieldDictation(fieldEl) {
     if (!fieldEl) return;
 
-    // Verificar si ya tiene botón
-    if (fieldEl.closest(".mail-bot-field-wrapper")) return;
-
-    // Crear wrapper
-    const wrapper = document.createElement("div");
-    wrapper.className = "mail-bot-field-wrapper";
+    // Idempotente: un campo sólo recibe un botón. Si Odoo re-renderizó el
+    // nodo, el botón viejo ya no está en el DOM y se vuelve a enganchar.
+    if (fieldEl._dictationBtn && fieldEl._dictationBtn.isConnected) return;
 
     const parent = fieldEl.parentNode;
     if (!parent) return;
 
-    parent.insertBefore(wrapper, fieldEl);
-    wrapper.appendChild(fieldEl);
+    // El campo NO se mueve de sitio: envolverlo en un div extra rompe el
+    // patching de Owl (framework pinta y re-renderiza ese nodo).
     fieldEl.classList.add("mail-bot-field-marked");
 
     // Crear botón
@@ -383,6 +380,13 @@ export function initMarkedFieldDictation(fieldEl) {
     });
 
     btn.addEventListener("click", async () => {
+        if (!fieldEl.isConnected) {
+            // Odoo re-renderizó el campo: el botón quedó huérfano, retirarlo.
+            btn.remove();
+            delete fieldEl._dictationBtn;
+            delete fieldEl._dictationService;
+            return;
+        }
         if (isRecording) {
             try {
                 await service.stopRecording();
@@ -398,7 +402,9 @@ export function initMarkedFieldDictation(fieldEl) {
         }
     });
 
-    wrapper.appendChild(btn);
+    // El botón va como HERMANO del campo, dentro del wrapper del widget de
+    // Odoo (div.o_field_widget): se inserta sin mover ningún nodo pintado.
+    parent.insertBefore(btn, fieldEl.nextSibling);
     fieldEl._dictationService = service;
     fieldEl._dictationBtn = btn;
 
@@ -445,53 +451,123 @@ function _insertTextIntoField(field, text) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// 6. Marcado de campos por selector (producer del atributo en el DOM)
+// 6. Marcado de campos (producer del atributo en el DOM)
 // ──────────────────────────────────────────────────────────────────────────
 
-/**
- * Lista de selectores CSS para campos de texto que deben tener
- * data-runonweb-dictation=true en el DOM.
- * Se usa cuando el widget de campo de Odoo no reenvía atributos
- * arbitrarios desde el arch XML al DOM.
- */
-const DICTATION_FIELD_SELECTORS = [
-    // res.partner fields
-    "form[name='form_res_partner'] input[name='name']",
-    "form[name='form_res_partner'] input[name='phone']",
-    "form[name='form_res_partner'] input[name='street']",
-    // res.users fields
-    "form[name='form_res_users'] input[name='name']",
-    // Generic textarea fallback
-    "textarea[data-runonweb-dictation='true']",
-];
+const DICTATION_ATTR = "data-runonweb-dictation";
+const DICTATION_MARKED_SEL = "[data-runonweb-dictation='true']";
 
 /**
- * Marca campos que coincidan con los selectores configurados.
- * Se llama desde initDictationIntegration() para producir el atributo
- * en el DOM donde la vista heredera no puede.
+ * Selectores contra el DOM real de Odoo 17 y 18 (medido en ambas versiones).
+ * El <form> NO lleva atributo name: el name vive en el WRAPPER del widget
+ * de campo (web.Field):
+ *
+ *   <div name="name" class="o_field_widget o_field_char …">
+ *       <input class="o_input" …/>             ← char
+ *   </div>
+ *   <div name="note" class="o_field_widget o_field_html …">
+ *       <div><textarea class="o_input"/></div>  ← text / html
+ *   </div>
+ *
+ * Sólo tipos de texto (char/text/html), el mismo dominio que exige el
+ * feature flag (ttype in ('text','html','char')): los widgets relacionales
+ * y de elección (many2one, selection, boolean…) quedan fuera. El selector
+ * anterior `textarea[data-runonweb-dictation='true']` era circular: sólo
+ * casaba lo que ya estaba marcado.
  */
-function markFieldsForDictation() {
-    for (const selector of DICTATION_FIELD_SELECTORS) {
-        const fields = document.querySelectorAll(selector);
-        for (const field of fields) {
-            if (!field.hasAttribute("data-runonweb-dictation")) {
-                field.setAttribute("data-runonweb-dictation", "true");
-                console.info(`[runonweb] Marked field for dictation: ${selector}`);
-            }
+const DICTATION_FIELD_SELECTORS = [
+    ".o_form_view .o_field_widget.o_field_char input.o_input",
+    ".o_form_view .o_field_widget.o_field_text textarea",
+    ".o_form_view .o_field_widget.o_field_html textarea",
+    ".o-mail-Chatter .o_field_widget.o_field_char input.o_input",
+    ".o-mail-Chatter .o_field_widget.o_field_text textarea",
+    ".o-mail-Chatter .o_field_widget.o_field_html textarea",
+];
+
+function _bridge() {
+    return (typeof window !== "undefined" && window.runonwebBridge) || null;
+}
+
+/**
+ * Feature gating: kill-switch global + feature flags, ambos fail-closed,
+ * con el MISMO contrato que ocr_invoice.js. Sin `enable_stt` y al menos una
+ * flag `stt` activa no se marca NINGÚN campo del ERP: el botón sólo aparece
+ * donde alguien activó la flag ("no en todos los inputs").
+ * El compositor de Discuss NO pasa por este gate: es alcance decidido
+ * por Nicolás (botón ahí siempre).
+ */
+function sttFeatureEnabled(fieldName) {
+    const bridge = _bridge();
+    if (!bridge) return false;
+    const settings = bridge.settings || {};
+    if (settings.enable_stt !== true) return false;
+    try {
+        return !!bridge.isFeatureEnabled("stt", fieldName, settings.userId);
+    } catch (e) {
+        return false;
+    }
+}
+
+/** querySelectorAll que incluye también el propio nodo raíz. */
+function _collect(root, selector) {
+    const found = [];
+    if (!root) return found;
+    if (root.nodeType === Node.ELEMENT_NODE && root.matches && root.matches(selector)) {
+        found.push(root);
+    }
+    if (root.querySelectorAll) {
+        for (const el of root.querySelectorAll(selector)) {
+            found.push(el);
         }
     }
+    return found;
+}
+
+/**
+ * Produce el atributo data-runonweb-dictation en los campos de texto reales
+ * del DOM (gated por feature flag).
+ *
+ * Se llama desde initDictationIntegration() y, lo importante, desde el
+ * MutationObserver: los campos se marcan cuando EXISTEN, no una sola vez en
+ * DOMContentLoaded (que corre antes de que el webclient pinte ninguna vista).
+ */
+function markFieldsForDictation(root = document) {
+    let marked = 0;
+    for (const selector of DICTATION_FIELD_SELECTORS) {
+        for (const field of _collect(root, selector)) {
+            if (field.hasAttribute(DICTATION_ATTR)) continue;
+            const wrapper = field.closest(".o_field_widget");
+            const fieldName =
+                (wrapper && wrapper.getAttribute("name")) || field.getAttribute("name");
+            if (!fieldName) continue;
+            if (!sttFeatureEnabled(fieldName)) continue;
+            field.setAttribute(DICTATION_ATTR, "true");
+            marked += 1;
+            console.info(`[runonweb] Marked field for dictation: ${fieldName}`);
+        }
+    }
+    if (marked > 0) {
+        // Productor e inyector van juntos: un campo recién marcado recibe su
+        // botón en la misma pasada (patchMarkedFields no tenía ningún
+        // call-site: era código muerto).
+        patchMarkedFields(root);
+    }
+    return marked;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
 // 7. Integración con el webclient: Discuss composer
 // ──────────────────────────────────────────────────────────────────────────
 
+const COMPOSER_SEL = ".o-mail-Composer, .o-mail-Composer-input";
+
 /**
  * Patch del compositor de Discuss para añadir el botón de dictado.
+ * @param {Node} [root] subtree donde buscar (por defecto, todo el documento)
  */
-export function patchDiscussComposer() {
-    // Buscar el composer actual y añadir el botón
-    const composerEls = document.querySelectorAll(".o-mail-Composer, .o-mail-Composer-input");
+export function patchDiscussComposer(root = document) {
+    if (!root || !root.querySelectorAll) return;
+    const composerEls = root.querySelectorAll(COMPOSER_SEL);
     for (const composerEl of composerEls) {
         if (!composerEl._dictationService) {
             initDiscussDictation(composerEl);
@@ -500,11 +576,13 @@ export function patchDiscussComposer() {
 }
 
 /**
- * Patch de campos marcados con data-runonweb-dictation="true".
+ * Engancha el botón de dictado a los campos marcados con
+ * data-runonweb-dictation="true" (producidos por markFieldsForDictation o
+ * ya presentes en el arch). Idempotente: cada campo sólo recibe un botón.
+ * @param {Node} [root] subtree donde buscar (por defecto, todo el documento)
  */
-export function patchMarkedFields() {
-    const fieldEls = document.querySelectorAll("[data-runonweb-dictation='true']");
-    for (const fieldEl of fieldEls) {
+export function patchMarkedFields(root = document) {
+    for (const fieldEl of _collect(root, DICTATION_MARKED_SEL)) {
         initMarkedFieldDictation(fieldEl);
     }
 }
@@ -512,36 +590,47 @@ export function patchMarkedFields() {
 // ──────────────────────────────────────────────────────────────────────────
 // 8. Inicialización al cargar el webclient
 // ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * El bridge se inyecta de forma asíncrona (sesión + settings + flags): hasta
+ * que no está listo, el gate devuelve false y no se marca ningún campo.
+ * Al llegar, repasamos todo el DOM para no perder la primera vista pintada.
+ */
+function _whenBridgeReady(callback, tries = 120) {
+    const tick = (left) => {
+        if (_bridge()) {
+            callback();
+            return;
+        }
+        if (left <= 0) {
+            console.warn("[runonweb] Bridge not ready: dictation fields stay gated off");
+            return;
+        }
+        setTimeout(() => tick(left - 1), 250);
+    };
+    tick(tries);
+}
+
 function initDictationIntegration() {
     console.info("[runonweb] Initializing dictation integration");
 
-    // Mark fields for dictation via selectors (producer for DOM attribute)
-    markFieldsForDictation();
+    // Campos: se marcan cuando EXISTEN, no sólo al cargar la página.
+    markFieldsForDictation(document);
+    // Campos ya marcados en el arch (o marcados a mano): enganchar su botón.
+    patchMarkedFields(document);
+    // Compositor de Discuss (sin feature gate: alcance decidido).
+    patchDiscussComposer(document);
 
-    // Patch existing composers
-    patchDiscussComposer();
-
-    // Observe for new composers (MutationObserver)
+    // Observe new composers AND new fields: every subtree Odoo paints is a
+    // chance to mark a field that did not exist on the previous pass.
     const observer = new MutationObserver((mutations) => {
         for (const mutation of mutations) {
-            if (mutation.type === "childList") {
-                for (const node of mutation.addedNodes) {
-                    if (node.nodeType === Node.ELEMENT_NODE) {
-                        const composerEl = node.querySelector
-                            ? node.querySelector(".o-mail-Composer, .o-mail-Composer-input")
-                            : null;
-                        if (composerEl && !composerEl._dictationService) {
-                            initDiscussDictation(composerEl);
-                        }
-                        // Also check marked fields
-                        const fields = node.querySelectorAll
-                            ? node.querySelectorAll("[data-runonweb-dictation='true']")
-                            : [];
-                        for (const field of fields) {
-                            initMarkedFieldDictation(field);
-                        }
-                    }
-                }
+            if (mutation.type !== "childList") continue;
+            for (const node of mutation.addedNodes) {
+                if (node.nodeType !== Node.ELEMENT_NODE) continue;
+                patchDiscussComposer(node);
+                markFieldsForDictation(node);
+                patchMarkedFields(node);
             }
         }
     });
@@ -549,6 +638,11 @@ function initDictationIntegration() {
     observer.observe(document.body, {
         childList: true,
         subtree: true,
+    });
+
+    _whenBridgeReady(() => {
+        markFieldsForDictation(document);
+        patchMarkedFields(document);
     });
 
     console.info("[runonweb] Dictation integration initialized");

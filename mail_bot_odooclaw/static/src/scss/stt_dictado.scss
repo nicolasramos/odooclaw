@@ -41,24 +41,19 @@
     }
 }
 
-/* ── Wrapper de campo marcado ─────────────────────────────────────────── */
-.mail-bot-field-wrapper {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-
+/* ── Campo de texto marcado para dictado ─────────────────────────────────── */
+/* El botón es HERMANO del campo dentro del wrapper del widget de Odoo
+ * (div.o_field_widget): el nodo del campo no se envuelve ni se mueve,
+ * porque lo pinta y re-renderiza Owl. */
+.o_field_widget {
     .mail-bot-field-marked {
         border-color: #0d6efd !important;
         border-width: 2px !important;
+    }
 
-        &::before {
-            content: '🎤';
-            position: absolute;
-            top: -0.5rem;
-            right: 0.5rem;
-            font-size: 0.75rem;
-        }
+    .mail-bot-dictation-btn {
+        margin-left: 0.25rem;
+        vertical-align: middle;
     }
 }
 
