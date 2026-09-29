@@ -2,7 +2,7 @@
 {
     "name": "mail_bot_odooclaw",
     "summary": "runonweb AI integration for Odoo webclient",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "category": "Discuss",
     "license": "Other OSI approved licence",
     "author": "Nicolás Ramos",
