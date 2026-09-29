@@ -39,6 +39,13 @@ class IrAttachment(models.Model):
         copy=False,
         readonly=True,
     )
+    runonweb_ocr_uid = fields.Many2one(
+        "res.users",
+        string="Client OCR stored by",
+        copy=False,
+        readonly=True,
+        help="User who stored the client-extracted OCR text (provenance).",
+    )
 
     @api.model
     def store_client_ocr(self, attachment_id, text, confidence=0.0):
@@ -48,8 +55,10 @@ class IrAttachment(models.Model):
         image locally. The server never re-reads the image here: it only
         stores the text, so no third-party vision call is needed later.
 
-        Guarded by the ``enable_ocr`` kill-switch (fail closed) and by the
-        caller's read access on the attachment.
+        Guarded by the ``enable_ocr`` kill-switch (fail closed), restricted
+        to internal users, and requires *write* access on the attachment:
+        the OCR text feeds the fiscal pipeline, so letting any user rewrite
+        it on someone else's attachment would poison the invoice data.
         """
         try:
             attachment_id = int(attachment_id)
@@ -69,17 +78,28 @@ class IrAttachment(models.Model):
         if settings.get("enable_ocr") is not True:
             raise UserError("Client OCR is disabled (runonweb.settings.enable_ocr).")
 
-        # Access check: the caller must be able to read the attachment.
-        # search() applies ir.attachment ACLs/records rules for the current user.
-        attachment = self.search([("id", "=", attachment_id)], limit=1)
+        # Only internal users may store client OCR: the text is consumed as
+        # invoice-pipeline input, so public/portal provenance is not trusted.
+        if not self.env.user._is_internal():
+            raise UserError("Only internal users can store client OCR text.")
+
+        # Access check: the caller must be able to WRITE the attachment.
+        # search() only filters by read access, and ir.attachment is broadly
+        # readable; the OCR text feeds the fiscal pipeline, so require the
+        # same permission a normal write would need. check_access_rights +
+        # check_access_rule exist in both Odoo 17 and 18.
+        attachment = self.browse(attachment_id).exists()
         if not attachment:
-            raise UserError("Attachment %s not found or not accessible." % attachment_id)
+            raise UserError("Attachment %s not found." % attachment_id)
+        attachment.check_access_rights("write", raise_exception=True)
+        attachment.check_access_rule("write")
 
         attachment.write(
             {
                 "runonweb_ocr_text": text,
                 "runonweb_ocr_confidence": confidence,
                 "runonweb_ocr_at": fields.Datetime.now(),
+                "runonweb_ocr_uid": self.env.uid,
             }
         )
         return True

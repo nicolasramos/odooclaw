@@ -1173,18 +1173,39 @@ class OdooOCRSkill:
         # mail_bot_odooclaw no está instalado (el campo no existe) o la lectura
         # falla, seguimos con el flujo normal.
         client_text = None
+        client_conf = 0.0
         try:
             client_res = self._odoo_call(
                 "ir.attachment",
                 "read",
                 [[attachment_id]],
-                {"fields": ["id", "runonweb_ocr_text"]},
+                {"fields": ["id", "runonweb_ocr_text", "runonweb_ocr_confidence"]},
             )
             if not client_res.get("isError"):
                 client_rows = client_res.get("result") or []
                 if client_rows:
                     client_text = (client_rows[0].get("runonweb_ocr_text") or "").strip()
+                    try:
+                        client_conf = float(client_rows[0].get("runonweb_ocr_confidence") or 0.0)
+                    except (TypeError, ValueError):
+                        client_conf = 0.0
         except Exception:  # noqa: BLE001 — field absent / older addon: ignore
+            client_text = None
+            client_conf = 0.0
+
+        # Confidence gate: a low-confidence client OCR is treated as "no client
+        # text" so the server engines (vision/RapidOCR) get a chance instead of
+        # returning an invoice with no amounts. Tunable via env.
+        try:
+            min_conf = float(os.environ.get("OCR_CLIENT_MIN_CONFIDENCE", "0.5"))
+        except (TypeError, ValueError):
+            min_conf = 0.5
+
+        if client_text and client_conf < min_conf:
+            log(
+                f"client OCR confidence {client_conf:.2f} below threshold "
+                f"{min_conf:.2f} for attachment {attachment_id}; using server engines"
+            )
             client_text = None
 
         if client_text:
@@ -1205,23 +1226,36 @@ class OdooOCRSkill:
                     llm_api_key=os.environ.get("OCR_PIPELINE_LLM_KEY", ""),
                 )
                 data = run_pipeline_from_text(client_text, cfg)
-                extracted = {
-                    "vendor_name": (data.get("partner_name") or "").strip(),
-                    "vendor_vat": (data.get("vat") or "").strip(),
-                    "invoice_number": (data.get("ref") or "").strip(),
-                    "invoice_date": (data.get("invoice_date") or "").strip(),
-                    "amount_total": data.get("amount_total"),
-                    "subtotal": data.get("amount_total"),
-                    "amount_tax": data.get("amount_tax"),
-                    "currency": (data.get("currency") or "EUR").strip(),
-                    "lines": data.get("invoice_line_ids") or [],
-                    "fiscal_found": data.get("fiscal_found", False),
-                    "is_reverse_charge": data.get("is_reverse_charge", False),
-                    "validation_ok": data.get("_ok", False),
-                    "validation_issues": data.get("_issues", []),
-                }
-                raw_text = data.get("_raw_text", "")
-                log(f"client-ocr fast path used for attachment {attachment_id}")
+                # Retry guard: if the client text produced no usable invoice
+                # (validation failed or no total), do NOT return an empty
+                # structure — fall through to the server engines (vision /
+                # RapidOCR), which may read the image better than the
+                # browser model did.
+                if not data.get("_ok") or data.get("amount_total") is None:
+                    log(
+                        f"client-ocr fast path failed validation for attachment "
+                        f"{attachment_id} (_ok={data.get('_ok')}, "
+                        f"total={data.get('amount_total')}); retrying with server engines"
+                    )
+                    extracted = None
+                else:
+                    extracted = {
+                        "vendor_name": (data.get("partner_name") or "").strip(),
+                        "vendor_vat": (data.get("vat") or "").strip(),
+                        "invoice_number": (data.get("ref") or "").strip(),
+                        "invoice_date": (data.get("invoice_date") or "").strip(),
+                        "amount_total": data.get("amount_total"),
+                        "subtotal": data.get("amount_total"),
+                        "amount_tax": data.get("amount_tax"),
+                        "currency": (data.get("currency") or "EUR").strip(),
+                        "lines": data.get("invoice_line_ids") or [],
+                        "fiscal_found": data.get("fiscal_found", False),
+                        "is_reverse_charge": data.get("is_reverse_charge", False),
+                        "validation_ok": data.get("_ok", False),
+                        "validation_issues": data.get("_issues", []),
+                    }
+                    raw_text = data.get("_raw_text", "")
+                    log(f"client-ocr fast path used for attachment {attachment_id}")
             except Exception as e:  # noqa: BLE001 — fall through to server engines
                 log(f"client-ocr fast path failed ({e}); falling back to server OCR")
                 extracted = None

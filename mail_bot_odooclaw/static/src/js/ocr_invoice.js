@@ -210,14 +210,10 @@ export async function ocrPastedImage(file) {
   return ocrImageFile(file);
 }
 
-// Boot: only when the feature is enabled. Never blocks the page.
+// Boot: the hook itself needs no bridge (feature gating happens per-upload
+// against window.runonwebBridge, which may arrive later or never — a
+// missing bridge simply means the feature is off). Install once, never
+// blocks the page.
 if (typeof window !== "undefined" && typeof window.odoo === "object") {
-  // The bridge boots asynchronously (settings + flags fetch). Retry the hook
-  // install until the bridge exists, with a bounded number of attempts.
-  let attempts = 0;
-  const tryInstall = () => {
-    if (installInvoiceOcrHook()) return;
-    if (++attempts < 20) setTimeout(tryInstall, 500);
-  };
-  tryInstall();
+  installInvoiceOcrHook();
 }

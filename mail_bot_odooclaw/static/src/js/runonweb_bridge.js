@@ -717,8 +717,12 @@ export async function injectRunonwebBridge() {
   return bridge;
 }
 
-// Expose the bundle on the real global: Odoo 17/18 wrap non-module JS files in
-// a function scope, so esbuild's `var runonwebBundle` alone never reaches window.
+// Expose the bundle on the real global. NOTE (measured in 17/18): with
+// esbuild's --global-name the IIFE result (the ESM namespace, whose exports
+// keep their underscore prefix: _callKw, _getCsrfToken, ...) is what ends up
+// as window.runonwebBundle; this literal is overwritten by it. Feature
+// modules must import helpers from the bridge module directly (see
+// ocr_invoice.js), NOT through this global.
 if (typeof window !== "undefined") {
   window.runonwebBundle = {
     RUNONWEB_VERSION,
@@ -731,11 +735,6 @@ if (typeof window !== "undefined") {
     ProgressUI,
     RunonwebBridge,
     injectRunonwebBridge,
-    // RPC helpers reused by feature modules (e.g. ocr_invoice.js) so they
-    // don't re-implement the 17/18 session/CSRF dance.
-    callKw: _callKw,
-    getCsrfToken: _getCsrfToken,
-    getSessionInfo: _getSessionInfo,
   };
 }
 

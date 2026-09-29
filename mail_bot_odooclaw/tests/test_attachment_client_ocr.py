@@ -1,5 +1,5 @@
-"""Tests for the client-side OCR text carried on ir.attachment (NRA-3968)."""
 # © 2026 Nicolás Ramos — MIT License
+"""Tests for the client-side OCR text carried on ir.attachment (NRA-3968)."""
 from odoo.exceptions import UserError
 from odoo.tests import TransactionCase, tagged
 
@@ -90,3 +90,24 @@ class TestAttachmentClientOcr(TransactionCase):
         self.Attachment.store_client_ocr(str(att.id), "texto", 0.5)
         att.invalidate_recordset()
         self.assertEqual(att.runonweb_ocr_text, "texto")
+
+    def test_11_provenance_recorded(self):
+        """runonweb_ocr_uid must record who stored the text."""
+        att = self._make_attachment()
+        self.Attachment.store_client_ocr(att.id, "texto", 0.5)
+        att.invalidate_recordset()
+        self.assertEqual(att.runonweb_ocr_uid, self.env.user)
+
+    def test_12_non_internal_user_rejected(self):
+        """Portal users cannot store client OCR (pipeline-input trust)."""
+        portal_user = self.env["res.users"].create(
+            {
+                "name": "Portal Tester",
+                "login": "nra3968_portal",
+                "email": "portal@nra3968.test",
+                "groups_id": [(6, 0, [self.env.ref("base.group_portal").id])],
+            }
+        )
+        att = self._make_attachment()
+        with self.assertRaises(UserError):
+            self.Attachment.with_user(portal_user).store_client_ocr(att.id, "texto", 0.5)
