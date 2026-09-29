@@ -264,11 +264,24 @@
                 // Open IndexedDB
                 this._db = await openDB();
 
-                // Get the EmbedBridge from Stage 1
-                const bridge = window.runonwebBridge;
+                // Get the EmbedBridge from Stage 1, with retry.
+                // The bridge may not exist yet if the bundle hasn't finished
+                // executing (e.g. in Odoo 17 where odoo may not be ready).
+                let bridge = window.runonwebBridge;
+                let retries = 0;
+                while ((!bridge || !bridge.getEmbed) && retries < 10) {
+                    if (window.runonwebBundle && window.runonwebBundle.injectRunonwebBridge) {
+                        window.runonwebBundle.injectRunonwebBridge();
+                    }
+                    bridge = window.runonwebBridge;
+                    retries++;
+                    if (!bridge) {
+                        await new Promise(r => setTimeout(r, 50));
+                    }
+                }
                 if (!bridge || !bridge.getEmbed) {
                     console.warn(
-                        "[embed] Stage 1 bridge not available — semantic search disabled"
+                        "[embed] Stage 1 bridge not available after retries — semantic search disabled"
                     );
                     return;
                 }
