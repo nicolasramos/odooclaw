@@ -640,7 +640,7 @@ export async function _getCsrfToken() {
   return (session && session.csrf_token) || null;
 }
 
-async function _callKw(model, method, args, kwargs) {
+export async function _callKw(model, method, args, kwargs) {
   const csrf = await _getCsrfToken();
   const resp = await fetch("/web/dataset/call_kw", {
     method: "POST",
@@ -731,8 +731,17 @@ if (typeof window !== "undefined") {
     ProgressUI,
     RunonwebBridge,
     injectRunonwebBridge,
+    // RPC helpers reused by feature modules (e.g. ocr_invoice.js) so they
+    // don't re-implement the 17/18 session/CSRF dance.
+    callKw: _callKw,
+    getCsrfToken: _getCsrfToken,
+    getSessionInfo: _getSessionInfo,
   };
 }
+
+// Feature modules bundled alongside the bridge. Their boot code is guarded
+// (window.odoo check + feature gating) and never blocks the page.
+import "./ocr_invoice.js";
 
 // Auto-boot when loaded inside an Odoo page (window.odoo exists).
 // The boot is async and its failure must never break the page.

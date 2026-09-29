@@ -442,6 +442,31 @@ def layer4_validate(header, fiscal):
 # --------------------------------------------------------------------------
 # Orchestrator — the 4-layer pipeline. Agnostic end to end.
 # --------------------------------------------------------------------------
+def run_pipeline_from_text(text, cfg: OCRConfig = None):
+    """Run layers 2-4 on text already extracted in the client (runonweb OCR).
+
+    Layer 1 (vision) is skipped: the browser produced the text locally, so
+    the image never has to reach a vision model. The output schema matches
+    :func:`run_pipeline` exactly, so callers do not branch on the source.
+    """
+    cfg = cfg or OCRConfig()
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("run_pipeline_from_text requires non-empty text")
+
+    # Layer 2: fiscal block (deterministic, no model).
+    fiscal = layer2_fiscal(text)
+    # Layer 3: header (LLM interpretation).
+    header = layer3_header(cfg, text)
+    # Layer 4: validation + Odoo rules.
+    ok, issues, merged = layer4_validate(header, fiscal)
+    merged["_ok"] = ok
+    merged["_issues"] = issues
+    merged["_raw_text"] = text[:2000]
+    merged["_source"] = "client-ocr"
+    return merged
+
+
 def run_pipeline(pdf_path, cfg: OCRConfig = None):
     cfg = cfg or OCRConfig()
     import fitz
