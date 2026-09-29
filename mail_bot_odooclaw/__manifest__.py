@@ -12,6 +12,7 @@
         "security/ir.model.access.csv",
         "views/runonweb_settings_views.xml",
         "views/runonweb_feature_flag_views.xml",
+        "views/runonweb_stt_dictation_views.xml",
     ],
     "assets": {
         "web.assets_backend": [
