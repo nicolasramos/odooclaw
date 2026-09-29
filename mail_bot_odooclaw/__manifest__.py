@@ -17,6 +17,8 @@
         "web.assets_backend": [
             "mail_bot_odooclaw/static/src/js/runonweb_bundle.js",
             "mail_bot_odooclaw/static/src/js/embed_semantic_search.js",
+            "mail_bot_odooclaw/static/src/scss/stt_dictado.scss",
+            "mail_bot_odooclaw/static/src/js/stt_dictado.js",
         ],
     },
     "installable": True,
