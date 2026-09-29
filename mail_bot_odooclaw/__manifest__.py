@@ -2,7 +2,7 @@
 {
     "name": "mail_bot_odooclaw",
     "summary": "runonweb AI integration for Odoo webclient",
-    "version": "0.0.2",
+    "version": "0.0.1",
     "category": "Discuss",
     "license": "Other OSI approved licence",
     "author": "Nicolás Ramos",
@@ -16,7 +16,6 @@
     "assets": {
         "web.assets_backend": [
             "mail_bot_odooclaw/static/src/js/runonweb_bundle.js",
-            "mail_bot_odooclaw/static/src/js/embed_semantic_search.js",
         ],
     },
     "installable": True,
