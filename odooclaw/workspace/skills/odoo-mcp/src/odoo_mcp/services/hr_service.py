@@ -19,7 +19,7 @@ def _resolve_employee_id(
     employees = client.call_kw(
         "hr.employee",
         "search_read",
-        args=[[[("user_id", "=", target_user_id)]]],
+        args=[[("user_id", "=", target_user_id)]],
         kwargs={"fields": ["id"], "limit": 1},
         sender_id=sender_id,
     )
