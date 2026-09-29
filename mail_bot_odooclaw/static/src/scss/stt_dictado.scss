@@ -1,0 +1,89 @@
+/* mail_bot_odooclaw/static/src/scss/stt_dictado.scss
+ * Estilos para el botón de dictado y estados.
+ */
+
+/* ── Botón de dictado ─────────────────────────────────────────────────── */
+.mail-bot-dictation-btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+    border-radius: 0.375rem;
+    transition: all 0.2s ease;
+
+    &.recording {
+        background-color: rgba(220, 53, 69, 0.1);
+        border-color: #dc3545;
+        color: #dc3545;
+        animation: mail-bot-pulse 1s infinite;
+    }
+
+    &.transcribing {
+        background-color: rgba(13, 110, 253, 0.1);
+        border-color: #0d6efd;
+        color: #0d6efd;
+        opacity: 0.7;
+        cursor: not-allowed;
+    }
+
+    &.error {
+        background-color: rgba(220, 53, 69, 0.1);
+        border-color: #dc3545;
+        color: #dc3545;
+    }
+}
+
+/* ── Animación de pulso para estado "escuchando" ──────────────────────── */
+@keyframes mail-bot-pulse {
+    0%, 100% {
+        background-color: rgba(220, 53, 69, 0.1);
+    }
+    50% {
+        background-color: rgba(220, 53, 69, 0.3);
+    }
+}
+
+/* ── Campo de texto marcado para dictado ─────────────────────────────────── */
+/* El botón es HERMANO del campo dentro del wrapper del widget de Odoo
+ * (div.o_field_widget): el nodo del campo no se envuelve ni se mueve,
+ * porque lo pinta y re-renderiza Owl. */
+.o_field_widget {
+    .mail-bot-field-marked {
+        border-color: #0d6efd !important;
+        border-width: 2px !important;
+    }
+
+    .mail-bot-dictation-btn {
+        margin-left: 0.25rem;
+        vertical-align: middle;
+    }
+}
+
+/* ── Integración con el compositor de Discuss ─────────────────────────── */
+.o_mail_composer,
+.o-mail-composer {
+    .mail-bot-dictation-btn {
+        margin-left: 0.25rem;
+    }
+}
+
+/* ── Barra de estado del dictado ──────────────────────────────────────── */
+.mail-bot-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    color: #6c757d;
+
+    &.listening {
+        color: #dc3545;
+        font-weight: 600;
+    }
+
+    &.transcribing {
+        color: #0d6efd;
+    }
+
+    &.error {
+        color: #dc3545;
+    }
+}
