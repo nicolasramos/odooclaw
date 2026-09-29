@@ -445,6 +445,44 @@ function _insertTextIntoField(field, text) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// 6. Marcado de campos por selector (producer del atributo en el DOM)
+// ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * Lista de selectores CSS para campos de texto que deben tener
+ * data-runonweb-dictation=true en el DOM.
+ * Se usa cuando el widget de campo de Odoo no reenvía atributos
+ * arbitrarios desde el arch XML al DOM.
+ */
+const DICTATION_FIELD_SELECTORS = [
+    // res.partner fields
+    "form[name='form_res_partner'] input[name='name']",
+    "form[name='form_res_partner'] input[name='phone']",
+    "form[name='form_res_partner'] input[name='street']",
+    // res.users fields
+    "form[name='form_res_users'] input[name='name']",
+    // Generic textarea fallback
+    "textarea[data-runonweb-dictation='true']",
+];
+
+/**
+ * Marca campos que coincidan con los selectores configurados.
+ * Se llama desde initDictationIntegration() para producir el atributo
+ * en el DOM donde la vista heredera no puede.
+ */
+function markFieldsForDictation() {
+    for (const selector of DICTATION_FIELD_SELECTORS) {
+        const fields = document.querySelectorAll(selector);
+        for (const field of fields) {
+            if (!field.hasAttribute("data-runonweb-dictation")) {
+                field.setAttribute("data-runonweb-dictation", "true");
+                console.info(`[runonweb] Marked field for dictation: ${selector}`);
+            }
+        }
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // 7. Integración con el webclient: Discuss composer
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -477,8 +515,8 @@ export function patchMarkedFields() {
 function initDictationIntegration() {
     console.info("[runonweb] Initializing dictation integration");
 
-    // Patch fields marked for dictation
-    patchMarkedFields();
+    // Mark fields for dictation via selectors (producer for DOM attribute)
+    markFieldsForDictation();
 
     // Patch existing composers
     patchDiscussComposer();
