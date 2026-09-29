@@ -30,6 +30,8 @@ class WhisperSTT:
         self._odoo_pwd = os.environ.get("ODOO_PASSWORD", "")
         self._session = None
         self._uid = None
+        # None = not resolved yet, 0 = resolved and absent, >0 = the user id
+        self._delegated_uid = None
 
     def _get_stt_provider(self) -> str:
         provider = os.environ.get("STT_PROVIDER", "auto").strip().lower()
@@ -103,13 +105,76 @@ class WhisperSTT:
         except Exception as e:
             return {"isError": True, "content": f"Connection error: {str(e)}"}
 
-    def _download_attachment(self, attachment_id: int) -> dict:
-        if not self._uid:
-            auth_err = self._authenticate()
-            if auth_err:
-                return auth_err
+    # The gateway authenticates to Odoo as its own technical user (ODOO_USERNAME,
+    # e.g. odooclaw_service, uid 28), which is NOT a member of the discuss channels
+    # where voice notes are posted. Odoo gates ir.attachment reads on the channel
+    # membership of the acting user, so reading the note as the gateway user fails
+    # with an AccessError while the user's own client session sees it fine.
+    #
+    # The mail_bot_odooclaw module ships its own bot user (login "odooclaw_bot")
+    # which IS a member of those channels and holds group_odooclaw_delegator. Read
+    # the attachment through /odooclaw/call_kw_as_user delegated to that user; fall
+    # back to a direct read when no such user exists on the deployment.
+    #
+    # NOTE: the user is resolved by LOGIN, not by xmlid. Reading ir.model.data
+    # requires the "Settings" group, which this technical user does not have.
+    #
+    # NOTE: sender_id is deliberately NOT used here. The gateway only injects it for
+    # servers listed in the Go trust list (odooclaw-manager / ocr-invoice), so a
+    # sender-based delegation would be silently unavailable for this skill.
+    _DELEGATED_BOT_LOGIN = "odooclaw_bot"
 
+    def _resolve_delegated_user_id(self):
+        """Resolve the Odoo user id of the module's channel-member bot."""
+        if self._delegated_uid is not None:
+            return self._delegated_uid or None
+
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "id": 3,
+            "params": {
+                "model": "res.users",
+                "method": "search_read",
+                "args": [[["login", "=", self._DELEGATED_BOT_LOGIN]]],
+                "kwargs": {"fields": ["id", "login"], "limit": 1},
+            },
+        }
         try:
+            resp = self._session.post(
+                f"{self._odoo_url}/web/dataset/call_kw", json=payload, timeout=30
+            )
+            resp.raise_for_status()
+            rows = resp.json().get("result") or []
+        except Exception as exc:
+            log(f"Delegated-user lookup failed: {exc}")
+            rows = []
+
+        if not rows:
+            log(
+                f"Delegated user '{self._DELEGATED_BOT_LOGIN}' not found; "
+                "falling back to a direct attachment read"
+            )
+            self._delegated_uid = 0
+            return None
+
+        self._delegated_uid = int(rows[0]["id"])
+        log(f"Delegated attachment reads to uid={self._delegated_uid}")
+        return self._delegated_uid
+
+    def _read_attachment(self, attachment_id: int, delegated: bool) -> tuple:
+        """Return (rows, error_message)."""
+        fields = ["datas", "name", "mimetype"]
+        if delegated:
+            payload = {
+                "user_id": self._resolve_delegated_user_id(),
+                "model": "ir.attachment",
+                "method": "read",
+                "args": [[attachment_id]],
+                "kwargs": {"fields": fields},
+            }
+            endpoint = f"{self._odoo_url}/odooclaw/call_kw_as_user"
+        else:
             payload = {
                 "jsonrpc": "2.0",
                 "method": "call",
@@ -118,30 +183,41 @@ class WhisperSTT:
                     "model": "ir.attachment",
                     "method": "read",
                     "args": [[attachment_id]],
-                    "kwargs": {"fields": ["datas", "name", "mimetype"]},
+                    "kwargs": {"fields": fields},
                 },
             }
+            endpoint = f"{self._odoo_url}/web/dataset/call_kw"
 
-            resp = self._session.post(
-                f"{self._odoo_url}/web/dataset/call_kw", json=payload, timeout=30
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        resp = self._session.post(endpoint, json=payload, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
 
-            if data.get("error"):
+        if data.get("status") == "error":
+            return [], str(data.get("reason"))
+        if data.get("error"):
+            err = data["error"]
+            detail = (err.get("data") or {}).get("name") or err.get("message")
+            return [], str(detail)
+        return data.get("result") or [], None
+
+    def _download_attachment(self, attachment_id: int) -> dict:
+        if not self._uid:
+            auth_err = self._authenticate()
+            if auth_err:
+                return auth_err
+
+        try:
+            rows, err = self._read_attachment(attachment_id, delegated=True)
+            if not rows:
+                log(f"Delegated read failed ({err}); retrying as the gateway user")
+                rows, err = self._read_attachment(attachment_id, delegated=False)
+            if not rows:
                 return {
                     "isError": True,
-                    "content": f"Error reading attachment: {data['error'].get('message', 'unknown')}",
+                    "content": f"Error reading attachment: {err or 'not found'}",
                 }
 
-            result = data.get("result", [])
-            if not result:
-                return {
-                    "isError": True,
-                    "content": f"Attachment {attachment_id} not found",
-                }
-
-            record = result[0]
+            record = rows[0]
             if not record.get("datas"):
                 return {"isError": True, "content": "Attachment has no data"}
 
