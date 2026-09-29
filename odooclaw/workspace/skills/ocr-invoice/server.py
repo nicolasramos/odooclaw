@@ -1166,9 +1166,103 @@ class OdooOCRSkill:
         extracted = None
         raw_text = None
 
+        # -1) Camino rápido: texto OCR extraído EN EL NAVEGADOR (runonweb/ocr,
+        # NRA-3968). Si el cliente ya puso runonweb_ocr_text en el attachment,
+        # se saltan las capas de visión/OCR del servidor: la imagen nunca
+        # necesita salir hacia un modelo de terceros. Best-effort: si el addon
+        # mail_bot_odooclaw no está instalado (el campo no existe) o la lectura
+        # falla, seguimos con el flujo normal.
+        client_text = None
+        client_conf = 0.0
+        try:
+            client_res = self._odoo_call(
+                "ir.attachment",
+                "read",
+                [[attachment_id]],
+                {"fields": ["id", "runonweb_ocr_text", "runonweb_ocr_confidence"]},
+            )
+            if not client_res.get("isError"):
+                client_rows = client_res.get("result") or []
+                if client_rows:
+                    client_text = (client_rows[0].get("runonweb_ocr_text") or "").strip()
+                    try:
+                        client_conf = float(client_rows[0].get("runonweb_ocr_confidence") or 0.0)
+                    except (TypeError, ValueError):
+                        client_conf = 0.0
+        except Exception:  # noqa: BLE001 — field absent / older addon: ignore
+            client_text = None
+            client_conf = 0.0
+
+        # Confidence gate: a low-confidence client OCR is treated as "no client
+        # text" so the server engines (vision/RapidOCR) get a chance instead of
+        # returning an invoice with no amounts. Tunable via env.
+        try:
+            min_conf = float(os.environ.get("OCR_CLIENT_MIN_CONFIDENCE", "0.5"))
+        except (TypeError, ValueError):
+            min_conf = 0.5
+
+        if client_text and client_conf < min_conf:
+            log(
+                f"client OCR confidence {client_conf:.2f} below threshold "
+                f"{min_conf:.2f} for attachment {attachment_id}; using server engines"
+            )
+            client_text = None
+
+        if client_text:
+            try:
+                from pipeline import OCRConfig, run_pipeline_from_text
+                cfg = OCRConfig(
+                    vision_base_url=os.environ.get(
+                        "OCR_PIPELINE_VISION_URL", "http://127.0.0.1:8093/v1"
+                    ),
+                    vision_model=os.environ.get("OCR_PIPELINE_VISION_MODEL", "odooclaw-vision"),
+                    vision_api_key=os.environ.get("OCR_PIPELINE_VISION_KEY", ""),
+                    llm_base_url=os.environ.get(
+                        "OCR_PIPELINE_LLM_URL", "http://127.0.0.1:8000/v1"
+                    ),
+                    llm_model=os.environ.get(
+                        "OCR_PIPELINE_LLM_MODEL", "LFM2.5-1.2B-Instruct-MLX-4bit"
+                    ),
+                    llm_api_key=os.environ.get("OCR_PIPELINE_LLM_KEY", ""),
+                )
+                data = run_pipeline_from_text(client_text, cfg)
+                # Retry guard: if the client text produced no usable invoice
+                # (validation failed or no total), do NOT return an empty
+                # structure — fall through to the server engines (vision /
+                # RapidOCR), which may read the image better than the
+                # browser model did.
+                if not data.get("_ok") or data.get("amount_total") is None:
+                    log(
+                        f"client-ocr fast path failed validation for attachment "
+                        f"{attachment_id} (_ok={data.get('_ok')}, "
+                        f"total={data.get('amount_total')}); retrying with server engines"
+                    )
+                    extracted = None
+                else:
+                    extracted = {
+                        "vendor_name": (data.get("partner_name") or "").strip(),
+                        "vendor_vat": (data.get("vat") or "").strip(),
+                        "invoice_number": (data.get("ref") or "").strip(),
+                        "invoice_date": (data.get("invoice_date") or "").strip(),
+                        "amount_total": data.get("amount_total"),
+                        "subtotal": data.get("amount_total"),
+                        "amount_tax": data.get("amount_tax"),
+                        "currency": (data.get("currency") or "EUR").strip(),
+                        "lines": data.get("invoice_line_ids") or [],
+                        "fiscal_found": data.get("fiscal_found", False),
+                        "is_reverse_charge": data.get("is_reverse_charge", False),
+                        "validation_ok": data.get("_ok", False),
+                        "validation_issues": data.get("_issues", []),
+                    }
+                    raw_text = data.get("_raw_text", "")
+                    log(f"client-ocr fast path used for attachment {attachment_id}")
+            except Exception as e:  # noqa: BLE001 — fall through to server engines
+                log(f"client-ocr fast path failed ({e}); falling back to server OCR")
+                extracted = None
+
         # 0) Motor preferente (si se pide explícitamente): pipeline 4 capas agnóstico
         ocr_mode = os.environ.get("OCR_MODE", "auto").strip().lower()
-        if ocr_mode == "pipeline":
+        if ocr_mode == "pipeline" and not extracted:
             pipe_res = self._call_pipeline(attachment)
             if isinstance(pipe_res, dict) and not pipe_res.get("isError"):
                 extracted = pipe_res.get("invoice_data") or {}

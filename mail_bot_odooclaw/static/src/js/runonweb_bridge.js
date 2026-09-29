@@ -640,7 +640,7 @@ export async function _getCsrfToken() {
   return (session && session.csrf_token) || null;
 }
 
-async function _callKw(model, method, args, kwargs) {
+export async function _callKw(model, method, args, kwargs) {
   const csrf = await _getCsrfToken();
   const resp = await fetch("/web/dataset/call_kw", {
     method: "POST",
@@ -717,8 +717,12 @@ export async function injectRunonwebBridge() {
   return bridge;
 }
 
-// Expose the bundle on the real global: Odoo 17/18 wrap non-module JS files in
-// a function scope, so esbuild's `var runonwebBundle` alone never reaches window.
+// Expose the bundle on the real global. NOTE (measured in 17/18): with
+// esbuild's --global-name the IIFE result (the ESM namespace, whose exports
+// keep their underscore prefix: _callKw, _getCsrfToken, ...) is what ends up
+// as window.runonwebBundle; this literal is overwritten by it. Feature
+// modules must import helpers from the bridge module directly (see
+// ocr_invoice.js), NOT through this global.
 if (typeof window !== "undefined") {
   window.runonwebBundle = {
     RUNONWEB_VERSION,
@@ -733,6 +737,10 @@ if (typeof window !== "undefined") {
     injectRunonwebBridge,
   };
 }
+
+// Feature modules bundled alongside the bridge. Their boot code is guarded
+// (window.odoo check + feature gating) and never blocks the page.
+import "./ocr_invoice.js";
 
 // Auto-boot when loaded inside an Odoo page (window.odoo exists).
 // The boot is async and its failure must never break the page.
