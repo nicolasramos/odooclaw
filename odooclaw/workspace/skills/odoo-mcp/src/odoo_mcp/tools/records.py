@@ -158,6 +158,48 @@ def list_installed_modules(
     return records
 
 
+def _normalize_attachment_ids(values: Dict[str, Any]) -> Dict[str, Any]:
+    """Coerce `attachment_ids` into the flat list of ints `message_post` requires.
+
+    Odoo's `mail.thread.message_post` validates this field and rejects anything
+    that is not literally a list of ids:
+
+        if attachment_ids and not tools.is_list_of(attachment_ids, int):
+            raise ValueError(
+                _('Posting a message should receive attachments records as a '
+                  'list of IDs (received %(aids)s)'))
+
+    A model reaching for a relational field naturally emits the x2many command
+    form `[(6, 0, [id])]` — and that is exactly what this check rejects. Measured
+    against a real Odoo 17 (Odoo Server 17.0, ecosystem): the command form raises
+    `ValueError`, the bare list returns a message with the attachment linked.
+
+    Only rewrites what Odoo would reject; anything already valid is untouched.
+    """
+    if not isinstance(values, dict):
+        return values
+    raw = values.get("attachment_ids")
+    if not raw or not isinstance(raw, list):
+        return values
+
+    ids: List[int] = []
+    for item in raw:
+        if isinstance(item, int) and not isinstance(item, bool):
+            ids.append(item)
+        elif isinstance(item, (list, tuple)):
+            # x2many command: (6, 0, [ids]) / [6, 0, [ids]]
+            if len(item) == 3 and item[0] == 6 and isinstance(item[2], (list, tuple)):
+                ids.extend(i for i in item[2] if isinstance(i, int) and not isinstance(i, bool))
+        else:
+            # Unknown shape — leave the value alone rather than guess.
+            return values
+
+    if ids:
+        values = dict(values)
+        values["attachment_ids"] = ids
+    return values
+
+
 def odoo_create(
     client: OdooClient, user_id: int, model: str, values: Dict[str, Any]
 ) -> int:
@@ -176,6 +218,9 @@ def odoo_create(
         )
         if existing_partner_id:
             return existing_partner_id
+
+    if model == "mail.message":
+        values = _normalize_attachment_ids(values)
 
     return client.call_kw(model, "create", args=[values], sender_id=user_id)
 
