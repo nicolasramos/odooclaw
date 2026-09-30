@@ -207,6 +207,7 @@
             this._ready = false;
             this._db = null;
             this._embed = null;
+            this._bridge = null;
             this._sessionCache = new SessionCache();
             this._featureEnabled = false;
         }
@@ -230,6 +231,9 @@
                 console.warn("[embed] runonwebBridge not available");
                 return;
             }
+
+            // Store the bridge for later use (gate fix — pass bridge, not embed)
+            this._bridge = bridge;
 
             // Fail-closed gating via bridge API
             const enableEmbed =
@@ -392,7 +396,7 @@
             return {
                 ready: this._ready,
                 entryCount: all.length,
-                webGPU: getWebGPUStatus(this._embed),
+                webGPU: getWebGPUStatus(this._bridge),
             };
         }
     }

@@ -20,12 +20,12 @@ const MAX_TEXT_LENGTH = 500;
 function extractTextFromDOM() {
     var texts = [];
     // Composer textarea content
-    var composer = document.querySelector(".o_discuss_composer textarea, .o_composer_textarea");
+    var composer = document.querySelector(".o-mail-Composer textarea, .o-mail-Composer-input");
     if (composer && composer.value.trim()) {
         texts.push(composer.value.trim());
     }
     // Chatter message content
-    var messages = document.querySelectorAll(".o_mail_chatter_message .o_mail_message_body, .o_message_body");
+    var messages = document.querySelectorAll(".o-mail-discuss__message_body .o-mail-message__body-text");
     messages.forEach(function(msg) {
         var text = msg.textContent.trim();
         if (text && text.length > 5) {
@@ -182,4 +182,19 @@ var EmbedSemanticSearchConsumer = /** @class */ (function () {
 
 if (typeof window !== "undefined") {
     window.EmbedSemanticSearchConsumer = EmbedSemanticSearchConsumer;
+
+    // Auto-instantiate consumer when the page is ready
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", function () {
+            var consumer = new EmbedSemanticSearchConsumer();
+            consumer.init({ enable_embed: true }).catch(function (e) {
+                console.warn("[embed] consumer init failed:", e);
+            });
+        });
+    } else {
+        var consumer = new EmbedSemanticSearchConsumer();
+        consumer.init({ enable_embed: true }).catch(function (e) {
+            console.warn("[embed] consumer init failed:", e);
+        });
+    }
 }
