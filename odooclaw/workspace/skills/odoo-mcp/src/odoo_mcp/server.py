@@ -157,6 +157,7 @@ from odoo_mcp.services.accounting_service import (
 )
 from odoo_mcp.services.calendar_service import create_calendar_event
 from odoo_mcp.services.crm_service import create_lead
+from odoo_mcp.services.delivery_service import attach_file_to_chat
 from odoo_mcp.services.hr_service import (
     find_attendance,
     log_task_timesheet,
@@ -456,6 +457,46 @@ def odoo_write(
             model,
             ids,
             values,
+        )
+
+
+@mcp.tool()
+def odoo_attach_file_to_chat(
+    model: str,
+    res_id: int,
+    filename: str,
+    content_base64: str,
+    mimetype: str | None = None,
+    body: str | None = None,
+    sender_id: int | None = None,
+) -> dict:
+    """Deliver a generated file to the user as a real chatter attachment.
+
+    ALWAYS use this instead of printing a workspace path: a path such as
+    /opt/odooclaw/workspace/exports/report.xlsx exists only inside the gateway
+    and the user cannot open it. Pass the file's bytes base64-encoded, and the
+    user receives the file on the thread.
+
+    Args:
+        model: thread model, usually "discuss.channel"
+        res_id: thread id from the current chat (discuss.channel_19 -> 19)
+        filename: the name the user will see, e.g. "report.xlsx"
+        content_base64: base64 of the file's bytes (not a path)
+        mimetype: optional, e.g.
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        body: optional message text to post together with the file
+    """
+    with measure_time("odoo_attach_file_to_chat"):
+        client = get_odoo_client()
+        return attach_file_to_chat(
+            client,
+            sender_id or client.odoo_session.get_uid(),
+            model,
+            res_id,
+            filename=filename,
+            content_base64=content_base64,
+            mimetype=mimetype,
+            body=body,
         )
 
 
