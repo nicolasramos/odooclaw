@@ -24,8 +24,8 @@ function extractTextFromDOM() {
     if (composer && composer.value.trim()) {
         texts.push(composer.value.trim());
     }
-    // Chatter message content
-    var messages = document.querySelectorAll(".o-mail-Message-content, .o-discuss__message_body");
+    // Chatter message content (Odoo 17/18: o-mail-Message-body / o-mail-Message-content)
+    var messages = document.querySelectorAll(".o-mail-Message-body, .o-mail-Message-content");
     messages.forEach(function(msg) {
         var text = msg.textContent.trim();
         if (text && text.length > 5) {
@@ -80,7 +80,7 @@ var EmbedSemanticSearchConsumer = /** @class */ (function () {
         var _this = this;
         // Wait for DOM to be ready
         var checkDOM = function () {
-            var footer = document.querySelector(".o_discuss_composer_footer, .o_composer_footer");
+            var footer = document.querySelector(".o-mail-Composer-footer");
             if (!footer) {
                 setTimeout(checkDOM, 500);
                 return;
@@ -95,7 +95,7 @@ var EmbedSemanticSearchConsumer = /** @class */ (function () {
                 if (!_this._engine || !_this._engine.isReady())
                     return;
                 // Get composer text
-                var composer = document.querySelector(".o_discuss_composer textarea, .o_composer_textarea");
+                var composer = document.querySelector(".o-mail-Composer-input, .o-mail-Composer textarea");
                 var query = composer ? composer.value.trim() : "";
                 if (!query)
                     return;

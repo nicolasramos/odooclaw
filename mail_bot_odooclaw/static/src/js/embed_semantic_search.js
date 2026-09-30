@@ -224,11 +224,18 @@
         async init(settings) {
             if (this._ready) return;
 
-            // Get the bridge from Stage 1 (polling retry)
+            // Get the bridge from Stage 1 (polling retry). If the bundle
+            // loaded but the bridge hasn't booted yet, trigger the injection
+            // (fire-and-forget: it resolves window.runonwebBridge async).
             let bridge = null;
             for (let attempt = 0; attempt < 5; attempt++) {
                 bridge = window.runonwebBridge;
                 if (bridge) break;
+                if (window.runonwebBundle && window.runonwebBundle.injectRunonwebBridge) {
+                    window.runonwebBundle.injectRunonwebBridge().catch(function (err) {
+                        console.warn("[embed] bridge injection failed:", err);
+                    });
+                }
                 await new Promise((r) => setTimeout(r, 200));
             }
             if (!bridge) {

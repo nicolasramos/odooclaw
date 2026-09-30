@@ -8,6 +8,11 @@ Affirms two things:
 This is a seed test — it does not load the real ONNX model
 (we have no internet in the sandbox), but it proves the engine
 reaches _ready when the bridge is available.
+
+browser_js contract (Odoo 17/18): the JS signals success with
+console.log("test successful") and failure by throwing or calling
+console.error. There is no response body to inspect — assertions
+live in the JS itself.
 """
 # © 2026 Nicolás Ramos — MIT License
 from odoo.tests import HttpCase, tagged
@@ -17,27 +22,30 @@ from odoo.tests import HttpCase, tagged
 class TestEmbedSmoke(HttpCase):
     """Smoke test for the embed_semantic_search engine."""
 
-    def _run_embed_probe(self, extra_js=""):
-        """Run a browser probe that checks the embed engine.
+    def _run_embed_probe(self, js):
+        """Run a browser probe in the webclient.
 
-        Returns the probe output as a string.
+        The JS must end with console.log("test successful") and must
+        throw / console.error on assertion failure.
         """
         return self.browser_js(
             url_path="/web",
-            extra_js=extra_js,
+            code=js,
+            ready="odoo.webclient",
+            login="admin",
+            timeout=120,
         )
 
     def test_01_class_defined(self):
         """The asset defines window.EmbedSemanticSearch."""
         js = """
-            var output = [];
-            output.push("typeof_EmbedSemanticSearch=" + typeof window.EmbedSemanticSearch);
-            output.push("test successful");
-            document.body.textContent = output.join("\\n");
+            if (typeof window.EmbedSemanticSearch !== "function") {
+                console.error("EmbedSemanticSearch not defined: " +
+                    typeof window.EmbedSemanticSearch);
+            }
+            console.log("test successful");
         """
-        body = self._run_embed_probe(js).content
-        self.assertIn("typeof_EmbedSemanticSearch=function", body)
-        self.assertIn("test successful", body)
+        self._run_embed_probe(js)
 
     def test_02_init_gate_with_stubbed_bridge(self):
         """init() reaches _ready when bridge is stubbed.
@@ -46,111 +54,115 @@ class TestEmbedSmoke(HttpCase):
         init({enable_embed: true}) and assert the engine becomes ready.
         """
         js = """
-            (async function() {
-                var output = [];
-
+            (async function () {
                 // Stub the bridge so init passes gating
                 window.runonwebBridge = {
                     settings: { enable_embed: true },
-                    getDevice: function() { return "wasm"; }
+                    isFeatureEnabled: function (f) { return true; },
+                    getDevice: function () { return "wasm"; },
+                    getEmbed: function () {
+                        return {
+                            load: async function () {},
+                            embed: async function (t) { return new Array(384).fill(0.1); },
+                            dimensions: 384,
+                        };
+                    },
                 };
 
                 // Create engine and init it
                 var engine = new EmbedSemanticSearch();
                 await engine.init({ enable_embed: true });
 
-                output.push("engine_isReady=" + engine.isReady);
-                output.push("engine_hasBridge=" + (typeof engine._bridge !== "undefined"));
-
-                // Check that bridge was stored
-                if (engine._bridge) {
-                    output.push("bridge_stored=true");
-                } else {
-                    output.push("bridge_stored=false");
+                if (engine.isReady() !== true) {
+                    console.error("engine not ready after init");
+                    return;
                 }
-
-                output.push("test successful");
-                document.body.textContent = output.join("\\n");
+                if (!engine._bridge) {
+                    console.error("bridge was not stored on the engine");
+                    return;
+                }
+                console.log("test successful");
             })();
         """
-        body = self._run_embed_probe(js).content
-        self.assertIn("engine_isReady=true", body)
-        self.assertIn("bridge_stored=true", body)
-        self.assertIn("test successful", body)
+        self._run_embed_probe(js)
 
     def test_03_addText_and_search(self):
         """addText() + search() returns results when bridge is stubbed."""
         js = """
-            (async function() {
-                var output = [];
-
-                // Stub the bridge
+            (async function () {
                 window.runonwebBridge = {
                     settings: { enable_embed: true },
-                    getEmbed: function() {
-                        return {
-                            load: function() { return Promise.resolve(); },
-                            embed: function(text) {
-                                var vec = new Float32Array(384);
-                                return Promise.resolve(vec);
-                            },
-                            getDevice: function() { return "wasm"; }
+                    isFeatureEnabled: function (f) { return true; },
+                    getDevice: function () { return "wasm"; },
+                    getEmbed: function () {
+                        // Deterministic pseudo-embedding: same text → same vector,
+                        // similar texts → closer vectors.
+                        var vec = function (t) {
+                            var v = new Array(384);
+                            var h = 0;
+                            for (var i = 0; i < t.length; i++) {
+                                h = (h * 31 + t.charCodeAt(i)) | 0;
+                            }
+                            for (var j = 0; j < 384; j++) {
+                                v[j] = ((h >> (j % 31)) & 1) ? 1 : 0;
+                            }
+                            return v;
                         };
-                    }
+                        return {
+                            load: async function () {},
+                            embed: async function (t) { return vec(t.toLowerCase()); },
+                            dimensions: 384,
+                        };
+                    },
                 };
 
-                // Create engine and init it
                 var engine = new EmbedSemanticSearch();
                 await engine.init({ enable_embed: true });
+                if (!engine.isReady()) {
+                    console.error("engine not ready");
+                    return;
+                }
 
                 // Add some text and search
                 await engine.addText("Odoo is great");
                 await engine.addText("Semantic search works");
                 await engine.addText("Testing is important");
 
-                var results = await engine.search("search");
-
-                output.push("addText_count=" + engine._texts.length);
-                output.push("search_results_count=" + results.length);
-
-                // Verify search returned non-empty results
-                if (results && results.length > 0) {
-                    output.push("search_found=true");
-                } else {
-                    output.push("search_found=false");
+                var results = await engine.search("Odoo");
+                if (!Array.isArray(results) || results.length === 0) {
+                    console.error("search returned no results: " + JSON.stringify(results));
+                    return;
                 }
-
-                output.push("test successful");
-                document.body.textContent = output.join("\\n");
+                var top = results[0];
+                if (!top || typeof top.similarity !== "number") {
+                    console.error("bad result shape: " + JSON.stringify(top));
+                    return;
+                }
+                console.log("test successful");
             })();
         """
-        body = self._run_embed_probe(js).content
-        self.assertIn("addText_count=3", body)
-        self.assertIn("search_results_count=", body)
-        self.assertIn("search_found=true", body)
-        self.assertIn("test successful", body)
+        self._run_embed_probe(js)
 
     def test_04_consumer_class_defined(self):
         """The asset defines window.EmbedSemanticSearchConsumer."""
         js = """
-            var output = [];
-            output.push("typeof_EmbedSemanticSearchConsumer=" + typeof window.EmbedSemanticSearchConsumer);
-            output.push("test successful");
-            document.body.textContent = output.join("\\n");
+            if (typeof window.EmbedSemanticSearchConsumer !== "function") {
+                console.error("EmbedSemanticSearchConsumer not defined: " +
+                    typeof window.EmbedSemanticSearchConsumer);
+            }
+            console.log("test successful");
         """
-        body = self._run_embed_probe(js).content
-        self.assertIn("typeof_EmbedSemanticSearchConsumer=function", body)
-        self.assertIn("test successful", body)
+        self._run_embed_probe(js)
 
     def test_05_consumer_init_gate(self):
         """Consumer init() respects gating — returns silently when disabled."""
         js = """
-            (async function() {
-                var output = [];
-
+            (async function () {
                 // Stub the bridge with embed DISABLED
                 window.runonwebBridge = {
                     settings: { enable_embed: false },
+                    isFeatureEnabled: function (f) { return false; },
+                    getDevice: function () { return "wasm"; },
                 };
 
                 // Create consumer and init it
@@ -158,52 +170,47 @@ class TestEmbedSmoke(HttpCase):
                 await consumer.init({ enable_embed: true });
 
                 // Engine should NOT be ready (gate blocks it)
-                var stats = consumer.stats();
-                output.push("consumer_engine_ready=" + (stats ? stats.ready : "no_stats"));
-
-                output.push("test successful");
-                document.body.textContent = output.join("\\n");
+                var stats = await consumer.stats();
+                if (!stats || stats.ready !== false) {
+                    console.error("consumer engine should be gated, stats=" +
+                        JSON.stringify(stats));
+                    return;
+                }
+                console.log("test successful");
             })();
         """
-        body = self._run_embed_probe(js).content
-        self.assertIn("consumer_engine_ready=false", body)
-        self.assertIn("test successful", body)
+        self._run_embed_probe(js)
 
     def test_06_stats_output(self):
         """stats() returns expected structure."""
         js = """
-            (async function() {
-                var output = [];
-
+            (async function () {
                 window.runonwebBridge = {
                     settings: { enable_embed: true },
-                    isFeatureEnabled: function(name) { return name === "embed"; },
-                    getEmbed: function() {
+                    isFeatureEnabled: function (f) { return true; },
+                    getDevice: function () { return "wasm"; },
+                    getEmbed: function () {
                         return {
-                            load: function() { return Promise.resolve(); },
-                            embed: function(text) {
-                                var vec = new Float32Array(384);
-                                return Promise.resolve(vec);
-                            },
-                            getDevice: function() { return "wasm"; }
+                            load: async function () {},
+                            embed: async function (t) { return new Array(384).fill(0.1); },
+                            dimensions: 384,
                         };
-                    }
+                    },
                 };
 
                 var engine = new EmbedSemanticSearch();
                 await engine.init({ enable_embed: true });
+                var stats = await engine.stats();
 
-                var stats = engine.stats();
-                output.push("stats_ready=" + stats.ready);
-                output.push("stats_webGPU_available=" + stats.webGPU.available);
-                output.push("stats_webGPU_isWebGPU=" + stats.webGPU.isWebGPU);
-                output.push("stats_webGPU_type=" + stats.webGPU.type);
-
-                output.push("test successful");
-                document.body.textContent = output.join("\\n");
+                if (!stats || stats.ready !== true) {
+                    console.error("stats.ready != true: " + JSON.stringify(stats));
+                    return;
+                }
+                if (!stats.webGPU || stats.webGPU.type !== "wasm") {
+                    console.error("stats.webGPU wrong: " + JSON.stringify(stats.webGPU));
+                    return;
+                }
+                console.log("test successful");
             })();
         """
-        body = self._run_embed_probe(js).content
-        self.assertIn("stats_ready=true", body)
-        self.assertIn("stats_webGPU_type=wasm", body)
-        self.assertIn("test successful", body)
+        self._run_embed_probe(js)
