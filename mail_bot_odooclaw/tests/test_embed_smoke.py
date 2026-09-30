@@ -31,7 +31,7 @@ class TestEmbedSmoke(HttpCase):
         return self.browser_js(
             url_path="/web",
             code=js,
-            ready="odoo.webclient",
+            ready="odoo.isReady",
             login="admin",
             timeout=120,
         )
@@ -59,7 +59,7 @@ class TestEmbedSmoke(HttpCase):
                 window.runonwebBridge = {
                     settings: { enable_embed: true },
                     isFeatureEnabled: function (f) { return true; },
-                    getDevice: function () { return "wasm"; },
+                    getDevice: function () { return Promise.resolve("wasm"); },
                     getEmbed: function () {
                         return {
                             load: async function () {},
@@ -93,7 +93,7 @@ class TestEmbedSmoke(HttpCase):
                 window.runonwebBridge = {
                     settings: { enable_embed: true },
                     isFeatureEnabled: function (f) { return true; },
-                    getDevice: function () { return "wasm"; },
+                    getDevice: function () { return Promise.resolve("wasm"); },
                     getEmbed: function () {
                         // Deterministic pseudo-embedding: same text → same vector,
                         // similar texts → closer vectors.
@@ -162,7 +162,7 @@ class TestEmbedSmoke(HttpCase):
                 window.runonwebBridge = {
                     settings: { enable_embed: false },
                     isFeatureEnabled: function (f) { return false; },
-                    getDevice: function () { return "wasm"; },
+                    getDevice: function () { return Promise.resolve("wasm"); },
                 };
 
                 // Create consumer and init it
@@ -188,7 +188,7 @@ class TestEmbedSmoke(HttpCase):
                 window.runonwebBridge = {
                     settings: { enable_embed: true },
                     isFeatureEnabled: function (f) { return true; },
-                    getDevice: function () { return "wasm"; },
+                    getDevice: function () { return Promise.resolve("wasm"); },
                     getEmbed: function () {
                         return {
                             load: async function () {},

@@ -95,7 +95,7 @@
         return new Promise((resolve, reject) => {
             const tx = db.transaction(STORE_NAME, "readwrite");
             const store = tx.objectStore(STORE_NAME);
-            store.add({ hash, text, vector, created });
+            store.put({ hash, text, vector, created });
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
         });
@@ -171,13 +171,13 @@
 
     // ── WebGPU detection ─────────────────────────────────────────────────
 
-    function getWebGPUStatus(bridge) {
+    async function getWebGPUStatus(bridge) {
         if (!bridge || typeof bridge.getDevice !== "function") {
             return { available: false, isWebGPU: false, gpuName: null, type: "unknown" };
         }
         try {
-            // getDevice() returns a string like "webgpu" or "wasm"
-            const device = bridge.getDevice();
+            // getDevice() is async — it resolves to a string like "webgpu" or "wasm"
+            const device = await bridge.getDevice();
             const isWebGPU = device === "webgpu";
             return {
                 available: true,
@@ -407,7 +407,7 @@
             return {
                 ready: this._ready,
                 entryCount: all.length,
-                webGPU: getWebGPUStatus(this._bridge),
+                webGPU: await getWebGPUStatus(this._bridge),
             };
         }
     }
