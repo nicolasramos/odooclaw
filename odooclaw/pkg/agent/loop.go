@@ -947,6 +947,37 @@ func (al *AgentLoop) runAgentLoop(
 	// 1. Update tool contexts
 	al.updateToolContexts(agent, opts.Channel, opts.ChatID)
 
+	// 1b. Deterministic STT path: if the message carries an attached voice note
+	// marker ("🎤 [Nota de voz: name (ID: N)]" injected by the mail_bot_odooclaw
+	// addon), transcribe it HERE and replace the marker-only message with the
+	// spoken text, so everything downstream (history, save, the LLM turn) works
+	// on the real question.
+	//
+	// This must run before BuildMessages and AddMessage. Routing it through the
+	// model does not work: the whisper-* tools are absent from its training set
+	// and with 135 registered tools the prompt cap (64) drops them from the list
+	// the model ever sees, so it pokes at the filesystem with exec until it
+	// exhausts max_tool_iterations and answers nothing.
+	//
+	// Same deterministic pattern as handleInvoiceAttachment (step 3b below).
+	if voiceID, ok := findVoiceAttachment(opts.UserMessage); ok {
+		if hasWhisperTools(agent) {
+			transcript, err := handleVoiceAttachment(ctx, agent, voiceID, opts)
+			if err == nil {
+				opts.UserMessage = transcript
+			} else {
+				logger.WarnCF("agent", "STT deterministic path failed, falling back to LLM",
+					map[string]any{
+						"attachment_id": voiceID,
+						"error":         err.Error(),
+					})
+			}
+		} else {
+			logger.WarnCF("agent", "Voice note received but no whisper tool is registered",
+				map[string]any{"attachment_id": voiceID})
+		}
+	}
+
 	// 2. Build messages (skip history for heartbeat)
 	var history []providers.Message
 	var summary string
