@@ -172,9 +172,12 @@
     // ── WebGPU detection ─────────────────────────────────────────────────
 
     function getWebGPUStatus(bridge) {
+        if (!bridge || typeof bridge.getDevice !== "function") {
+            return { available: false, isWebGPU: false, gpuName: null, type: "unknown" };
+        }
         try {
             // getDevice() returns a string like "webgpu" or "wasm"
-            const device = bridge.getDevice ? bridge.getDevice() : "unknown";
+            const device = bridge.getDevice();
             const isWebGPU = device === "webgpu";
             return {
                 available: true,
@@ -207,6 +210,7 @@
             this._ready = false;
             this._db = null;
             this._embed = null;
+            this._bridge = null;
             this._sessionCache = new SessionCache();
             this._featureEnabled = false;
         }
@@ -220,16 +224,20 @@
         async init(settings) {
             if (this._ready) return;
 
-            // Get the bridge from Stage 1 (with retry)
-            let bridge = window.runonwebBridge;
-            if (!bridge) {
-                await new Promise((r) => setTimeout(r, 100));
+            // Get the bridge from Stage 1 (polling retry)
+            let bridge = null;
+            for (let attempt = 0; attempt < 5; attempt++) {
                 bridge = window.runonwebBridge;
+                if (bridge) break;
+                await new Promise((r) => setTimeout(r, 200));
             }
             if (!bridge) {
                 console.warn("[embed] runonwebBridge not available");
                 return;
             }
+
+            // Store the bridge for later use (gate fix — pass bridge, not embed)
+            this._bridge = bridge;
 
             // Fail-closed gating via bridge API
             const enableEmbed =
@@ -392,7 +400,7 @@
             return {
                 ready: this._ready,
                 entryCount: all.length,
-                webGPU: getWebGPUStatus(this._embed),
+                webGPU: getWebGPUStatus(this._bridge),
             };
         }
     }
