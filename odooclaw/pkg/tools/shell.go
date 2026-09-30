@@ -287,6 +287,19 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult
 	}
 }
 
+// wordByte reports whether b can continue a filename token. Used to tell a real
+// absolute path (`cat /etc/x`, preceded by a space) from the `/`-match of a
+// relative path (`cat state/x.py`, where the match starts mid-token at "/x.py").
+func wordByte(b byte) bool {
+	switch {
+	case b >= 'a' && b <= 'z', b >= 'A' && b <= 'Z', b >= '0' && b <= '9':
+		return true
+	case b == '_' || b == '-' || b == '.' || b == '/':
+		return true
+	}
+	return false
+}
+
 func (t *ExecTool) guardCommand(command, cwd string) string {
 	cmd := strings.TrimSpace(command)
 	lower := strings.ToLower(cmd)
@@ -331,19 +344,39 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
-		matches := absolutePathPattern.FindAllString(cmd, -1)
+		matches := absolutePathPattern.FindAllStringIndex(cmd, -1)
 
-		for _, raw := range matches {
-			p, err := filepath.Abs(raw)
+		for _, m := range matches {
+			start, end := m[0], m[1]
+
+			// A separator inside a longer token is not the start of an absolute
+			// path. In `cat state/hours_sep.py` the pattern matches
+			// "/hours_sep.py" — a *relative* path that resolves inside the
+			// workspace — but filepath.Abs rooted it at "/" and the command was
+			// rejected as "outside working dir". That broke every legitimate
+			// relative path containing a slash.
+			if start > 0 && wordByte(cmd[start-1]) {
+				continue
+			}
+
+			// The token pattern also swallows trailing shell punctuation, which
+			// turned the safe "/dev/null" of a `2>/dev/null;` redirection into
+			// "/dev/null;" and missed the safePaths lookup.
+			p := strings.TrimRight(cmd[start:end], ";|&,)")
+			if p == "" {
+				continue
+			}
+
+			absPath, err := filepath.Abs(p)
 			if err != nil {
 				continue
 			}
 
-			if safePaths[p] {
+			if safePaths[absPath] {
 				continue
 			}
 
-			rel, err := filepath.Rel(cwdPath, p)
+			rel, err := filepath.Rel(cwdPath, absPath)
 			if err != nil {
 				continue
 			}
