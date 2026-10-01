@@ -1,3 +1,4 @@
+import os
 import threading
 import requests
 import logging
@@ -19,6 +20,11 @@ class OdooSession:
         self.username = username
         self.password = password
         self.session = requests.Session()
+        # Internal OdooClaw endpoints (/odooclaw/call_kw_as_user) are protected by the
+        # shared secret. Without this header Odoo answers 401 and every Odoo tool fails.
+        _token = os.environ.get("ODOOCLAW_REPLY_TOKEN", "")
+        if _token:
+            self.session.headers.update({"X-OdooClaw-Token": _token})
         self.uid: Optional[int] = None
         self.session_id: Optional[str] = None
         self.context: Dict[str, Any] = {}
