@@ -280,8 +280,8 @@ func TestDailyCap(t *testing.T) {
 	areas := []string{"accounting", "sales", "purchases"}
 	counters := map[string]map[string]int{
 		"accounting": {"unposted_invoices": 12},
-		"sales":       {"draft_quotations": 9},
-		"purchases":      {"draft_purchase_orders": 9},
+		"sales":      {"draft_quotations": 9},
+		"purchases":  {"draft_purchase_orders": 9},
 	}
 
 	spoke := 0
@@ -470,21 +470,21 @@ func TestEveryShippedAreaCounterHasAPlaybook(t *testing.T) {
 	// If a counter is added on the Odoo side and forgotten here, this test is the
 	// only place that notices.
 	required := map[string][]string{
-		"contabilidad": {
+		"accounting": {
 			"unposted_invoices",
 			"unposted_vendor_bills",
 			"unreconciled_statement_lines",
 			"verifactu_unconfigured",
 		},
-		"ventas": {"draft_quotations"},
+		"sales": {"draft_quotations"},
 		"crm": {
 			"stale_opportunities",
 			"open_opportunities",
 			"overdue_opportunities",
 		},
-		"compras":    {"draft_purchase_orders"},
-		"inventario": {"negative_stock_products"},
-		"rrhh":       {"pending_leave_requests"},
+		"purchases": {"draft_purchase_orders"},
+		"inventory": {"negative_stock_products"},
+		"hr":        {"pending_leave_requests"},
 		"expenses": {
 			"draft_expenses",
 			"expenses_awaiting_approval",
