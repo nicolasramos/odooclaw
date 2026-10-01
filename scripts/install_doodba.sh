@@ -12,9 +12,13 @@
 set -euo pipefail
 
 # -- Constants ---------------------------------------------------------------
-readonly SCRIPT_VERSION="1.0.0"
+readonly SCRIPT_VERSION="1.1.0"
 readonly ODOOCLAW_REPO="https://github.com/nicolasramos/odooclaw"
+# The Odoo modules live in their own repository since their extraction out of
+# ODOOCLAW_REPO. One branch per Odoo version, named after it.
+readonly ODOOCLAW_ADDONS_REPO="https://github.com/nicolasramos/odoo-addons"
 readonly TEMP_REPO="/tmp/odooclaw_install_$(date +%s)"
+readonly ADDONS_TEMP_REPO="/tmp/odooclaw_addons_$(date +%s)"
 readonly SUPPORTED_VERSIONS=("16.0" "17.0" "18.0")
 
 # -- Color helpers -----------------------------------------------------------
@@ -42,6 +46,10 @@ cleanup() {
   if [ -d "$TEMP_REPO" ]; then
     log "Cleaning up temp clone..."
     rm -rf "$TEMP_REPO"
+  fi
+  if [ -d "$ADDONS_TEMP_REPO" ]; then
+    log "Cleaning up temp addons clone..."
+    rm -rf "$ADDONS_TEMP_REPO"
   fi
 }
 trap cleanup EXIT
@@ -226,10 +234,23 @@ phase_clone_and_copy() {
     ok "Repository cloned."
   fi
 
-  # Verify the module exists for the selected version
-  local module_src="$TEMP_REPO/odoo/custom/src/${ODOO_VERSION}/mail_bot_odooclaw"
+  # Clone the Odoo modules repository at the branch matching the Odoo version.
+  if [ ! -d "$ADDONS_TEMP_REPO/.git" ]; then
+    log "Cloning OdooClaw addons repository (branch ${ODOO_VERSION})..."
+    git clone --depth 1 --branch "$ODOO_VERSION" "$ODOOCLAW_ADDONS_REPO" \
+      "$ADDONS_TEMP_REPO" 2>/dev/null || \
+      fail "Failed to clone ${ODOOCLAW_ADDONS_REPO} branch ${ODOO_VERSION}. Check that the branch exists."
+    ok "Addons repository cloned."
+  fi
+
+  # Verify the module exists for the selected version.
+  # The modules were extracted out of ODOOCLAW_REPO into ODOOCLAW_ADDONS_REPO
+  # (see its commit "remove Odoo modules extracted to odoo-addons repo"), which
+  # keeps one branch per Odoo version. Reading them from the old in-tree path
+  # made this phase fail for every supported version.
+  local module_src="$ADDONS_TEMP_REPO/mail_bot_odooclaw"
   if [ ! -d "$module_src" ]; then
-    fail "Module mail_bot_odooclaw not found for Odoo ${ODOO_VERSION} in the repository."
+    fail "Module mail_bot_odooclaw not found in ${ODOOCLAW_ADDONS_REPO} branch ${ODOO_VERSION}."
   fi
 
   # Create directories

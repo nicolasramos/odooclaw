@@ -48,13 +48,17 @@ cp examples/doodba/config.odooclaw.minimal.example.json odooclaw/config/config.j
 
 This is a baseline config. Environment variables from `.docker/odoo.env` still take precedence.
 
-## 4) Odoo 16 module
+## 4) Odoo module
 
 Ensure this module exists in your addons tree:
 
 ```text
-odoo/custom/src/16.0/mail_bot_odooclaw/
+odoo/custom/src/private/mail_bot_odooclaw/
 ```
+
+It is not part of this repository: get it from the per-version branch of
+https://github.com/nicolasramos/odoo-addons (same branch name as your Odoo version),
+or let `scripts/install_doodba.sh` fetch and place it for you.
 
 In Odoo UI, set:
 
