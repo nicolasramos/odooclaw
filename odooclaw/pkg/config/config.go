@@ -488,25 +488,25 @@ type ModelEndpointConfig struct {
 }
 
 type ProvidersConfig struct {
-	Anthropic     ProviderConfig       `json:"anthropic"`
-	OpenAI        OpenAIProviderConfig `json:"openai"`
-	LiteLLM       ProviderConfig       `json:"litellm"`
-	OpenRouter    ProviderConfig       `json:"openrouter"`
-	Groq          ProviderConfig       `json:"groq"`
-	Zhipu         ProviderConfig       `json:"zhipu"`
-	VLLM          ProviderConfig       `json:"vllm"`
-	Gemini        ProviderConfig       `json:"gemini"`
-	Nvidia        ProviderConfig       `json:"nvidia"`
-	Ollama        ProviderConfig       `json:"ollama"`
-	Moonshot      ProviderConfig       `json:"moonshot"`
-	ShengSuanYun  ProviderConfig       `json:"shengsuanyun"`
-	DeepSeek      ProviderConfig       `json:"deepseek"`
-	Cerebras      ProviderConfig       `json:"cerebras"`
-	VolcEngine    ProviderConfig       `json:"volcengine"`
-	GitHubCopilot ProviderConfig       `json:"github_copilot"`
-	Antigravity   ProviderConfig       `json:"antigravity"`
-	Qwen          ProviderConfig       `json:"qwen"`
-	Mistral       ProviderConfig       `json:"mistral"`
+	Anthropic     ProviderConfig       `json:"anthropic" envPrefix:"ODOOCLAW_PROVIDERS_ANTHROPIC_"`
+	OpenAI        OpenAIProviderConfig `json:"openai" envPrefix:"ODOOCLAW_PROVIDERS_OPENAI_"`
+	LiteLLM       ProviderConfig       `json:"litellm" envPrefix:"ODOOCLAW_PROVIDERS_LITELLM_"`
+	OpenRouter    ProviderConfig       `json:"openrouter" envPrefix:"ODOOCLAW_PROVIDERS_OPENROUTER_"`
+	Groq          ProviderConfig       `json:"groq" envPrefix:"ODOOCLAW_PROVIDERS_GROQ_"`
+	Zhipu         ProviderConfig       `json:"zhipu" envPrefix:"ODOOCLAW_PROVIDERS_ZHIPU_"`
+	VLLM          ProviderConfig       `json:"vllm" envPrefix:"ODOOCLAW_PROVIDERS_VLLM_"`
+	Gemini        ProviderConfig       `json:"gemini" envPrefix:"ODOOCLAW_PROVIDERS_GEMINI_"`
+	Nvidia        ProviderConfig       `json:"nvidia" envPrefix:"ODOOCLAW_PROVIDERS_NVIDIA_"`
+	Ollama        ProviderConfig       `json:"ollama" envPrefix:"ODOOCLAW_PROVIDERS_OLLAMA_"`
+	Moonshot      ProviderConfig       `json:"moonshot" envPrefix:"ODOOCLAW_PROVIDERS_MOONSHOT_"`
+	ShengSuanYun  ProviderConfig       `json:"shengsuanyun" envPrefix:"ODOOCLAW_PROVIDERS_SHENGSUANYUN_"`
+	DeepSeek      ProviderConfig       `json:"deepseek" envPrefix:"ODOOCLAW_PROVIDERS_DEEPSEEK_"`
+	Cerebras      ProviderConfig       `json:"cerebras" envPrefix:"ODOOCLAW_PROVIDERS_CEREBRAS_"`
+	VolcEngine    ProviderConfig       `json:"volcengine" envPrefix:"ODOOCLAW_PROVIDERS_VOLCENGINE_"`
+	GitHubCopilot ProviderConfig       `json:"github_copilot" envPrefix:"ODOOCLAW_PROVIDERS_GITHUB_COPILOT_"`
+	Antigravity   ProviderConfig       `json:"antigravity" envPrefix:"ODOOCLAW_PROVIDERS_ANTIGRAVITY_"`
+	Qwen          ProviderConfig       `json:"qwen" envPrefix:"ODOOCLAW_PROVIDERS_QWEN_"`
+	Mistral       ProviderConfig       `json:"mistral" envPrefix:"ODOOCLAW_PROVIDERS_MISTRAL_"`
 }
 
 // IsEmpty checks if all provider configs are empty (no API keys or API bases set)
@@ -544,17 +544,17 @@ func (p ProvidersConfig) MarshalJSON() ([]byte, error) {
 }
 
 type ProviderConfig struct {
-	APIKey         string `json:"api_key"                   env:"ODOOCLAW_PROVIDERS_{{.Name}}_API_KEY"`
-	APIBase        string `json:"api_base"                  env:"ODOOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
-	Proxy          string `json:"proxy,omitempty"           env:"ODOOCLAW_PROVIDERS_{{.Name}}_PROXY"`
-	RequestTimeout int    `json:"request_timeout,omitempty" env:"ODOOCLAW_PROVIDERS_{{.Name}}_REQUEST_TIMEOUT"`
-	AuthMethod     string `json:"auth_method,omitempty"     env:"ODOOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
-	ConnectMode    string `json:"connect_mode,omitempty"    env:"ODOOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` // only for Github Copilot, `stdio` or `grpc`
+	APIKey         string `json:"api_key"                   env:"API_KEY"`
+	APIBase        string `json:"api_base"                  env:"API_BASE"`
+	Proxy          string `json:"proxy,omitempty"           env:"PROXY"`
+	RequestTimeout int    `json:"request_timeout,omitempty" env:"REQUEST_TIMEOUT"`
+	AuthMethod     string `json:"auth_method,omitempty"     env:"AUTH_METHOD"`
+	ConnectMode    string `json:"connect_mode,omitempty"    env:"CONNECT_MODE"` // only for Github Copilot, `stdio` or `grpc`
 }
 
 type OpenAIProviderConfig struct {
 	ProviderConfig
-	WebSearch bool `json:"web_search" env:"ODOOCLAW_PROVIDERS_OPENAI_WEB_SEARCH"`
+	WebSearch bool `json:"web_search" env:"WEB_SEARCH"`
 }
 
 // ModelConfig represents a model-centric provider configuration.
