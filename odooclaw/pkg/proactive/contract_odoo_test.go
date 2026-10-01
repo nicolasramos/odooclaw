@@ -45,6 +45,18 @@ func TestSignalFromOdooMatchesItsPlaybook(t *testing.T) {
 		{"purchases", "draft_purchase_orders", "purchases.draft_purchase_orders", false},
 		{"inventory", "negative_stock_products", "inventory.negative_stock", false},
 		{"hr", "pending_leave_requests", "hr.pending_leaves", false},
+		{"crm", "stale_opportunities", "crm.stale_opportunities", false},
+		{"crm", "open_opportunities", "crm.open_opportunities", false},
+		{"crm", "overdue_opportunities", "crm.overdue_opportunities", false},
+		{"expenses", "draft_expenses", "gastos.draft_expenses", false},
+		{"expenses", "expenses_awaiting_approval", "gastos.expenses_awaiting_approval", false},
+		{"projects", "open_projects", "proyectos.open_projects", false},
+		{"projects", "overdue_projects", "proyectos.overdue_projects", false},
+		{"projects", "overdue_tasks", "proyectos.overdue_tasks", false},
+		{"projects", "waiting_tasks", "proyectos.waiting_tasks", false},
+		{"projects", "urgent_tasks", "proyectos.urgent_tasks", false},
+		{"fleet", "unregistered_vehicles", "flota.unregistered_vehicles", false},
+		{"fleet", "vehicles_without_driver", "flota.vehicles_without_driver", false},
 	}
 
 	// Every playbook the engine ships must appear in the table above, otherwise
