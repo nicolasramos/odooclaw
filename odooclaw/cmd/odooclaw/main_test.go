@@ -37,6 +37,7 @@ func TestNewOdooclawCommand(t *testing.T) {
 		"auth",
 		"cron",
 		"gateway",
+		"knowledge",
 		"migrate",
 		"onboard",
 		"skills",
