@@ -6,6 +6,8 @@ package knowledge
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -47,6 +49,7 @@ type KnowledgeEntry struct {
 	Metadata  map[string]string // flexible KV: "tool_name", "odoo_version", "module", etc.
 	RiskLevel RiskLevel
 	Aliases   []string // manual aliases for this entry
+	Source    string   // origin file path (set by SyncDirectory); empty for manual entries
 }
 
 // ToolKnowledge is a knowledge entry specifically about a registered tool.
@@ -65,30 +68,84 @@ type ToolKnowledge struct {
 // KnowledgeBase stores and retrieves domain-specific knowledge entries.
 // It uses SQLite FTS5 for full-text search over knowledge content.
 type KnowledgeBase struct {
-	db  *sql.DB
-	mu  sync.RWMutex
+	db   *sql.DB
+	path string
+	mu   sync.RWMutex
 }
 
 // NewKnowledgeBase creates a new in-memory knowledge base.
+// Deprecated for live use: prefer NewKnowledgeBaseAt so entries survive
+// restarts (NRA-3845). Kept for tests and ephemeral callers.
 func NewKnowledgeBase() (*KnowledgeBase, error) {
-	db, err := sql.Open("sqlite", ":memory:")
+	return newKnowledgeBase(":memory:")
+}
+
+// NewKnowledgeBaseAt creates (or opens) a persistent knowledge base stored at
+// dbPath, using the same WAL/lazy pattern as pkg/memory. Parent directories
+// are created as needed.
+func NewKnowledgeBaseAt(dbPath string) (*KnowledgeBase, error) {
+	if dbPath == "" || dbPath == ":memory:" {
+		return newKnowledgeBase(dbPath)
+	}
+	if dir := filepath.Dir(dbPath); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("create knowledge dir: %w", err)
+		}
+	}
+	return newKnowledgeBase(dbPath)
+}
+
+func newKnowledgeBase(dbPath string) (*KnowledgeBase, error) {
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open knowledge base: %w", err)
 	}
 
-	// Create FTS5 table for knowledge entries
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
+	pragmas := []string{
+		"PRAGMA foreign_keys = ON",
+		"PRAGMA journal_mode = WAL",
+		"PRAGMA synchronous = NORMAL",
+	}
+	for _, pragma := range pragmas {
+		if _, err := db.Exec(pragma); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("set knowledge pragma %q: %w", pragma, err)
+		}
+	}
+
+	// Create FTS5 table for knowledge entries.
+	// `source` carries the origin file path for directory-synced entries so
+	// resyncs can replace/delete exactly the rows ingested from a file.
 	_, err = db.Exec(`
-		CREATE VIRTUAL TABLE knowledge USING fts5(
+		CREATE VIRTUAL TABLE IF NOT EXISTS knowledge USING fts5(
 			title,
 			content,
 			tags,
 			category,
+			source UNINDEXED,
 			tokenize='porter unicode61'
 		)
 	`)
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to create knowledge table: %w", err)
+	}
+
+	// Track ingested files (mtime/size) for incremental directory sync.
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS knowledge_files (
+			source TEXT PRIMARY KEY,
+			modified INTEGER NOT NULL,
+			size INTEGER NOT NULL,
+			ingested_at INTEGER NOT NULL
+		)
+	`)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to create knowledge_files table: %w", err)
 	}
 
 	// Create a regular table for metadata (aliases, risk, versions, etc.)
@@ -139,7 +196,12 @@ func NewKnowledgeBase() (*KnowledgeBase, error) {
 		return nil, fmt.Errorf("failed to create tool_knowledge table: %w", err)
 	}
 
-	return &KnowledgeBase{db: db}, nil
+	return &KnowledgeBase{db: db, path: dbPath}, nil
+}
+
+// Path returns the file backing this knowledge base (":memory:" when ephemeral).
+func (kb *KnowledgeBase) Path() string {
+	return kb.path
 }
 
 // Add inserts a knowledge entry into the base.
@@ -151,8 +213,8 @@ func (kb *KnowledgeBase) Add(entry KnowledgeEntry) error {
 	aliases := strings.Join(entry.Aliases, ";")
 
 	res, err := kb.db.Exec(
-		"INSERT INTO knowledge(title, content, tags, category) VALUES (?, ?, ?, ?)",
-		entry.Title, entry.Content, tags, entry.Category,
+		"INSERT INTO knowledge(title, content, tags, category, source) VALUES (?, ?, ?, ?, ?)",
+		entry.Title, entry.Content, tags, entry.Category, entry.Source,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to insert knowledge: %w", err)
@@ -198,6 +260,16 @@ func (kb *KnowledgeBase) Search(query string, category string, limit int) ([]Kno
 		limit = 5
 	}
 
+	// NRA-3845: never pass the raw query to MATCH. A natural-language
+	// sentence ("¿cómo configuro el VeriFactu en Odoo?") is treated by
+	// FTS5 as an implicit AND over the whole phrase and returns 0 rows.
+	// Tokenize (NFC-normalize, drop stopwords) and join with OR, same
+	// pattern as pkg/memory.buildMatchQuery.
+	matchQuery := BuildMatchQuery(query)
+	if matchQuery == "" {
+		return nil, nil
+	}
+
 	var rows *sql.Rows
 	var err error
 
@@ -213,7 +285,7 @@ func (kb *KnowledgeBase) Search(query string, category string, limit int) ([]Kno
 			WHERE knowledge MATCH ? AND knowledge.category = ?
 			ORDER BY rank
 			LIMIT ?
-		`, query, category, limit)
+		`, matchQuery, category, limit)
 	} else {
 		rows, err = kb.db.Query(`
 			SELECT knowledge.title, knowledge.content, knowledge.tags, knowledge.category,
@@ -223,7 +295,7 @@ func (kb *KnowledgeBase) Search(query string, category string, limit int) ([]Kno
 			WHERE knowledge MATCH ?
 			ORDER BY rank
 			LIMIT ?
-		`, query, limit)
+		`, matchQuery, limit)
 	}
 
 	if err != nil {

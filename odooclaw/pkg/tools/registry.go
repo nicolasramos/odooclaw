@@ -260,7 +260,7 @@ func (r *ToolRegistry) ClearRetrievalEngine() {
 // isCoreTool determines if a tool is a "core" tool that should always be included.
 func isCoreTool(name string) bool {
 	corePrefixes := []string{
-		"memory", "session", "web_search", "web_extract",
+		"memory", "session", "knowledge", "web_search", "web_extract",
 		"navigate", "read_note", "write_note", "search_notes",
 		"skill_view", "skills_list", "skill_manage",
 	}

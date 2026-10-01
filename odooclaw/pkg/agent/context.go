@@ -23,6 +23,7 @@ type ContextBuilder struct {
 	workspace    string
 	skillsLoader *skills.SkillsLoader
 	memory       *MemoryStore
+	knowledge    *KnowledgeStore
 	browser      browserContextResolver
 	contextWindowTokens int // max estimated tokens to keep from history (0 = unlimited)
 	toolResultMaxChars  int // max chars per tool result content (0 = unlimited)
@@ -73,10 +74,17 @@ func NewContextBuilder(workspace string, contextWindowTokens, toolResultMaxChars
 		workspace:           workspace,
 		skillsLoader:        skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir),
 		memory:              NewMemoryStore(workspace),
+		knowledge:           NewKnowledgeStore(workspace),
 		browser:             browsercopilot.NewClientFromEnv(),
 		contextWindowTokens: contextWindowTokens,
 		toolResultMaxChars:  toolResultMaxChars,
 	}
+}
+
+// Knowledge exposes the persistent knowledge store attached to this
+// context builder (NRA-3845).
+func (cb *ContextBuilder) Knowledge() *KnowledgeStore {
+	return cb.knowledge
 }
 
 // SetModel records the agent model name. Small local fine-tuned models
@@ -555,6 +563,16 @@ func (cb *ContextBuilder) buildDynamicContext(
 	})
 	if relevantMemory != "" {
 		fmt.Fprintf(&sb, "\n\n%s", relevantMemory)
+	}
+
+	// NRA-3845: inject top-N persistent knowledge-base entries relevant to
+	// the current message. Lives in the dynamic part because it changes per
+	// request; the KB itself is persistent on disk under the workspace.
+	if cb.knowledge != nil {
+		knowledgeCtx := cb.knowledge.BuildKnowledgeContext(currentMessage, 3)
+		if knowledgeCtx != "" {
+			fmt.Fprintf(&sb, "\n\n%s", knowledgeCtx)
+		}
 	}
 
 	browserContext := cb.getBrowserContext(channel, chatID, senderID)
