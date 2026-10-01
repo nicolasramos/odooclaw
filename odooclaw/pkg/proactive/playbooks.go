@@ -12,8 +12,8 @@ import "github.com/nicolasramos/odooclaw/pkg/knowledge"
 func DefaultPlaybooks() []Playbook {
 	return []Playbook{
 		{
-			ID:        "contabilidad.unposted_invoices",
-			Area:      "contabilidad",
+			ID:        "accounting.unposted_invoices",
+			Area:      "accounting",
 			Title:     "Facturas en borrador sin publicar",
 			SignalKey: "unposted_invoices",
 			MinCount:  5,
@@ -23,8 +23,8 @@ func DefaultPlaybooks() []Playbook {
 				"¿Quieres que te explique cómo publicarlas en bloque, o prefieres revisarlas una a una?",
 		},
 		{
-			ID:        "contabilidad.unposted_vendor_bills",
-			Area:      "contabilidad",
+			ID:        "accounting.unposted_vendor_bills",
+			Area:      "accounting",
 			Title:     "Facturas de proveedor sin registrar",
 			SignalKey: "unposted_vendor_bills",
 			MinCount:  3,
@@ -34,8 +34,8 @@ func DefaultPlaybooks() []Playbook {
 				"¿Quieres que te explique cómo registrarlas y dejarlas listas para pago?",
 		},
 		{
-			ID:        "contabilidad.unreconciled_statement",
-			Area:      "contabilidad",
+			ID:        "accounting.unreconciled_statement",
+			Area:      "accounting",
 			Title:     "Extracto bancario sin conciliar",
 			SignalKey: "unreconciled_statement_lines",
 			MinCount:  1,
@@ -45,8 +45,8 @@ func DefaultPlaybooks() []Playbook {
 				"¿Te enseño a conciliarlas y a dejar el banco cuadrado?",
 		},
 		{
-			ID:        "contabilidad.verifactu_pending",
-			Area:      "contabilidad",
+			ID:        "accounting.verifactu_pending",
+			Area:      "accounting",
 			Title:     "VeriFactu pendiente de configurar",
 			SignalKey: "verifactu_unconfigured",
 			MinCount:  1,
@@ -57,8 +57,8 @@ func DefaultPlaybooks() []Playbook {
 				"(sociedades) y el 1-jul-2027 (resto).",
 		},
 		{
-			ID:        "ventas.draft_quotations",
-			Area:      "ventas",
+			ID:        "sales.draft_quotations",
+			Area:      "sales",
 			Title:     "Presupuestos en borrador",
 			SignalKey: "draft_quotations",
 			MinCount:  3,
@@ -68,8 +68,8 @@ func DefaultPlaybooks() []Playbook {
 				"¿Quieres que te explique cómo enviarlos y hacerles seguimiento automático?",
 		},
 		{
-			ID:        "ventas.stale_opportunities",
-			Area:      "ventas",
+			ID:        "sales.stale_opportunities",
+			Area:      "sales",
 			Title:     "Oportunidades sin actividad",
 			SignalKey: "stale_opportunities",
 			MinCount:  5,
@@ -79,8 +79,8 @@ func DefaultPlaybooks() []Playbook {
 				"¿Te muestro cómo programar actividades para que no se enfríen?",
 		},
 		{
-			ID:        "compras.draft_purchase_orders",
-			Area:      "compras",
+			ID:        "purchases.draft_purchase_orders",
+			Area:      "purchases",
 			Title:     "Pedidos de compra en borrador",
 			SignalKey: "draft_purchase_orders",
 			MinCount:  3,
@@ -90,8 +90,8 @@ func DefaultPlaybooks() []Playbook {
 				"¿Quieres que te explique cómo confirmarlos a proveedor?",
 		},
 		{
-			ID:        "inventario.negative_stock",
-			Area:      "inventario",
+			ID:        "inventory.negative_stock",
+			Area:      "inventory",
 			Title:     "Productos con stock negativo",
 			SignalKey: "negative_stock_products",
 			MinCount:  1,
@@ -101,8 +101,8 @@ func DefaultPlaybooks() []Playbook {
 				"Suele indicar un ajuste pendiente o una entrega no registrada. ¿Lo revisamos?",
 		},
 		{
-			ID:        "rrhh.pending_leaves",
-			Area:      "rrhh",
+			ID:        "hr.pending_leaves",
+			Area:      "hr",
 			Title:     "Solicitudes de ausencia pendientes",
 			SignalKey: "pending_leave_requests",
 			MinCount:  1,
