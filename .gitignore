@@ -36,3 +36,6 @@ docs/slices/
 
 # Node dependencies (build-time only; the compiled bundle is what ships)
 node_modules/
+
+# Generated embedded workspace (source of truth: repo-root workspace/)
+odooclaw/cmd/odooclaw/internal/onboard/workspace/**

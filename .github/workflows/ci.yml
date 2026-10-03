@@ -20,14 +20,8 @@ jobs:
           go-version-file: odooclaw/go.mod
           cache-dependency-path: odooclaw/go.sum
 
-      - name: Build
-        run: go build ./...
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Test
-        run: go test ./... -count=1 -timeout 300s
+      - name: Build, Vet and Test
+        run: make build vet test
 
   pytest-odoo-mcp:
     name: pytest odoo-mcp
@@ -69,3 +63,18 @@ jobs:
       - name: Run onboard tests
         working-directory: odooclaw/cmd/odooclaw/internal/onboard/workspace/skills/odoo-mcp
         run: PYTHONPATH=src python3 -m pytest tests/ -q
+
+  workspace-divergence:
+    name: workspace divergence check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: odooclaw
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate embedded workspace
+        run: make generate
+
+      - name: Check source and embedded trees match
+        run: diff -rq ../workspace cmd/odooclaw/internal/onboard/workspace
