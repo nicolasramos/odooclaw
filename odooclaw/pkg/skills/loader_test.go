@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func TestSkillsInfoValidate(t *testing.T) {
@@ -49,14 +50,14 @@ func TestSkillsInfoValidate(t *testing.T) {
 			skillName:   "skill with spaces",
 			description: "invalid name with spaces",
 			wantErr:     true,
-			errContains: []string{"name must be alphanumeric with hyphens"},
+			errContains: []string{"name must match agentskills.io pattern"},
 		},
 		{
 			name:        "name-with-underscore",
 			skillName:   "skill_underscore",
 			description: "invalid name with underscore",
 			wantErr:     true,
-			errContains: []string{"name must be alphanumeric with hyphens"},
+			errContains: []string{"name must match agentskills.io pattern"},
 		},
 	}
 
@@ -118,19 +119,22 @@ func TestExtractFrontmatter(t *testing.T) {
 			frontmatter := sl.extractFrontmatter(tc.content)
 			assert.NotEmpty(t, frontmatter, "Frontmatter should be extracted for %s line endings", tc.lineEndingType)
 
-			// Parse YAML to get name and description (parseSimpleYAML now handles all line ending types)
-			yamlMeta := sl.parseSimpleYAML(frontmatter)
+			// Parse with real YAML parser
+			var raw map[string]yaml.Node
+			err := yaml.Unmarshal([]byte(frontmatter), &raw)
+			require.NoError(t, err, "Frontmatter must parse as valid YAML")
+
 			assert.Equal(
 				t,
 				tc.expectedName,
-				yamlMeta["name"],
+				getString(raw, "name"),
 				"Name should be correctly parsed from frontmatter with %s line endings",
 				tc.lineEndingType,
 			)
 			assert.Equal(
 				t,
 				tc.expectedDesc,
-				yamlMeta["description"],
+				getString(raw, "description"),
 				"Description should be correctly parsed from frontmatter with %s line endings",
 				tc.lineEndingType,
 			)
@@ -185,15 +189,15 @@ func TestListSkillsMetadataNameDedup(t *testing.T) {
 	ws := filepath.Join(tmp, "workspace")
 	global := filepath.Join(tmp, "global")
 
-	// Different directory names but same metadata name
-	createSkillDir(t, filepath.Join(ws, "skills"), "dir-a", "shared-name", "workspace version")
-	createSkillDir(t, global, "dir-b", "shared-name", "global version")
+	// Same directory names and metadata name (dedup test with matching names)
+	createSkillDir(t, filepath.Join(ws, "skills"), "shared-skill", "shared-skill", "workspace version")
+	createSkillDir(t, global, "shared-skill", "shared-skill", "global version")
 
 	sl := NewSkillsLoader(ws, global, "")
 	skills := sl.ListSkills()
 
 	assert.Len(t, skills, 1)
-	assert.Equal(t, "shared-name", skills[0].Name)
+	assert.Equal(t, "shared-skill", skills[0].Name)
 	assert.Equal(t, "workspace", skills[0].Source)
 }
 
@@ -325,6 +329,179 @@ func TestStripFrontmatter(t *testing.T) {
 			)
 		})
 	}
+}
+
+// --- TDD: fixture that OLD code accepts but NEW standard must reject ---
+
+// TestOldAcceptsNewRejects_UppercaseName verifies the TDD property:
+// the old validator (allowing [a-zA-Z0-9]) accepts "My-Skill" but the new
+// agentskills.io-compliant validator (only [a-z0-9-]) must reject it.
+func TestOldAcceptsNewRejects_UppercaseName(t *testing.T) {
+	tmp := t.TempDir()
+	skillDir := filepath.Join(tmp, "my-skill") // directory is lowercase
+	require.NoError(t, os.MkdirAll(skillDir, 0o755))
+
+	// Fixtures: name has uppercase letters, directory is lowercase.
+	// Old code (namePattern with [a-zA-Z]) accepts this.
+	// New standard (only [a-z0-9-]) must reject it.
+	content := `---
+name: My-Skill
+description: A skill with uppercase name
+---
+
+# My Skill
+`
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644))
+
+	// Run ListSkills and verify the skill is REJECTED
+	// Temporarily set workspaceSkills so the skill gets picked up
+	sl2 := &SkillsLoader{
+		workspace:       tmp,
+		workspaceSkills: filepath.Join(tmp, "skills"),
+	}
+	// We need to place the skill in a skills/ dir
+	realDir := filepath.Join(tmp, "skills", "my-skill")
+	require.NoError(t, os.RemoveAll(realDir))
+	require.NoError(t, os.MkdirAll(realDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(realDir, "SKILL.md"), []byte(content), 0o644))
+
+	skills := sl2.ListSkills()
+	// TDD: NEW standard (only [a-z0-9-]) must REJECT uppercase names.
+	// Current code accepts them → this assertion FAILS (RED).
+	t.Logf("OLD: ListSkills returned %d skills: %v", len(skills), func() []string {
+		names := make([]string, len(skills))
+		for i, s := range skills {
+			names[i] = s.Name
+		}
+		return names
+	}())
+	assert.Empty(t, skills, "NEW standard: uppercase name must be rejected")
+}
+
+// TestOldAcceptsNewRejects_MultilineDescription verifies:
+// old parseSimpleYAML reads `description: >-` as the literal string ">-".
+// A real YAML parser must read the full folded value.
+func TestOldAcceptsNewRejects_MultilineDescription(t *testing.T) {
+	tmp := t.TempDir()
+	skillDir := filepath.Join(tmp, "multi-desc")
+	require.NoError(t, os.MkdirAll(skillDir, 0o755))
+
+	content := `---
+name: multi-desc
+description: >-
+  This is a folded scalar description.
+  It spans multiple lines and should be
+  read as a single string by a real YAML parser.
+---
+
+# Content
+`
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644))
+
+	sl := &SkillsLoader{
+		workspace:       tmp,
+		workspaceSkills: filepath.Join(tmp, "skills"),
+	}
+	realDir := filepath.Join(tmp, "skills", "multi-desc")
+	require.NoError(t, os.RemoveAll(realDir))
+	require.NoError(t, os.MkdirAll(realDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(realDir, "SKILL.md"), []byte(content), 0o644))
+
+	skills := sl.ListSkills()
+	require.Len(t, skills, 1)
+	// The NEW parser must return the full folded text, NOT ">-"
+	t.Logf("Description: %q", skills[0].Description)
+	assert.NotEqual(t, ">-", skills[0].Description,
+		"A real YAML parser must not return the folded-scalar indicator as the description")
+	assert.Contains(t, skills[0].Description, "folded scalar description",
+		"The full multiline description must be assembled")
+}
+
+// TestOldAcceptsNewRejects_NameMismatch verifies:
+// old code silently renames the skill when name != directory.
+// New standard must REJECT it and report BOTH names.
+func TestOldAcceptsNewRejects_NameMismatch(t *testing.T) {
+	tmp := t.TempDir()
+	skillDir := filepath.Join(tmp, "my-skill")
+	require.NoError(t, os.MkdirAll(skillDir, 0o755))
+
+	content := `---
+name: different-name
+description: Name does not match directory
+---
+
+# Content
+`
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644))
+
+	sl := &SkillsLoader{
+		workspace:       tmp,
+		workspaceSkills: filepath.Join(tmp, "skills"),
+	}
+	realDir := filepath.Join(tmp, "skills", "my-skill")
+	require.NoError(t, os.RemoveAll(realDir))
+	require.NoError(t, os.MkdirAll(realDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(realDir, "SKILL.md"), []byte(content), 0o644))
+
+	skills := sl.ListSkills()
+	// TDD: NEW standard must REJECT name mismatching directory.
+	// Current code silently renames → this assertion FAILS (RED).
+	t.Logf("OLD: ListSkills returned %d skills: %v", len(skills), func() []string {
+		names := make([]string, len(skills))
+		for i, s := range skills {
+			names[i] = s.Name
+		}
+		return names
+	}())
+	assert.Empty(t, skills, "NEW standard: name mismatching directory must be rejected")
+}
+
+// TestCanonicalSkillsPassValidate verifies that ALL 11 canonical workspace
+// SKILL.md files pass the new validator. This is the acceptance gate for QA.
+func TestCanonicalSkillsPassValidate(t *testing.T) {
+	// Canonical workspace skills path (relative to repo root)
+	canonicalPath := filepath.Join("..", "..", "..", "odooclaw", "workspace", "skills")
+
+	entries, err := os.ReadDir(canonicalPath)
+	require.NoError(t, err, "canonical skills directory must exist")
+
+	// Count SKILL.md files
+	var skillDirs []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		skillFile := filepath.Join(canonicalPath, e.Name(), "SKILL.md")
+		if _, err := os.Stat(skillFile); err == nil {
+			skillDirs = append(skillDirs, e.Name())
+		}
+	}
+
+	t.Logf("Found %d canonical SKILL.md files: %v", len(skillDirs), skillDirs)
+	require.Greater(t, len(skillDirs), 0, "canonical skills directory must contain skills")
+
+	// Build a loader pointing at the canonical path and list all skills.
+	sl := NewSkillsLoader("", canonicalPath, "")
+	allSkills := sl.ListSkills()
+
+	// Every canonical SKILL.md must appear in the list (100% pass rate).
+	names := make(map[string]bool)
+	for _, s := range allSkills {
+		names[s.Name] = true
+	}
+
+	for _, dir := range skillDirs {
+		t.Run(dir, func(t *testing.T) {
+			// Each directory name should appear as a skill name.
+			assert.True(t, names[dir],
+				"canonical skill %q (dir) must pass validation",
+				dir)
+		})
+	}
+
+	// Verify we got exactly the right count.
+	assert.Len(t, allSkills, len(skillDirs),
+		"all %d canonical skills must pass validation (none rejected)", len(skillDirs))
 }
 
 func TestSkillRootsTrimsWhitespaceAndDedups(t *testing.T) {
