@@ -3,143 +3,17 @@ import sys
 from functools import lru_cache
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
 from odoo_mcp.config import DEFAULT_SEARCH_LIMIT
 from odoo_mcp.core.client import OdooClient
 from odoo_mcp.core.session import OdooSession
+from odoo_mcp.mcp_compat import FastMCP
 from odoo_mcp.observability.logging import get_logger
 from odoo_mcp.observability.metrics import measure_time
-from odoo_mcp.schemas.actions import OdooInvokeActionSchema
 from odoo_mcp.schemas.business import (
-    ApplyInventoryAdjustmentSchema,
-    ApplyReportPatchSafeSchema,
-    ApplyViewPatchSafeSchema,
-    ApproveExpenseSchema,
-    AssistReportMigrationSchema,
-    AssistViewMigrationSchema,
-    BatchAssistReportMigrationSchema,
-    BatchAssistViewMigrationSchema,
-    CheckInSchema,
-    CheckLotRequirementsSchema,
-    CheckOutSchema,
-    CloseActivityWithReasonSchema,
-    CloseContractLineSchema,
-    ConfirmSaleOrderSchema,
-    CreateActivitySchema,
-    CreateActivitySummarySchema,
-    CreateCalendarEventSchema,
-    CreateContractLineSchema,
-    CreateExpenseReportSchema,
-    CreateHelpdeskTicketFromPartnerSchema,
-    CreateHelpdeskTicketSchema,
-    CreateJournalEntrySchema,
-    CreateLeadSchema,
-    CreatePurchaseOrderSchema,
-    CreateSaleOrderSchema,
-    CreateTaskSchema,
-    CreateVendorBillFromOCRValidatedSchema,
-    CreateVendorInvoiceSchema,
-    DraftTicketEmailSchema,
-    FindAttendanceSchema,
-    FindMissingTimesheetsSchema,
-    FindMyTasksSchema,
-    FindPartnerSchema,
-    FindPendingInvoicesSchema,
-    FindProductSchema,
-    FindPurchaseOrderSchema,
-    FindPurchaseReceiptsSchema,
-    FindReorderingRulesSchema,
-    FindSaleDeliveriesSchema,
-    FindInternalTransfersSchema,
-    FindInventoryDiscrepanciesSchema,
-    FindLotSerialSchema,
-    FindSaleOrderSchema,
-    FindStockLocationsSchema,
-    FindTaskSchema,
-    FindUnreconciledBankLinesSchema,
-    FindViewsByModelSchema,
-    GetARAPAgingSchema,
-    GetCapabilitiesSchema,
-    GetInvoiceSummarySchema,
-    GetModelSchemaSchema,
-    GetMyTodaySummarySchema,
-    GetLocationStockSummarySchema,
-    GetLogisticsCapabilitiesSchema,
-    GetLotTraceabilitySchema,
-    GetPartnerSummarySchema,
-    GetProductStockContextSchema,
-    GetProductStockSchema,
-    GetProductSummarySchema,
-    GetProductSupplierInfoSchema,
-    GetPurchaseInvoiceStatusSchema,
-    GetReceiptSummarySchema,
-    GetDeliverySummarySchema,
-    GetTransferSummarySchema,
-    GetPurchaseOrderSummarySchema,
-    GetPurchaseReceiptStatusSchema,
-    GetReplenishmentSuggestionsSchema,
-    GetRecordSummarySchema,
-    GetReportTemplateSchema,
-    GetSaleOrderSummarySchema,
-    GetStockAvailabilitySchema,
-    GetStockMovesSchema,
-    GetTaxSummarySchema,
-    GetViewByXmlIdSchema,
     InvoiceLineSchema,
     JournalEntryLineSchema,
-    ListPendingActivitiesSchema,
-    LogTaskTimesheetSchema,
-    LogTimesheetSchema,
-    MarkActivityDoneSchema,
-    MatchDeliveryToSaleOrderSchema,
-    MatchReceiptToPurchaseOrderSchema,
-    MatchVendorBillToPurchaseOrderSchema,
-    NotifyPendingActionsSchema,
     POLineSchema,
-    PostChatterMessageSchema,
-    PostJournalEntrySchema,
-    PrepareReceiptValidationSchema,
-    PrepareDeliveryValidationSchema,
-    PrepareTransferValidationSchema,
-    PrepareInternalTransferSchema,
-    PrepareInventoryAdjustmentSchema,
-    CreateInternalTransferSchema,
-    PreviewReportPatchSchema,
-    PreviewViewPatchSchema,
-    ProposeReportPatchSchema,
-    ProposeViewPatchSchema,
-    ReconcileBankLineSchema,
-    RegisterInvoicePaymentSchema,
-    RegisterPaymentSchema,
-    ReplaceContractLineSchema,
-    RollbackPatchSafeSchema,
-    RunPeriodCloseChecksSchema,
     SOLineSchema,
-    ScanReportMigrationIssuesSchema,
-    ScanViewMigrationIssuesSchema,
-    SubmitExpenseReportSchema,
-    SuggestBankReconciliationSchema,
-    ExplainStockForecastSchema,
-    SuggestExpenseAccountAndTaxesSchema,
-    SuggestTimesheetFromAttendanceSchema,
-    SuggestVendorProductsSchema,
-    TestViewCompilationSchema,
-    UpdateTaskSchema,
-    UpdateTaskStatusSchema,
-    ValidateReceiptSchema,
-    ValidateDeliverySchema,
-    ValidateTransferSchema,
-    ValidateReportPatchSchema,
-    ValidateVendorBillDuplicateSchema,
-    ValidateViewPatchSchema,
-    VisualizeReportPatchSchema,
-    VisualizeViewPatchSchema,
-)
-from odoo_mcp.schemas.records import (
-    OdooCreateSchema,
-    OdooReadSchema,
-    OdooSearchSchema,
-    OdooWriteSchema,
 )
 from odoo_mcp.services.accounting_service import (
     create_journal_entry,
@@ -166,15 +40,17 @@ from odoo_mcp.services.hr_service import (
 from odoo_mcp.services.inventory_service import (
     apply_inventory_adjustment,
     check_lot_requirements,
+    create_internal_transfer,
     explain_stock_forecast,
+    find_internal_transfers,
+    find_inventory_discrepancies,
+    find_lot_serial,
     find_product,
     find_purchase_receipts,
     find_reordering_rules,
     find_sale_deliveries,
-    find_internal_transfers,
-    find_inventory_discrepancies,
-    find_lot_serial,
     find_stock_locations,
+    get_delivery_summary,
     get_location_stock_summary,
     get_logistics_capabilities,
     get_lot_traceability,
@@ -182,20 +58,18 @@ from odoo_mcp.services.inventory_service import (
     get_product_stock_context,
     get_product_summary,
     get_product_supplier_info,
-    get_replenishment_suggestions,
     get_receipt_summary,
-    get_delivery_summary,
-    get_transfer_summary,
+    get_replenishment_suggestions,
     get_stock_availability,
     get_stock_moves,
+    get_transfer_summary,
     match_delivery_to_sale_order,
     match_receipt_to_purchase_order,
-    prepare_receipt_validation,
     prepare_delivery_validation,
-    prepare_transfer_validation,
     prepare_internal_transfer,
     prepare_inventory_adjustment,
-    create_internal_transfer,
+    prepare_receipt_validation,
+    prepare_transfer_validation,
     validate_delivery,
     validate_receipt,
     validate_transfer,
@@ -269,6 +143,7 @@ def get_odoo_client() -> OdooClient:
         _logger.error("Missing mandatory Odoo environment variables.")
         sys.exit(1)
 
+    assert url is not None and db is not None and user is not None and pwd is not None
     session = OdooSession(url, db, user, pwd)
     session.authenticate()
     return OdooClient(session)
@@ -352,9 +227,7 @@ def get_resource_record_summary(model: str, id: str) -> str:
     client = get_odoo_client()
     import json
 
-    res = generic.odoo_get_record_summary(
-        client, client.odoo_session.get_uid(), model, int(id)
-    )
+    res = generic.odoo_get_record_summary(client, client.odoo_session.get_uid(), model, int(id))
     return json.dumps(res, indent=2)
 
 
@@ -1002,9 +875,7 @@ def odoo_get_invoice_summary(
     """Get complete details of a specific invoice (account.move), including lines."""
     with measure_time("odoo_get_invoice_summary"):
         client = get_odoo_client()
-        return get_invoice_summary(
-            client, sender_id or client.odoo_session.get_uid(), move_id
-        )
+        return get_invoice_summary(client, sender_id or client.odoo_session.get_uid(), move_id)
 
 
 @mcp.tool()
@@ -1586,8 +1457,14 @@ def odoo_find_sale_deliveries(
     with measure_time("odoo_find_sale_deliveries"):
         client = get_odoo_client()
         return find_sale_deliveries(
-            client, sender_id or client.odoo_session.get_uid(), sale_order_id, partner_id,
-            state, date_from, date_to, limit
+            client,
+            sender_id or client.odoo_session.get_uid(),
+            sale_order_id,
+            partner_id,
+            state,
+            date_from,
+            date_to,
+            limit,
         )
 
 
@@ -1618,7 +1495,9 @@ def odoo_match_delivery_to_sale_order(
 def odoo_prepare_delivery_validation(picking_id: int, sender_id: int | None = None) -> dict:
     with measure_time("odoo_prepare_delivery_validation"):
         client = get_odoo_client()
-        return prepare_delivery_validation(client, sender_id or client.odoo_session.get_uid(), picking_id)
+        return prepare_delivery_validation(
+            client, sender_id or client.odoo_session.get_uid(), picking_id
+        )
 
 
 @mcp.tool()
@@ -1676,7 +1555,9 @@ def odoo_get_lot_traceability(lot_id: int, sender_id: int | None = None) -> dict
 def odoo_check_lot_requirements(picking_id: int, sender_id: int | None = None) -> dict:
     with measure_time("odoo_check_lot_requirements"):
         client = get_odoo_client()
-        return check_lot_requirements(client, sender_id or client.odoo_session.get_uid(), picking_id)
+        return check_lot_requirements(
+            client, sender_id or client.odoo_session.get_uid(), picking_id
+        )
 
 
 @mcp.tool()
@@ -1690,7 +1571,9 @@ def odoo_get_transfer_summary(picking_id: int, sender_id: int | None = None) -> 
 def odoo_prepare_transfer_validation(picking_id: int, sender_id: int | None = None) -> dict:
     with measure_time("odoo_prepare_transfer_validation"):
         client = get_odoo_client()
-        return prepare_transfer_validation(client, sender_id or client.odoo_session.get_uid(), picking_id)
+        return prepare_transfer_validation(
+            client, sender_id or client.odoo_session.get_uid(), picking_id
+        )
 
 
 @mcp.tool()
@@ -2422,7 +2305,7 @@ def odoo_get_report_template(
 @mcp.tool()
 def odoo_scan_view_migration_issues(
     xmlid: str,
-    target_version: str | None = None,
+    target_version: str = "18.0",
     rule_sets: list[str] | None = None,
     sender_id: int | None = None,
 ) -> dict:
@@ -2440,7 +2323,7 @@ def odoo_scan_view_migration_issues(
 @mcp.tool()
 def odoo_scan_report_migration_issues(
     xmlid: str,
-    target_version: str | None = None,
+    target_version: str = "18.0",
     rule_sets: list[str] | None = None,
     sender_id: int | None = None,
 ) -> dict:
@@ -2459,7 +2342,7 @@ def odoo_scan_report_migration_issues(
 def odoo_propose_view_patch(
     xmlid: str,
     intent: str,
-    constraints: list[str] | None = None,
+    constraints: dict[str, Any] | None = None,
     sender_id: int | None = None,
 ) -> dict:
     with measure_time("odoo_propose_view_patch"):
@@ -2477,7 +2360,7 @@ def odoo_propose_view_patch(
 def odoo_propose_report_patch(
     xmlid: str,
     intent: str,
-    constraints: list[str] | None = None,
+    constraints: dict[str, Any] | None = None,
     sender_id: int | None = None,
 ) -> dict:
     with measure_time("odoo_propose_report_patch"):
@@ -2494,9 +2377,9 @@ def odoo_propose_report_patch(
 @mcp.tool()
 def odoo_validate_view_patch(
     base_view_xmlid: str,
-    patch: str,
+    patch: dict[str, Any],
     strict: bool = True,
-    target_version: str | None = None,
+    target_version: str = "18.0",
     sender_id: int | None = None,
 ) -> dict:
     with measure_time("odoo_validate_view_patch"):
@@ -2514,9 +2397,9 @@ def odoo_validate_view_patch(
 @mcp.tool()
 def odoo_validate_report_patch(
     report_xmlid: str,
-    patch: str,
+    patch: dict[str, Any],
     strict: bool = True,
-    target_version: str | None = None,
+    target_version: str = "18.0",
     sender_id: int | None = None,
 ) -> dict:
     with measure_time("odoo_validate_report_patch"):
@@ -2534,7 +2417,7 @@ def odoo_validate_report_patch(
 @mcp.tool()
 def odoo_preview_view_patch(
     base_view_xmlid: str,
-    patch: str,
+    patch: dict[str, Any],
     diff_format: str = "unified",
     sender_id: int | None = None,
 ) -> dict:
@@ -2552,7 +2435,7 @@ def odoo_preview_view_patch(
 @mcp.tool()
 def odoo_preview_report_patch(
     report_xmlid: str,
-    patch: str,
+    patch: dict[str, Any],
     diff_format: str = "unified",
     sender_id: int | None = None,
 ) -> dict:
@@ -2586,7 +2469,7 @@ def odoo_test_view_compilation(
 @mcp.tool()
 def odoo_apply_view_patch_safe(
     base_view_xmlid: str,
-    patch: str,
+    patch: dict[str, Any],
     strict: bool = True,
     confirm: bool = False,
     dry_run: bool = True,
@@ -2612,7 +2495,7 @@ def odoo_apply_view_patch_safe(
 @mcp.tool()
 def odoo_apply_report_patch_safe(
     report_xmlid: str,
-    patch: str,
+    patch: dict[str, Any],
     strict: bool = True,
     confirm: bool = False,
     dry_run: bool = True,
@@ -2656,9 +2539,9 @@ def odoo_rollback_patch_safe(
 @mcp.tool()
 def odoo_assist_view_migration(
     xmlid: str,
-    target_version: str | None = None,
-    intent: str | None = None,
-    constraints: list[str] | None = None,
+    target_version: str = "18.0",
+    intent: str = "migrate",
+    constraints: dict[str, Any] | None = None,
     strict: bool = True,
     include_compile_test: bool = True,
     sender_id: int | None = None,
@@ -2680,9 +2563,9 @@ def odoo_assist_view_migration(
 @mcp.tool()
 def odoo_assist_report_migration(
     xmlid: str,
-    target_version: str | None = None,
-    intent: str | None = None,
-    constraints: list[str] | None = None,
+    target_version: str = "18.0",
+    intent: str = "migrate",
+    constraints: dict[str, Any] | None = None,
     strict: bool = True,
     sender_id: int | None = None,
 ) -> dict:
@@ -2702,7 +2585,7 @@ def odoo_assist_report_migration(
 @mcp.tool()
 def odoo_visualize_view_patch(
     base_view_xmlid: str,
-    patch: str,
+    patch: dict[str, Any],
     diff_format: str = "unified",
     sender_id: int | None = None,
 ) -> dict:
@@ -2720,7 +2603,7 @@ def odoo_visualize_view_patch(
 @mcp.tool()
 def odoo_visualize_report_patch(
     report_xmlid: str,
-    patch: str,
+    patch: dict[str, Any],
     diff_format: str = "unified",
     sender_id: int | None = None,
 ) -> dict:
@@ -2738,9 +2621,9 @@ def odoo_visualize_report_patch(
 @mcp.tool()
 def odoo_batch_assist_view_migration(
     xmlids: list[str],
-    target_version: str | None = None,
-    intent: str | None = None,
-    constraints: list[str] | None = None,
+    target_version: str = "18.0",
+    intent: str = "migrate",
+    constraints: dict[str, Any] | None = None,
     strict: bool = True,
     include_compile_test: bool = True,
     continue_on_error: bool = True,
@@ -2764,9 +2647,9 @@ def odoo_batch_assist_view_migration(
 @mcp.tool()
 def odoo_batch_assist_report_migration(
     xmlids: list[str],
-    target_version: str | None = None,
-    intent: str | None = None,
-    constraints: list[str] | None = None,
+    target_version: str = "18.0",
+    intent: str = "migrate",
+    constraints: dict[str, Any] | None = None,
     strict: bool = True,
     continue_on_error: bool = True,
     sender_id: int | None = None,

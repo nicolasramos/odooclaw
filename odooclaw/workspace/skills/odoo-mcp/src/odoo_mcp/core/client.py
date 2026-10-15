@@ -1,8 +1,10 @@
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, cast
+
 import requests
-from .session import OdooSession
+
 from .exceptions import OdooRPCError
+from .session import OdooSession
 
 _logger = logging.getLogger(__name__)
 
@@ -21,9 +23,9 @@ class OdooClient:
         self,
         model: str,
         method: str,
-        args: Optional[List[Any]] = None,
-        kwargs: Optional[Dict[str, Any]] = None,
-        sender_id: Optional[int] = None,
+        args: list[Any] | None = None,
+        kwargs: dict[str, Any] | None = None,
+        sender_id: int | None = None,
     ) -> Any:
         """
         Executes a method on an Odoo model.
@@ -64,8 +66,8 @@ class OdooClient:
         user_id: int,
         model: str,
         method: str,
-        args: List[Any],
-        kwargs: Dict[str, Any],
+        args: list[Any],
+        kwargs: dict[str, Any],
     ) -> Any:
         """Delegated execution leveraging Odoo's native security via mail_bot_odooclaw endpoint."""
         endpoint = f"{self.odoo_session.url}/odooclaw/call_kw_as_user"
@@ -91,9 +93,7 @@ class OdooClient:
 
     def _do_post(self, endpoint: str, payload: dict) -> Any:
         try:
-            response = self.odoo_session.session.post(
-                endpoint, json=payload, timeout=30
-            )
+            response = self.odoo_session.session.post(endpoint, json=payload, timeout=30)
             response.raise_for_status()
             result = response.json()
 
@@ -110,49 +110,43 @@ class OdooClient:
 
             if "result" in result:
                 # call_kw_as_user wraps result in {"status": "ok", "result": ...}
-                if (
-                    isinstance(result["result"], dict)
-                    and result["result"].get("status") == "ok"
-                ):
+                if isinstance(result["result"], dict) and result["result"].get("status") == "ok":
                     return result["result"].get("result")
                 return result["result"]
 
             return True
 
         except requests.RequestException as e:
-            raise OdooRPCError(f"Network error during RPC call: {str(e)}")
+            raise OdooRPCError(f"Network error during RPC call: {str(e)}") from e
 
     def try_call_kw(
         self,
         model: str,
         method: str,
-        args: Optional[List[Any]] = None,
-        kwargs: Optional[Dict[str, Any]] = None,
-        sender_id: Optional[int] = None,
-        default: Any = None,
+        args: list[Any] | None = None,
+        kwargs: dict[str, Any] | None = None,
+        sender_id: int | None = None,
+        default: Any | None = None,
     ) -> Any:
         try:
-            return self.call_kw(
-                model, method, args=args, kwargs=kwargs, sender_id=sender_id
-            )
+            return self.call_kw(model, method, args=args, kwargs=kwargs, sender_id=sender_id)
         except OdooRPCError:
             return default
 
-    def get_model_fields(
-        self, model: str, sender_id: Optional[int] = None
-    ) -> Dict[str, Any]:
-        return self.call_kw(model, "fields_get", sender_id=sender_id)
+    def get_model_fields(self, model: str, sender_id: int | None = None) -> dict[str, Any]:
+        return cast(dict[str, Any], self.call_kw(model, "fields_get", sender_id=sender_id))
 
     def try_get_model_fields(
-        self, model: str, sender_id: Optional[int] = None
-    ) -> Optional[Dict[str, Any]]:
-        return self.try_call_kw(model, "fields_get", sender_id=sender_id, default=None)
+        self, model: str, sender_id: int | None = None
+    ) -> dict[str, Any] | None:
+        return cast(
+            dict[str, Any] | None,
+            self.try_call_kw(model, "fields_get", sender_id=sender_id, default=None),
+        )
 
-    def model_exists(self, model: str, sender_id: Optional[int] = None) -> bool:
+    def model_exists(self, model: str, sender_id: int | None = None) -> bool:
         return self.try_get_model_fields(model, sender_id=sender_id) is not None
 
-    def field_exists(
-        self, model: str, field_name: str, sender_id: Optional[int] = None
-    ) -> bool:
+    def field_exists(self, model: str, field_name: str, sender_id: int | None = None) -> bool:
         fields = self.try_get_model_fields(model, sender_id=sender_id)
         return bool(fields and field_name in fields)

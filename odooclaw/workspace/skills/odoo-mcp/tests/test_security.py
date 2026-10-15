@@ -1,14 +1,15 @@
-import pytest
 import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
+import pytest
+
+from odoo_mcp.config import DEFAULT_ALLOWED_MODELS, DEFAULT_DENIED_MODELS
+from odoo_mcp.core.exceptions import OdooSecurityError
 from odoo_mcp.core.security import (
     validate_model_access,
-    validate_write_fields,
     validate_unlink,
+    validate_write_fields,
 )
-from odoo_mcp.core.exceptions import OdooSecurityError
-from odoo_mcp.config import DEFAULT_ALLOWED_MODELS, DEFAULT_DENIED_MODELS, DEFAULT_DENIED_FIELDS
 
 
 def test_allowlist_success():
@@ -46,6 +47,7 @@ def test_unlink_blocked():
 # ============================================
 # Tests for expanded allowlist (GH #47)
 # ============================================
+
 
 def test_new_business_models_allowed():
     """Models core CE que faltaban deben ser permitidos."""
@@ -149,6 +151,7 @@ def test_blacklist_wins_over_escape_hatch():
     with patch.dict(os.environ, {"ODOOCLAW_EXTRA_ALLOWED_MODELS": "ir.model,res.users"}):
         # Need to reload the policy to pick up env var
         from odoo_mcp.security import policy
+
         # Force re-evaluation by clearing cached allowed models
         policy.reset_allowed_models_cache()
 
@@ -163,6 +166,7 @@ def test_escape_hatch_env_allows_extra_models():
     """Escape hatch via env var debe permitir modelos adicionales."""
     with patch.dict(os.environ, {"ODOOCLAW_EXTRA_ALLOWED_MODELS": "custom.model,another.model"}):
         from odoo_mcp.security import policy
+
         policy.reset_allowed_models_cache()
 
         # Should not raise
@@ -173,15 +177,15 @@ def test_escape_hatch_env_allows_extra_models():
 def test_escape_hatch_config_parameter_allows_extra_models():
     """Escape hatch via ir.config_parameter debe permitir modelos adicionales."""
     from odoo_mcp.security import policy
-    
+
     # Create mock client
     mock_client = MagicMock()
     mock_client.try_call_kw.return_value = "custom.model,another.model"
-    
+
     # Clear cache and get allowed models with client
     policy.reset_allowed_models_cache()
     allowed = policy.get_allowed_models(mock_client)
-    
+
     # Should include models from config parameter
     assert "custom.model" in allowed
     assert "another.model" in allowed
@@ -190,15 +194,15 @@ def test_escape_hatch_config_parameter_allows_extra_models():
 def test_escape_hatch_config_parameter_fallback_to_env():
     """Si config_parameter no devuelve valor, debe usar env var."""
     from odoo_mcp.security import policy
-    
+
     # Create mock client that returns None
     mock_client = MagicMock()
     mock_client.try_call_kw.return_value = None
-    
+
     with patch.dict(os.environ, {"ODOOCLAW_EXTRA_ALLOWED_MODELS": "env.model"}):
         policy.reset_allowed_models_cache()
         allowed = policy.get_allowed_models(mock_client)
-        
+
         # Should include model from env var
         assert "env.model" in allowed
 
@@ -206,17 +210,17 @@ def test_escape_hatch_config_parameter_fallback_to_env():
 def test_blacklist_wins_over_config_parameter():
     """La blacklist gana incluso si el modelo viene de config_parameter."""
     from odoo_mcp.security import policy
-    
+
     # Create mock client that returns a denied model
     mock_client = MagicMock()
     mock_client.try_call_kw.return_value = "ir.model,res.users"
-    
+
     policy.reset_allowed_models_cache()
-    
+
     # Should still be blocked
     with pytest.raises(OdooSecurityError):
         validate_model_access("ir.model", mock_client)
-    
+
     with pytest.raises(OdooSecurityError):
         validate_model_access("res.users", mock_client)
 
@@ -266,9 +270,11 @@ def test_allowed_models_expanded():
 # Tests for dynamic allowlist (NRA-463)
 # ============================================
 
+
 def test_dynamic_allowlist_from_ir_model():
     """La allowlist dinámica debe consultar ir.model y excluir DENIED."""
     from odoo_mcp.security import policy
+
     policy.reset_allowed_models_cache()
 
     mock_client = MagicMock()
@@ -292,6 +298,7 @@ def test_dynamic_allowlist_from_ir_model():
 def test_dynamic_allowlist_excludes_transient_models():
     """Los modelos transient=True no deben aparecer en la allowlist dinámica."""
     from odoo_mcp.security import policy
+
     policy.reset_allowed_models_cache()
 
     mock_client = MagicMock()
@@ -311,6 +318,7 @@ def test_dynamic_allowlist_excludes_transient_models():
 def test_dynamic_allowlist_fallback_to_static_when_empty():
     """Si ir.model devuelve vacío, debe fallback a DEFAULT_ALLOWED_MODELS."""
     from odoo_mcp.security import policy
+
     policy.reset_allowed_models_cache()
 
     mock_client = MagicMock()
@@ -326,6 +334,7 @@ def test_dynamic_allowlist_fallback_to_static_when_empty():
 def test_dynamic_allowlist_fallback_on_client_error():
     """Si la consulta a ir.model falla, debe fallback a DEFAULT_ALLOWED_MODELS."""
     from odoo_mcp.security import policy
+
     policy.reset_allowed_models_cache()
 
     mock_client = MagicMock()
@@ -341,18 +350,25 @@ def test_dynamic_allowlist_fallback_on_client_error():
 def test_instance_denied_models_from_config_parameter():
     """odooclaw.denied_models debe excluir modelos de la allowlist dinámica."""
     from odoo_mcp.security import policy
+
     policy.reset_allowed_models_cache()
 
     mock_client = MagicMock()
 
     def call_kw_side_effect(model, method, args=None, kwargs=None, sender_id=None):
         if model == "ir.model":
-            return [{"model": "res.partner"}, {"model": "sale.order"}, {"model": "custom.blocked.model"}]
+            return [
+                {"model": "res.partner"},
+                {"model": "sale.order"},
+                {"model": "custom.blocked.model"},
+            ]
         if model == "ir.config_parameter" and args and args[0] == "odooclaw.denied_models":
             return "res.users,custom.blocked.model"
         return None
 
-    def try_call_kw_side_effect(model, method, args=None, kwargs=None, sender_id=None, default=None):
+    def try_call_kw_side_effect(
+        model, method, args=None, kwargs=None, sender_id=None, default=None
+    ):
         return call_kw_side_effect(model, method, args, kwargs, sender_id)
 
     mock_client.call_kw.side_effect = call_kw_side_effect
@@ -369,6 +385,7 @@ def test_instance_denied_models_from_config_parameter():
 def test_instance_denied_models_from_env():
     """ODOOCLAW_DENIED_MODELS debe excluir modelos de la allowlist dinámica."""
     from odoo_mcp.security import policy
+
     policy.reset_allowed_models_cache()
 
     with patch.dict(os.environ, {"ODOOCLAW_DENIED_MODELS": "custom.env.blocked,model.two"}):
@@ -384,7 +401,9 @@ def test_instance_denied_models_from_env():
                 ]
             return None
 
-        def try_call_kw_side_effect(model, method, args=None, kwargs=None, sender_id=None, default=None):
+        def try_call_kw_side_effect(
+            model, method, args=None, kwargs=None, sender_id=None, default=None
+        ):
             return call_kw_side_effect(model, method, args, kwargs, sender_id)
 
         mock_client.call_kw.side_effect = call_kw_side_effect
@@ -401,6 +420,7 @@ def test_instance_denied_models_from_env():
 def test_dynamic_allowlist_with_escape_hatch():
     """El escape hatch extra_allowed_models debe sumar modelos a la allowlist dinámica."""
     from odoo_mcp.security import policy
+
     policy.reset_allowed_models_cache()
 
     mock_client = MagicMock()
@@ -412,7 +432,9 @@ def test_dynamic_allowlist_with_escape_hatch():
             return "extra.custom.model"
         return None
 
-    def try_call_kw_side_effect(model, method, args=None, kwargs=None, sender_id=None, default=None):
+    def try_call_kw_side_effect(
+        model, method, args=None, kwargs=None, sender_id=None, default=None
+    ):
         return call_kw_side_effect(model, method, args, kwargs, sender_id)
 
     mock_client.call_kw.side_effect = call_kw_side_effect
@@ -428,6 +450,7 @@ def test_dynamic_allowlist_with_escape_hatch():
 def test_blacklist_wins_over_dynamic_allowlist():
     """DEFAULT_DENIED_MODELS debe bloquear incluso si viene de ir.model."""
     from odoo_mcp.security import policy
+
     policy.reset_allowed_models_cache()
 
     mock_client = MagicMock()
@@ -447,6 +470,7 @@ def test_blacklist_wins_over_dynamic_allowlist():
 def test_denied_model_in_dynamic_allows_fallback_not_escape():
     """Un modelo en odooclaw.denied_models no debe poder ser escapado por extra_allowed_models."""
     from odoo_mcp.security import policy
+
     policy.reset_allowed_models_cache()
 
     mock_client = MagicMock()
@@ -472,6 +496,7 @@ def test_denied_model_in_dynamic_allows_fallback_not_escape():
 def test_dynamic_allowlist_no_client_uses_static():
     """Sin client, debe usar DEFAULT_ALLOWED_MODELS (comportamiento existente)."""
     from odoo_mcp.security import policy
+
     policy.reset_allowed_models_cache()
 
     allowed = policy.get_allowed_models()
@@ -484,6 +509,7 @@ def test_dynamic_allowlist_no_client_uses_static():
 # ============================================
 # Tests for cache reset (NRA-487 system webhook)
 # ============================================
+
 
 def test_reset_allowed_models_cache_clears_client_cache():
     """The cache reset must invalidate _client_cache so the next lookup

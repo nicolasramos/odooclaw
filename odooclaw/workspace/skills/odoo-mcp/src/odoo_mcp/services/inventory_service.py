@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+import logging
+from typing import Any, cast
 
 from odoo_mcp.core.client import OdooClient
 from odoo_mcp.services.capability_service import (
     build_success_response,
     build_unsupported_response,
 )
-import logging
 
 _logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ def _safe_float(value: Any) -> float:
         return 0.0
 
 
-def _safe_int(value: Any) -> Optional[int]:
+def _safe_int(value: Any) -> int | None:
     if value in (None, False, ""):
         return None
     if isinstance(value, (list, tuple)) and value:
@@ -100,9 +100,7 @@ def get_logistics_capabilities(client: OdooClient, sender_id: int) -> dict:
             "stock_move_line": _model_available(client, "stock.move.line", sender_id),
             "stock_quant": _model_available(client, "stock.quant", sender_id),
             "stock_lot": bool(_lot_model(client, sender_id)),
-            "stock_orderpoint": _model_available(
-                client, "stock.warehouse.orderpoint", sender_id
-            ),
+            "stock_orderpoint": _model_available(client, "stock.warehouse.orderpoint", sender_id),
         },
         oca={
             "purchase_reception_status": optional_capability(
@@ -189,11 +187,11 @@ def _product_fields(client: OdooClient, sender_id: int) -> list[str]:
 def _product_domain(
     client: OdooClient,
     sender_id: int,
-    name: Optional[str] = None,
-    default_code: Optional[str] = None,
-    barcode: Optional[str] = None,
-    category_id: Optional[int] = None,
-    vendor_id: Optional[int] = None,
+    name: str | None = None,
+    default_code: str | None = None,
+    barcode: str | None = None,
+    category_id: int | None = None,
+    vendor_id: int | None = None,
 ) -> list[Any]:
     domain: list[Any] = []
     if name:
@@ -219,15 +217,9 @@ def _product_domain(
             kwargs={"fields": supplier_fields, "limit": 500},
             sender_id=sender_id,
         )
-        product_ids = [
-            int(row["product_id"][0])
-            for row in supplier_rows
-            if row.get("product_id")
-        ]
+        product_ids = [int(row["product_id"][0]) for row in supplier_rows if row.get("product_id")]
         tmpl_ids = [
-            int(row["product_tmpl_id"][0])
-            for row in supplier_rows
-            if row.get("product_tmpl_id")
+            int(row["product_tmpl_id"][0]) for row in supplier_rows if row.get("product_tmpl_id")
         ]
         if product_ids and tmpl_ids:
             domain.extend(["|", ["id", "in", product_ids], ["product_tmpl_id", "in", tmpl_ids]])
@@ -244,11 +236,11 @@ def _product_domain(
 def find_product(
     client: OdooClient,
     sender_id: int,
-    name: Optional[str] = None,
-    default_code: Optional[str] = None,
-    barcode: Optional[str] = None,
-    category_id: Optional[int] = None,
-    vendor_id: Optional[int] = None,
+    name: str | None = None,
+    default_code: str | None = None,
+    barcode: str | None = None,
+    category_id: int | None = None,
+    vendor_id: int | None = None,
     limit: int = 10,
 ) -> dict:
     if not _model_available(client, "product.product", sender_id):
@@ -258,9 +250,7 @@ def find_product(
             ["product.product"],
         )
 
-    domain = _product_domain(
-        client, sender_id, name, default_code, barcode, category_id, vendor_id
-    )
+    domain = _product_domain(client, sender_id, name, default_code, barcode, category_id, vendor_id)
     rows = client.call_kw(
         "product.product",
         "search_read",
@@ -280,7 +270,7 @@ def get_product_supplier_info(
     client: OdooClient,
     sender_id: int,
     product_id: int,
-    partner_id: Optional[int] = None,
+    partner_id: int | None = None,
     limit: int = 20,
 ) -> dict:
     if not _model_available(client, "product.supplierinfo", sender_id):
@@ -294,7 +284,11 @@ def get_product_supplier_info(
         "product.product",
         "read",
         args=[[product_id]],
-        kwargs={"fields": _available_fields(client, "product.product", sender_id, ["id", "product_tmpl_id"])},
+        kwargs={
+            "fields": _available_fields(
+                client, "product.product", sender_id, ["id", "product_tmpl_id"]
+            )
+        },
         sender_id=sender_id,
     )
     if not product_rows:
@@ -354,7 +348,7 @@ def get_product_stock_context(
     client: OdooClient,
     sender_id: int,
     product_id: int,
-    location_id: Optional[int] = None,
+    location_id: int | None = None,
 ) -> dict:
     if not _model_available(client, "product.product", sender_id):
         return build_unsupported_response(
@@ -402,7 +396,16 @@ def get_product_stock_context(
             client,
             "stock.quant",
             sender_id,
-            ["id", "product_id", "location_id", "quantity", "reserved_quantity", "available_quantity", "lot_id", "company_id"],
+            [
+                "id",
+                "product_id",
+                "location_id",
+                "quantity",
+                "reserved_quantity",
+                "available_quantity",
+                "lot_id",
+                "company_id",
+            ],
         )
         quants = client.call_kw(
             "stock.quant",
@@ -471,7 +474,7 @@ def get_stock_availability(
     client: OdooClient,
     sender_id: int,
     product_ids: list[int],
-    location_id: Optional[int] = None,
+    location_id: int | None = None,
 ) -> dict:
     if not product_ids:
         raise ValueError("product_ids must include at least one product ID.")
@@ -513,9 +516,9 @@ def _orderpoint_fields(client: OdooClient, sender_id: int) -> list[str]:
 def find_reordering_rules(
     client: OdooClient,
     sender_id: int,
-    product_id: Optional[int] = None,
-    location_id: Optional[int] = None,
-    company_id: Optional[int] = None,
+    product_id: int | None = None,
+    location_id: int | None = None,
+    company_id: int | None = None,
     low_stock_only: bool = False,
     limit: int = 50,
 ) -> dict:
@@ -553,9 +556,9 @@ def find_reordering_rules(
 def get_replenishment_suggestions(
     client: OdooClient,
     sender_id: int,
-    product_id: Optional[int] = None,
-    location_id: Optional[int] = None,
-    company_id: Optional[int] = None,
+    product_id: int | None = None,
+    location_id: int | None = None,
+    company_id: int | None = None,
     limit: int = 50,
 ) -> dict:
     rules_result = find_reordering_rules(
@@ -638,9 +641,9 @@ def _inventory_adjustment_fields(client: OdooClient, sender_id: int) -> list[str
 def find_inventory_discrepancies(
     client: OdooClient,
     sender_id: int,
-    product_id: Optional[int] = None,
-    location_id: Optional[int] = None,
-    company_id: Optional[int] = None,
+    product_id: int | None = None,
+    location_id: int | None = None,
+    company_id: int | None = None,
     limit: int = 100,
 ) -> dict:
     model = "stock.quant"
@@ -818,8 +821,8 @@ def apply_inventory_adjustment(
 def find_stock_locations(
     client: OdooClient,
     sender_id: int,
-    name: Optional[str] = None,
-    usage: Optional[str] = None,
+    name: str | None = None,
+    usage: str | None = None,
     limit: int = 20,
 ) -> dict:
     if not _model_available(client, "stock.location", sender_id):
@@ -846,16 +849,14 @@ def find_stock_locations(
         kwargs={"fields": fields, "limit": limit, "order": "complete_name asc"},
         sender_id=sender_id,
     )
-    return build_success_response(
-        "inventory.find_stock_locations", count=len(rows), locations=rows
-    )
+    return build_success_response("inventory.find_stock_locations", count=len(rows), locations=rows)
 
 
 def get_location_stock_summary(
     client: OdooClient,
     sender_id: int,
     location_id: int,
-    product_id: Optional[int] = None,
+    product_id: int | None = None,
     limit: int = 100,
 ) -> dict:
     if not _model_available(client, "stock.quant", sender_id):
@@ -871,7 +872,15 @@ def get_location_stock_summary(
         client,
         "stock.quant",
         sender_id,
-        ["id", "product_id", "location_id", "quantity", "reserved_quantity", "available_quantity", "lot_id"],
+        [
+            "id",
+            "product_id",
+            "location_id",
+            "quantity",
+            "reserved_quantity",
+            "available_quantity",
+            "lot_id",
+        ],
     )
     quants = client.call_kw(
         "stock.quant",
@@ -933,11 +942,11 @@ def get_location_stock_summary(
 def get_stock_moves(
     client: OdooClient,
     sender_id: int,
-    product_id: Optional[int] = None,
-    picking_id: Optional[int] = None,
-    state: Optional[str] = None,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
+    product_id: int | None = None,
+    picking_id: int | None = None,
+    state: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     limit: int = 50,
 ) -> dict:
     if not _model_available(client, "stock.move", sender_id):
@@ -1030,12 +1039,12 @@ def get_product_stock(
     client: OdooClient,
     sender_id: int,
     product_id: int,
-    location_id: Optional[int] = None,
+    location_id: int | None = None,
 ) -> list[dict[str, Any]]:
     result = get_product_stock_context(client, sender_id, product_id, location_id)
     if not result.get("ok"):
         raise ValueError(result.get("message", "Could not fetch product stock."))
-    return result.get("quants", [])
+    return cast(list[dict[str, Any]], result.get("quants", []))
 
 
 def _receipt_picking_fields(client: OdooClient, sender_id: int) -> list[str]:
@@ -1104,12 +1113,15 @@ def _read_receipt_moves(
             "move_line_ids",
         ],
     )
-    return client.call_kw(
-        "stock.move",
-        "search_read",
-        args=[[["picking_id", "=", picking_id]]],
-        kwargs={"fields": fields, "order": "id asc"},
-        sender_id=sender_id,
+    return cast(
+        list[dict[str, Any]],
+        client.call_kw(
+            "stock.move",
+            "search_read",
+            args=[[["picking_id", "=", picking_id]]],
+            kwargs={"fields": fields, "order": "id asc"},
+            sender_id=sender_id,
+        ),
     )
 
 
@@ -1136,12 +1148,15 @@ def _read_receipt_move_lines(
             "location_dest_id",
         ],
     )
-    return client.call_kw(
-        "stock.move.line",
-        "search_read",
-        args=[[["picking_id", "=", picking_id]]],
-        kwargs={"fields": fields, "order": "id asc"},
-        sender_id=sender_id,
+    return cast(
+        list[dict[str, Any]],
+        client.call_kw(
+            "stock.move.line",
+            "search_read",
+            args=[[["picking_id", "=", picking_id]]],
+            kwargs={"fields": fields, "order": "id asc"},
+            sender_id=sender_id,
+        ),
     )
 
 
@@ -1174,7 +1189,7 @@ def _product_tracking_map(
     return {int(row["id"]): str(row.get("tracking") or "none") for row in rows}
 
 
-def _lot_model(client: OdooClient, sender_id: int) -> Optional[str]:
+def _lot_model(client: OdooClient, sender_id: int) -> str | None:
     for model in ("stock.lot", "stock.production.lot"):
         if _model_available(client, model, sender_id):
             return model
@@ -1184,9 +1199,9 @@ def _lot_model(client: OdooClient, sender_id: int) -> Optional[str]:
 def find_lot_serial(
     client: OdooClient,
     sender_id: int,
-    name: Optional[str] = None,
-    product_id: Optional[int] = None,
-    company_id: Optional[int] = None,
+    name: str | None = None,
+    product_id: int | None = None,
+    company_id: int | None = None,
     limit: int = 20,
 ) -> dict:
     model = _lot_model(client, sender_id)
@@ -1233,7 +1248,11 @@ def get_lot_traceability(client: OdooClient, sender_id: int, lot_id: int) -> dic
         model,
         "read",
         args=[[lot_id]],
-        kwargs={"fields": _available_fields(client, model, sender_id, ["id", "name", "product_id", "company_id"])},
+        kwargs={
+            "fields": _available_fields(
+                client, model, sender_id, ["id", "name", "product_id", "company_id"]
+            )
+        },
         sender_id=sender_id,
     )
     if not lots:
@@ -1249,7 +1268,14 @@ def get_lot_traceability(client: OdooClient, sender_id: int, lot_id: int) -> dic
             "stock.quant",
             "search_read",
             args=[[["lot_id", "=", lot_id]]],
-            kwargs={"fields": _available_fields(client, "stock.quant", sender_id, ["id", "lot_id", "product_id", "location_id", "quantity", "reserved_quantity"])},
+            kwargs={
+                "fields": _available_fields(
+                    client,
+                    "stock.quant",
+                    sender_id,
+                    ["id", "lot_id", "product_id", "location_id", "quantity", "reserved_quantity"],
+                )
+            },
             sender_id=sender_id,
         )
     move_lines = client.call_kw(
@@ -1257,7 +1283,23 @@ def get_lot_traceability(client: OdooClient, sender_id: int, lot_id: int) -> dic
         "search_read",
         args=[[["lot_id", "=", lot_id]]],
         kwargs={
-            "fields": _available_fields(client, "stock.move.line", sender_id, ["id", "lot_id", "product_id", "location_id", "location_dest_id", "quantity", "qty_done", "picking_id", "move_id", "date"]),
+            "fields": _available_fields(
+                client,
+                "stock.move.line",
+                sender_id,
+                [
+                    "id",
+                    "lot_id",
+                    "product_id",
+                    "location_id",
+                    "location_dest_id",
+                    "quantity",
+                    "qty_done",
+                    "picking_id",
+                    "move_id",
+                    "date",
+                ],
+            ),
             "order": "id asc",
         },
         sender_id=sender_id,
@@ -1298,7 +1340,11 @@ def check_lot_requirements(client: OdooClient, sender_id: int, picking_id: int) 
     tracking = _product_tracking_map(
         client,
         sender_id,
-        [product_id for product_id in (_safe_int(move.get("product_id")) for move in moves) if product_id],
+        [
+            product_id
+            for product_id in (_safe_int(move.get("product_id")) for move in moves)
+            if product_id
+        ],
     )
     lines_by_move: dict[int, list[dict[str, Any]]] = {}
     for line in move_lines:
@@ -1312,13 +1358,35 @@ def check_lot_requirements(client: OdooClient, sender_id: int, picking_id: int) 
         tracking_type = tracking.get(product_id or 0, "none")
         done = _move_done_quantity(move)
         related = lines_by_move.get(move_id, [])
-        tracked = sum(_move_line_done_quantity(line) for line in related if line.get("lot_id") or line.get("lot_name"))
+        tracked = sum(
+            _move_line_done_quantity(line)
+            for line in related
+            if line.get("lot_id") or line.get("lot_name")
+        )
         if tracking_type in {"lot", "serial"} and done > tracked + 0.0001:
-            issues.append({"type": "missing_lot_serial", "severity": "critical", "move_id": move_id, "product_id": product_id, "missing_quantity": round(done - tracked, 4)})
+            issues.append(
+                {
+                    "type": "missing_lot_serial",
+                    "severity": "critical",
+                    "move_id": move_id,
+                    "product_id": product_id,
+                    "missing_quantity": round(done - tracked, 4),
+                }
+            )
         if tracking_type == "serial":
             for line in related:
-                if (line.get("lot_id") or line.get("lot_name")) and _move_line_done_quantity(line) > 1.0001:
-                    issues.append({"type": "serial_quantity_exceeds_one", "severity": "critical", "move_id": move_id, "move_line_id": line["id"], "quantity": _move_line_done_quantity(line)})
+                if (line.get("lot_id") or line.get("lot_name")) and _move_line_done_quantity(
+                    line
+                ) > 1.0001:
+                    issues.append(
+                        {
+                            "type": "serial_quantity_exceeds_one",
+                            "severity": "critical",
+                            "move_id": move_id,
+                            "move_line_id": line["id"],
+                            "quantity": _move_line_done_quantity(line),
+                        }
+                    )
     return build_success_response(
         "inventory.check_lot_requirements",
         picking=picking,
@@ -1330,11 +1398,11 @@ def check_lot_requirements(client: OdooClient, sender_id: int, picking_id: int) 
 def find_purchase_receipts(
     client: OdooClient,
     sender_id: int,
-    purchase_order_id: Optional[int] = None,
-    partner_id: Optional[int] = None,
-    state: Optional[str] = None,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
+    purchase_order_id: int | None = None,
+    partner_id: int | None = None,
+    state: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     limit: int = 20,
 ) -> dict:
     if not _model_available(client, "stock.picking", sender_id):
@@ -1388,9 +1456,7 @@ def find_purchase_receipts(
     )
 
 
-def get_receipt_summary(
-    client: OdooClient, sender_id: int, picking_id: int
-) -> dict:
+def get_receipt_summary(client: OdooClient, sender_id: int, picking_id: int) -> dict:
     if not _model_available(client, "stock.picking", sender_id):
         return build_unsupported_response(
             "inventory.get_receipt_summary",
@@ -1505,7 +1571,7 @@ def match_receipt_to_purchase_order(
     client: OdooClient,
     sender_id: int,
     picking_id: int,
-    purchase_order_id: Optional[int] = None,
+    purchase_order_id: int | None = None,
 ) -> dict:
     summary = get_receipt_summary(client, sender_id, picking_id)
     if not summary.get("ok"):
@@ -1514,13 +1580,15 @@ def match_receipt_to_purchase_order(
 
     receipt = summary["receipt"]
     resolved_po_id = purchase_order_id or _safe_int(receipt.get("purchase_id"))
-    if not resolved_po_id and receipt.get("origin") and _model_available(
-        client, "purchase.order", sender_id
+    if (
+        not resolved_po_id
+        and receipt.get("origin")
+        and _model_available(client, "purchase.order", sender_id)
     ):
         po_rows = client.call_kw(
             "purchase.order",
             "search_read",
-            args=[[['name', '=', receipt["origin"]]]],
+            args=[[["name", "=", receipt["origin"]]]],
             kwargs={"fields": ["id", "name"], "limit": 2},
             sender_id=sender_id,
         )
@@ -1597,9 +1665,7 @@ def match_receipt_to_purchase_order(
     )
 
 
-def prepare_receipt_validation(
-    client: OdooClient, sender_id: int, picking_id: int
-) -> dict:
+def prepare_receipt_validation(client: OdooClient, sender_id: int, picking_id: int) -> dict:
     summary = get_receipt_summary(client, sender_id, picking_id)
     if not summary.get("ok"):
         summary["capability"] = "inventory.prepare_receipt_validation"
@@ -1714,12 +1780,12 @@ def _find_pickings_by_type(
     sender_id: int,
     picking_type_code: str,
     capability: str,
-    state: Optional[str] = None,
-    partner_id: Optional[int] = None,
-    relation_field: Optional[str] = None,
-    relation_id: Optional[int] = None,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
+    state: str | None = None,
+    partner_id: int | None = None,
+    relation_field: str | None = None,
+    relation_id: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     limit: int = 20,
 ) -> dict:
     if not _model_available(client, "stock.picking", sender_id):
@@ -1735,8 +1801,10 @@ def _find_pickings_by_type(
         domain.append(["state", "=", state])
     if partner_id:
         domain.append(["partner_id", "=", partner_id])
-    if relation_field and relation_id and _field_available(
-        client, "stock.picking", relation_field, sender_id
+    if (
+        relation_field
+        and relation_id
+        and _field_available(client, "stock.picking", relation_field, sender_id)
     ):
         domain.append([relation_field, "=", relation_id])
     if date_from:
@@ -1765,11 +1833,11 @@ def _find_pickings_by_type(
 def find_sale_deliveries(
     client: OdooClient,
     sender_id: int,
-    sale_order_id: Optional[int] = None,
-    partner_id: Optional[int] = None,
-    state: Optional[str] = None,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
+    sale_order_id: int | None = None,
+    partner_id: int | None = None,
+    state: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     limit: int = 20,
 ) -> dict:
     result = _find_pickings_by_type(
@@ -1793,9 +1861,9 @@ def find_sale_deliveries(
 def find_internal_transfers(
     client: OdooClient,
     sender_id: int,
-    state: Optional[str] = None,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
+    state: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     limit: int = 20,
 ) -> dict:
     result = _find_pickings_by_type(
@@ -1932,7 +2000,7 @@ def match_delivery_to_sale_order(
     client: OdooClient,
     sender_id: int,
     picking_id: int,
-    sale_order_id: Optional[int] = None,
+    sale_order_id: int | None = None,
 ) -> dict:
     summary = get_delivery_summary(client, sender_id, picking_id)
     if not summary.get("ok"):
@@ -1941,8 +2009,10 @@ def match_delivery_to_sale_order(
 
     delivery = summary["picking"]
     resolved_so_id = sale_order_id or _safe_int(delivery.get("sale_id"))
-    if not resolved_so_id and delivery.get("origin") and _model_available(
-        client, "sale.order", sender_id
+    if (
+        not resolved_so_id
+        and delivery.get("origin")
+        and _model_available(client, "sale.order", sender_id)
     ):
         order_rows = client.call_kw(
             "sale.order",
@@ -2054,9 +2124,7 @@ def get_transfer_summary(client: OdooClient, sender_id: int, picking_id: int) ->
     )
 
 
-def _prepare_picking_validation(
-    summary: dict, capability: str, operation_name: str
-) -> dict:
+def _prepare_picking_validation(summary: dict, capability: str, operation_name: str) -> dict:
     if not summary.get("ok"):
         summary["capability"] = capability
         return summary
@@ -2064,7 +2132,9 @@ def _prepare_picking_validation(
     critical = list(summary.get("discrepancies", []))
     warnings: list[dict[str, Any]] = []
     if picking.get("state") in {"done", "cancel"}:
-        critical.append({"type": "invalid_state", "severity": "critical", "state": picking["state"]})
+        critical.append(
+            {"type": "invalid_state", "severity": "critical", "state": picking["state"]}
+        )
     if not any(line["done_quantity"] > 0 for line in summary["lines"]):
         warnings.append({"type": "no_done_quantities", "severity": "warning"})
     if any(line["remaining_quantity"] > 0 for line in summary["lines"]):
@@ -2095,7 +2165,9 @@ def prepare_transfer_validation(client: OdooClient, sender_id: int, picking_id: 
         "inventory.prepare_transfer_validation",
         "internal_transfer",
     )
-    if plan.get("ok") and plan["preview"]["picking"].get("location_id") == plan["preview"]["picking"].get("location_dest_id"):
+    if plan.get("ok") and plan["preview"]["picking"].get("location_id") == plan["preview"][
+        "picking"
+    ].get("location_dest_id"):
         plan["critical"].append({"type": "same_source_destination", "severity": "critical"})
         plan["can_validate"] = False
     return plan
@@ -2113,7 +2185,7 @@ def _validate_picking(
     plan = prepare(client, sender_id, picking_id)
     if not plan.get("ok"):
         plan["capability"] = capability
-        return plan
+        return cast(dict[Any, Any], plan)
     if dry_run:
         return build_success_response(capability, dry_run=True, validation_plan=plan)
     if not confirm:
@@ -2131,7 +2203,9 @@ def _validate_picking(
             "capability": capability,
             "validation_plan": plan,
         }
-    result = client.call_kw("stock.picking", "button_validate", args=[[picking_id]], sender_id=sender_id)
+    result = client.call_kw(
+        "stock.picking", "button_validate", args=[[picking_id]], sender_id=sender_id
+    )
     if isinstance(result, dict):
         return {
             "ok": False,
@@ -2153,7 +2227,13 @@ def validate_delivery(
     dry_run: bool = True,
 ) -> dict:
     return _validate_picking(
-        client, sender_id, picking_id, confirm, dry_run, "inventory.validate_delivery", prepare_delivery_validation
+        client,
+        sender_id,
+        picking_id,
+        confirm,
+        dry_run,
+        "inventory.validate_delivery",
+        prepare_delivery_validation,
     )
 
 
@@ -2165,7 +2245,13 @@ def validate_transfer(
     dry_run: bool = True,
 ) -> dict:
     return _validate_picking(
-        client, sender_id, picking_id, confirm, dry_run, "inventory.validate_transfer", prepare_transfer_validation
+        client,
+        sender_id,
+        picking_id,
+        confirm,
+        dry_run,
+        "inventory.validate_transfer",
+        prepare_transfer_validation,
     )
 
 
@@ -2175,8 +2261,8 @@ def prepare_internal_transfer(
     location_id: int,
     location_dest_id: int,
     lines: list[dict[str, Any]],
-    picking_type_id: Optional[int] = None,
-    origin: Optional[str] = None,
+    picking_type_id: int | None = None,
+    origin: str | None = None,
 ) -> dict:
     critical: list[dict[str, Any]] = []
     if location_id == location_dest_id:
@@ -2189,9 +2275,7 @@ def prepare_internal_transfer(
         product_id = _safe_int(line.get("product_id"))
         quantity = _safe_float(line.get("quantity"))
         if not product_id or quantity <= 0:
-            critical.append(
-                {"type": "invalid_line", "severity": "critical", "line_index": index}
-            )
+            critical.append({"type": "invalid_line", "severity": "critical", "line_index": index})
             continue
         product_ids.append(product_id)
         normalized_lines.append({"product_id": product_id, "quantity": quantity})
@@ -2247,7 +2331,11 @@ def prepare_internal_transfer(
         "stock.location",
         "read",
         args=[[location_id, location_dest_id]],
-        kwargs={"fields": _available_fields(client, "stock.location", sender_id, ["id", "display_name", "usage"])},
+        kwargs={
+            "fields": _available_fields(
+                client, "stock.location", sender_id, ["id", "display_name", "usage"]
+            )
+        },
         sender_id=sender_id,
     )
     location_by_id = {int(location["id"]): location for location in locations}
@@ -2267,7 +2355,11 @@ def prepare_internal_transfer(
         "product.product",
         "read",
         args=[sorted(set(product_ids))],
-        kwargs={"fields": _available_fields(client, "product.product", sender_id, ["id", "display_name", "uom_id"])},
+        kwargs={
+            "fields": _available_fields(
+                client, "product.product", sender_id, ["id", "display_name", "uom_id"]
+            )
+        },
         sender_id=sender_id,
     )
     product_by_id = {int(product["id"]): product for product in products}
@@ -2325,8 +2417,8 @@ def create_internal_transfer(
     location_id: int,
     location_dest_id: int,
     lines: list[dict[str, Any]],
-    picking_type_id: Optional[int] = None,
-    origin: Optional[str] = None,
+    picking_type_id: int | None = None,
+    origin: str | None = None,
     confirm: bool = False,
     dry_run: bool = True,
 ) -> dict:

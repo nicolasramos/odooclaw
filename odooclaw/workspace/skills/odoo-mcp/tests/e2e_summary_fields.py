@@ -32,8 +32,8 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../src"))
 
 from odoo_mcp.server import (  # noqa: E402
     get_odoo_client,
-    odoo_get_record_summary,
     odoo_get_partner_summary,
+    odoo_get_record_summary,
     odoo_search,
 )
 
@@ -82,9 +82,7 @@ def _field_raises(client, model, res_id, field, sender):
     if field not in _schema(client, model, sender):
         return False
     try:
-        client.call_kw(
-            model, "read", args=[[res_id]], kwargs={"fields": [field]}, sender_id=sender
-        )
+        client.call_kw(model, "read", args=[[res_id]], kwargs={"fields": [field]}, sender_id=sender)
         return False
     except Exception:
         return True
@@ -157,16 +155,21 @@ def run():
         bool(summary.get("street")) and bool(summary.get("city")),
         f"street={summary.get('street')!r} city={summary.get('city')!r}",
     )
-    check("summary carries the record id", summary.get("id") == partner_id, f"id={summary.get('id')}")
+    check(
+        "summary carries the record id", summary.get("id") == partner_id, f"id={summary.get('id')}"
+    )
 
-    empty = [k for k, v in summary.items() if v in ("", [], {}, None) and k not in ("open_sale_orders", "open_invoices")]
+    empty = [
+        k
+        for k, v in summary.items()
+        if v in ("", [], {}, None) and k not in ("open_sale_orders", "open_invoices")
+    ]
     check("no empty values in the summary", not empty, f"empty={empty}")
 
     forbidden = [
         k
         for k in summary
-        if k in ("child_ids", "message_ids", "image_1920", "password")
-        or k.startswith("_")
+        if k in ("child_ids", "message_ids", "image_1920", "password") or k.startswith("_")
     ]
     check("no collections / binaries / technical fields", not forbidden, f"present={forbidden}")
 
@@ -207,9 +210,7 @@ def run():
     # A field the schema advertises but this sender cannot read must be skipped:
     # never fatal, and never an excuse to hand back a three-field summary.
     unreadable = [
-        f
-        for f in ACCOUNTING_FIELDS
-        if _field_raises(client, "res.partner", partner_id, f, sender)
+        f for f in ACCOUNTING_FIELDS if _field_raises(client, "res.partner", partner_id, f, sender)
     ]
     leaked = [f for f in unreadable if f in summary]
     check(

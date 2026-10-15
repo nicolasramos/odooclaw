@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import urlsplit
 
 # Synthetic key used to expose a clickable record URL in tool results.
@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 RECORD_URL_KEY = "__url"
 
 
-def build_record_url(base_url: str, model: str, record_id: int) -> Optional[str]:
+def build_record_url(base_url: str, model: str, record_id: int) -> str | None:
     """Build a clickable Odoo web-client URL for a record.
 
     Format: ``{base}/web#id={id}&model={model}&view_type=form``. The hash
@@ -25,10 +25,10 @@ def build_record_url(base_url: str, model: str, record_id: int) -> Optional[str]
 
 
 def serialize_records(
-    records: List[Dict[str, Any]],
-    model: Optional[str] = None,
-    base_url: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+    records: list[dict[str, Any]],
+    model: str | None = None,
+    base_url: str | None = None,
+) -> list[dict[str, Any]]:
     """Clean up standard record reads.
 
     When ``model`` and ``base_url`` are provided, each record also gets a
@@ -36,7 +36,7 @@ def serialize_records(
     """
     res = []
     for r in records:
-        cleaned = {}
+        cleaned: dict[str, Any] = {}
         for k, v in r.items():
             # Example: clean up binary data or long html
             if isinstance(v, str) and len(v) > 2000 and "html" in k.lower():
@@ -51,8 +51,9 @@ def serialize_records(
     return res
 
 
-def serialize_schema(schema: Dict[str, Any]) -> str:
+def serialize_schema(schema: dict[str, Any]) -> str:
     """Minify the schema output so it does not overwhelm the LLM token context."""
     import json
+
     # You could filter out base fields (create_date etc.) if not requested
     return json.dumps(schema, indent=2)

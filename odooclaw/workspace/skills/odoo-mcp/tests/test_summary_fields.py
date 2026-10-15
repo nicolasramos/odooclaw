@@ -44,10 +44,7 @@ _TYPE_DEFAULTS = {
 
 def make_record(schema, **values):
     """A full record for *schema*: every field with its type default, then overrides."""
-    record = {
-        name: _TYPE_DEFAULTS.get(props.get("type"), False)
-        for name, props in schema.items()
-    }
+    record = {name: _TYPE_DEFAULTS.get(props.get("type"), False) for name, props in schema.items()}
     record.update(values)
     return record
 
@@ -111,9 +108,7 @@ class FakeOdoo(OdooClient):
 
     def requested_fields(self, model, method="read"):
         return [
-            kwargs.get("fields")
-            for m, meth, kwargs in self.calls
-            if m == model and meth == method
+            kwargs.get("fields") for m, meth, kwargs in self.calls if m == model and meth == method
         ]
 
 
@@ -125,18 +120,18 @@ PARTNER_SCHEMA = {
     "display_name": {"type": "char"},
     "email": {"type": "char"},
     "phone": {"type": "char"},
-    "mobile": {"type": "char"},          # outside the old hardcoded list (#81)
-    "street": {"type": "char"},          # outside the old hardcoded list
-    "city": {"type": "char"},            # outside the old hardcoded list
+    "mobile": {"type": "char"},  # outside the old hardcoded list (#81)
+    "street": {"type": "char"},  # outside the old hardcoded list
+    "city": {"type": "char"},  # outside the old hardcoded list
     "user_id": {"type": "many2one"},
     "credit": {"type": "monetary"},
     "debit": {"type": "monetary"},
     "active": {"type": "boolean"},
-    "child_ids": {"type": "one2many"},   # ids, not values
-    "message_ids": {"type": "one2many"}, # ids, not values (chatter)
-    "image_1920": {"type": "binary"},    # base64 blob
-    "password": {"type": "char"},        # secret
-    "_order": {"type": "char"},          # technical
+    "child_ids": {"type": "one2many"},  # ids, not values
+    "message_ids": {"type": "one2many"},  # ids, not values (chatter)
+    "image_1920": {"type": "binary"},  # base64 blob
+    "password": {"type": "char"},  # secret
+    "_order": {"type": "char"},  # technical
 }
 
 PARTNER_RECORD = make_record(
@@ -157,7 +152,11 @@ PARTNER_RECORD = make_record(
 )
 
 SALE_SCHEMA = {"id": {"type": "integer"}, "name": {"type": "char"}, "state": {"type": "selection"}}
-INVOICE_SCHEMA = {"id": {"type": "integer"}, "name": {"type": "char"}, "payment_state": {"type": "selection"}}
+INVOICE_SCHEMA = {
+    "id": {"type": "integer"},
+    "name": {"type": "char"},
+    "payment_state": {"type": "selection"},
+}
 
 
 def _client(**kwargs):
@@ -169,10 +168,15 @@ def _client(**kwargs):
 # Partner summary
 # ---------------------------------------------------------------------------
 
+
 def test_partner_summary_reports_fields_the_hardcoded_list_never_had():
     """The bug from #81: `mobile` is filled in, the summary must show it."""
     client = _client(
-        schemas={"res.partner": PARTNER_SCHEMA, "sale.order": SALE_SCHEMA, "account.move": INVOICE_SCHEMA},
+        schemas={
+            "res.partner": PARTNER_SCHEMA,
+            "sale.order": SALE_SCHEMA,
+            "account.move": INVOICE_SCHEMA,
+        },
         records={("res.partner", 1): PARTNER_RECORD},
         counts={"sale.order": 3, "account.move": 2},
     )
@@ -189,17 +193,21 @@ def test_partner_summary_reports_fields_the_hardcoded_list_never_had():
 
 def test_partner_summary_never_requests_collections_binary_or_technical_fields():
     client = _client(
-        schemas={"res.partner": PARTNER_SCHEMA, "sale.order": SALE_SCHEMA, "account.move": INVOICE_SCHEMA},
+        schemas={
+            "res.partner": PARTNER_SCHEMA,
+            "sale.order": SALE_SCHEMA,
+            "account.move": INVOICE_SCHEMA,
+        },
         records={("res.partner", 1): PARTNER_RECORD},
     )
 
     get_partner_summary(client, 2, 1)
 
     (requested,) = client.requested_fields("res.partner")
-    assert "child_ids" not in requested          # one2many
-    assert "message_ids" not in requested        # one2many (chatter)
-    assert "image_1920" not in requested         # binary
-    assert "password" not in requested           # secret
+    assert "child_ids" not in requested  # one2many
+    assert "message_ids" not in requested  # one2many (chatter)
+    assert "image_1920" not in requested  # binary
+    assert "password" not in requested  # secret
     assert not [f for f in requested if f.startswith("_")]
 
 
@@ -225,12 +233,18 @@ def test_partner_summary_survives_an_instance_without_accounting():
     (requested,) = client.requested_fields("res.partner")
     assert "credit" not in requested
     assert "debit" not in requested
-    assert not [c for c in client.calls if c[0] in ("sale.order", "account.move") and c[1] == "search_count"]
+    assert not [
+        c for c in client.calls if c[0] in ("sale.order", "account.move") and c[1] == "search_count"
+    ]
 
 
 def test_partner_summary_folds_credit_and_debit_into_one_balance():
     client = _client(
-        schemas={"res.partner": PARTNER_SCHEMA, "sale.order": SALE_SCHEMA, "account.move": INVOICE_SCHEMA},
+        schemas={
+            "res.partner": PARTNER_SCHEMA,
+            "sale.order": SALE_SCHEMA,
+            "account.move": INVOICE_SCHEMA,
+        },
         records={("res.partner", 1): PARTNER_RECORD},
     )
 
@@ -257,7 +271,11 @@ def test_partner_summary_keeps_the_salesperson_alias():
 def test_partner_summary_drops_empty_values_and_keeps_the_id():
     record = make_record(PARTNER_SCHEMA, name="E2E Mobile Co", phone=False, email="", active=False)
     client = _client(
-        schemas={"res.partner": PARTNER_SCHEMA, "sale.order": SALE_SCHEMA, "account.move": INVOICE_SCHEMA},
+        schemas={
+            "res.partner": PARTNER_SCHEMA,
+            "sale.order": SALE_SCHEMA,
+            "account.move": INVOICE_SCHEMA,
+        },
         records={("res.partner", 1): record},
     )
 
@@ -344,9 +362,9 @@ def test_record_summary_drops_empty_values_and_reports_missing_records():
 
     assert summary["name"] == "Blue Widget"
     assert summary["id"] == 5
-    assert "list_price" not in summary       # 0.0 → empty
-    assert "is_storable" not in summary      # False → empty
-    assert "image_1920" not in summary       # binary → never requested
+    assert "list_price" not in summary  # 0.0 → empty
+    assert "is_storable" not in summary  # False → empty
+    assert "image_1920" not in summary  # binary → never requested
 
     missing = get_record_summary(client, 2, "product.template", 404)
     assert missing == {"error": "Record 404 not found in product.template"}
@@ -391,19 +409,24 @@ def test_record_summary_skips_the_fields_that_raise_and_keeps_the_rest():
 
     assert summary["name"] == "Blue Widget"
     assert summary["id"] == 5
-    assert summary["categ_id"] == [3, "Widgets"]   # not in the minimal fallback
-    assert "default_code" not in summary           # raised
-    assert "list_price" not in summary             # raised
-    assert "is_storable" not in summary            # raised
+    assert summary["categ_id"] == [3, "Widgets"]  # not in the minimal fallback
+    assert "default_code" not in summary  # raised
+    assert "list_price" not in summary  # raised
+    assert "is_storable" not in summary  # raised
 
 
 # ---------------------------------------------------------------------------
 # The shared, cached schema
 # ---------------------------------------------------------------------------
 
+
 def test_fields_get_is_cached_per_model():
     client = _client(
-        schemas={"res.partner": PARTNER_SCHEMA, "sale.order": SALE_SCHEMA, "account.move": INVOICE_SCHEMA},
+        schemas={
+            "res.partner": PARTNER_SCHEMA,
+            "sale.order": SALE_SCHEMA,
+            "account.move": INVOICE_SCHEMA,
+        },
         records={("res.partner", 1): PARTNER_RECORD},
     )
 
@@ -422,7 +445,9 @@ def test_select_summary_fields_returns_empty_when_there_is_no_schema():
 
 def test_expired_cache_is_refetched():
     """The TTL is real: a schema change is picked up after 60 seconds."""
-    client = _client(schemas={"res.partner": PARTNER_SCHEMA}, records={("res.partner", 1): PARTNER_RECORD})
+    client = _client(
+        schemas={"res.partner": PARTNER_SCHEMA}, records={("res.partner", 1): PARTNER_RECORD}
+    )
 
     field_schema.select_summary_fields(client, "res.partner", 2)
 
@@ -461,9 +486,7 @@ def test_records_field_validation_sees_the_schema_after_the_ttl():
     )  # still cached
 
     for key, ts in list(field_schema._field_cache_timestamps.items()):
-        field_schema._field_cache_timestamps[key] = ts - (
-            field_schema.FIELD_CACHE_TTL_SECONDS + 1
-        )
+        field_schema._field_cache_timestamps[key] = ts - (field_schema.FIELD_CACHE_TTL_SECONDS + 1)
 
     assert "x_custom_field" in records_tool._get_model_fields(client, "res.partner", 2)
 
@@ -477,9 +500,7 @@ def test_records_field_validation_sees_the_schema_after_the_ttl():
 #: raises ``AccessError`` — measured on Odoo 18 (154 fields for the internal
 #: user vs 163 for admin).
 INTERNAL_PARTNER_SCHEMA = {
-    name: props
-    for name, props in PARTNER_SCHEMA.items()
-    if name not in ("credit", "debit")
+    name: props for name, props in PARTNER_SCHEMA.items() if name not in ("credit", "debit")
 }
 INTERNAL_PARTNER_SCHEMA.update(
     {
@@ -526,7 +547,7 @@ def test_partner_summary_keeps_mobile_when_accounting_computes_raise():
     assert summary["street"] == "Calle E2E 1"
     assert summary["city"] == "Santa Cruz de Tenerife"
     assert not [f for f in ACCOUNTING_FIELDS_THAT_RAISE if f in summary]
-    assert "financial_balance" not in summary   # no accounting for this user
+    assert "financial_balance" not in summary  # no accounting for this user
     # locating the bad fields must stay cheap and bounded
     reads = [c for c in client.calls if c[1] == "read"]
     assert len(reads) <= field_schema._MAX_PROBE_READS + 2
@@ -543,7 +564,7 @@ def test_probe_budget_bounds_the_reads_when_almost_everything_raises():
 
     summary = get_partner_summary(client, 2, 1)
 
-    assert summary["name"] == "E2E Mobile Co"   # what could be read, was read
+    assert summary["name"] == "E2E Mobile Co"  # what could be read, was read
     reads = [c for c in client.calls if c[1] == "read"]
     assert len(reads) <= field_schema._MAX_PROBE_READS + 2
 
@@ -578,14 +599,14 @@ def test_unreadable_fields_are_remembered_for_the_ttl():
 
     assert first["mobile"] == "+34600000001"
     assert second["mobile"] == "+34600000001"
-    assert first_reads > 1                       # the search did happen
-    assert second_reads == 1                     # ... and only once
+    assert first_reads > 1  # the search did happen
+    assert second_reads == 1  # ... and only once
 
 
 def test_the_schema_cache_is_keyed_by_user():
     """``fields_get`` answers differently per user, so the cache must too."""
-    admin_schema = {k: v for k, v in PARTNER_SCHEMA.items()}
-    internal_schema = {k: v for k, v in INTERNAL_PARTNER_SCHEMA.items()}
+    admin_schema = dict(PARTNER_SCHEMA)
+    internal_schema = dict(INTERNAL_PARTNER_SCHEMA)
     client = FakeOdoo(
         schemas={"res.partner": admin_schema},
         records={("res.partner", 1): PARTNER_RECORD},
@@ -594,9 +615,7 @@ def test_the_schema_cache_is_keyed_by_user():
     def call_kw(model, method, *args, **kwargs):
         client.calls.append((model, method, kwargs))
         if method == "fields_get":
-            return dict(
-                internal_schema if kwargs.get("sender_id") == 10 else admin_schema
-            )
+            return dict(internal_schema if kwargs.get("sender_id") == 10 else admin_schema)
         return FakeOdoo.call_kw(client, model, method, *args, **kwargs)
 
     client.call_kw = call_kw

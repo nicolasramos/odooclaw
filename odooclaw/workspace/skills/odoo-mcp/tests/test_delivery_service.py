@@ -93,9 +93,9 @@ class TestAttachFileToChat:
         ids = post_call.kwargs["kwargs"]["attachment_ids"]
         # Odoo 17: the command form raises ValueError, nothing is created.
         assert ids == [48341]
-        assert not any(isinstance(i, (list, tuple)) for i in ids), (
-            "x2many command form [(6, 0, [id])] is rejected by message_post"
-        )
+        assert not any(
+            isinstance(i, (list, tuple)) for i in ids
+        ), "x2many command form [(6, 0, [id])] is rejected by message_post"
 
     def test_never_returns_or_mentions_a_filesystem_path(self, monkeypatch):
         client = _client(monkeypatch)

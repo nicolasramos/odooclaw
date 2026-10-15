@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import difflib
 import re
-from datetime import datetime, timezone
-from uuid import uuid4
 import xml.etree.ElementTree as ET
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any, cast
+from uuid import uuid4
 
 from odoo_mcp.core.client import OdooClient
 from odoo_mcp.observability.audit import log_audit_event
@@ -17,7 +17,7 @@ from odoo_mcp.services.capability_service import (
 _VIEW_MODELS = {"ir.ui.view", "ir.model.data", "ir.actions.report"}
 
 
-def _parse_xmlid(xmlid: str) -> Optional[tuple[str, str]]:
+def _parse_xmlid(xmlid: str) -> tuple[str, str] | None:
     if not xmlid or "." not in xmlid:
         return None
     module, name = xmlid.split(".", 1)
@@ -30,8 +30,8 @@ def _resolve_xmlid(
     client: OdooClient,
     sender_id: int,
     xmlid: str,
-    expected_model: Optional[str] = None,
-) -> Optional[dict[str, Any]]:
+    expected_model: str | None = None,
+) -> dict[str, Any] | None:
     parsed = _parse_xmlid(xmlid)
     if not parsed:
         return None
@@ -50,10 +50,10 @@ def _resolve_xmlid(
     row = rows[0]
     if expected_model and row.get("model") != expected_model:
         return None
-    return row
+    return cast(dict[str, Any] | None, row)
 
 
-def _is_well_formed_xml(xml_text: str) -> tuple[bool, Optional[str]]:
+def _is_well_formed_xml(xml_text: str) -> tuple[bool, str | None]:
     try:
         ET.fromstring(xml_text)
         return True, None
@@ -68,7 +68,7 @@ def _normalize_xpath(xpath: str) -> str:
     return trimmed
 
 
-def _count_xpath_matches(xml_text: str, xpath: str) -> tuple[int, Optional[str]]:
+def _count_xpath_matches(xml_text: str, xpath: str) -> tuple[int, str | None]:
     try:
         root = ET.fromstring(xml_text)
     except ET.ParseError as exc:
@@ -110,9 +110,7 @@ def _scan_arch_migration_issues(
         )
 
     if target_version.startswith(("17", "18")):
-        if re.search(r"\battrs\s*=", arch_text) or re.search(
-            r"\bstates\s*=", arch_text
-        ):
+        if re.search(r"\battrs\s*=", arch_text) or re.search(r"\bstates\s*=", arch_text):
             add_issue(
                 "ATTRS_STATES_LEGACY",
                 "high",
@@ -292,7 +290,7 @@ def _build_apply_snapshot(
 ) -> dict[str, Any]:
     return {
         "snapshot_id": str(uuid4()),
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "kind": kind,
         "rollback_action": "deactivate_created_view",
         "created_view_id": created_view_id,
@@ -398,7 +396,7 @@ def find_views_by_model(
     client: OdooClient,
     sender_id: int,
     model: str,
-    view_type: Optional[str] = None,
+    view_type: str | None = None,
     limit: int = 50,
 ) -> dict[str, Any]:
     domain: list[list[Any]] = [["model", "=", model]]
@@ -431,17 +429,11 @@ def find_views_by_model(
         "ir.ui.view",
         {"model": model, "view_type": view_type, "limit": limit, "count": len(rows)},
     )
-    return build_success_response(
-        "views.find_views_by_model", count=len(rows), views=rows
-    )
+    return build_success_response("views.find_views_by_model", count=len(rows), views=rows)
 
 
-def get_report_template(
-    client: OdooClient, sender_id: int, xmlid: str
-) -> dict[str, Any]:
-    xml_row = _resolve_xmlid(
-        client, sender_id, xmlid, expected_model="ir.actions.report"
-    )
+def get_report_template(client: OdooClient, sender_id: int, xmlid: str) -> dict[str, Any]:
+    xml_row = _resolve_xmlid(client, sender_id, xmlid, expected_model="ir.actions.report")
     if not xml_row:
         return {
             "ok": False,
@@ -510,18 +502,14 @@ def scan_view_migration_issues(
     sender_id: int,
     xmlid: str,
     target_version: str,
-    rule_sets: Optional[list[str]] = None,
+    rule_sets: list[str] | None = None,
 ) -> dict[str, Any]:
-    view_response = get_view_by_xmlid(
-        client, sender_id, xmlid, include_inherited_chain=False
-    )
+    view_response = get_view_by_xmlid(client, sender_id, xmlid, include_inherited_chain=False)
     if not view_response.get("ok"):
         return view_response
 
     arch_text = view_response["view"].get("arch_db") or ""
-    issues = _scan_arch_migration_issues(
-        arch_text, target_version=target_version, is_qweb=False
-    )
+    issues = _scan_arch_migration_issues(arch_text, target_version=target_version, is_qweb=False)
     summary = _issue_summary(issues)
     log_audit_event(
         "VIEW_SCAN",
@@ -546,7 +534,7 @@ def scan_report_migration_issues(
     sender_id: int,
     xmlid: str,
     target_version: str,
-    rule_sets: Optional[list[str]] = None,
+    rule_sets: list[str] | None = None,
 ) -> dict[str, Any]:
     report_response = get_report_template(client, sender_id, xmlid)
     if not report_response.get("ok"):
@@ -554,9 +542,7 @@ def scan_report_migration_issues(
 
     template = report_response.get("template") or {}
     arch_text = template.get("arch_db") or ""
-    issues = _scan_arch_migration_issues(
-        arch_text, target_version=target_version, is_qweb=True
-    )
+    issues = _scan_arch_migration_issues(arch_text, target_version=target_version, is_qweb=True)
     summary = _issue_summary(issues)
     log_audit_event(
         "REPORT_SCAN",
@@ -581,7 +567,7 @@ def propose_view_patch(
     sender_id: int,
     xmlid: str,
     intent: str,
-    constraints: Optional[dict[str, Any]] = None,
+    constraints: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     scan = scan_view_migration_issues(client, sender_id, xmlid, target_version="18.0")
     if not scan.get("ok"):
@@ -617,7 +603,7 @@ def propose_report_patch(
     sender_id: int,
     xmlid: str,
     intent: str,
-    constraints: Optional[dict[str, Any]] = None,
+    constraints: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     scan = scan_report_migration_issues(client, sender_id, xmlid, target_version="18.0")
     if not scan.get("ok"):
@@ -693,25 +679,19 @@ def validate_view_patch(
         # advisory patch does not directly execute xpath mutations
         checks["xpath_matches"] = []
     else:
-        errors.append(
-            "Unsupported patch_format. Use xml_inheritance or advisory_patch."
-        )
+        errors.append("Unsupported patch_format. Use xml_inheritance or advisory_patch.")
 
     if re.search(r"<\s*record\b", str(patch)):
         checks["forbidden_patterns"].append("record_tag")
         errors.append("Patch must not include <record> declarations.")
 
     simulated_after = (
-        _apply_advisory_patch(base_arch, patch)
-        if patch_format == "advisory_patch"
-        else base_arch
+        _apply_advisory_patch(base_arch, patch) if patch_format == "advisory_patch" else base_arch
     )
     issues_after = _scan_arch_migration_issues(
         simulated_after, target_version=target_version, is_qweb=False
     )
-    checks["version_compatibility"] = (
-        len([i for i in issues_after if i["severity"] == "high"]) == 0
-    )
+    checks["version_compatibility"] = len([i for i in issues_after if i["severity"] == "high"]) == 0
     if not checks["version_compatibility"]:
         warnings.append("Patch still leaves high-severity migration issues.")
 
@@ -774,25 +754,19 @@ def validate_report_patch(
     elif patch_format == "advisory_patch":
         checks["xpath_matches"] = []
     else:
-        errors.append(
-            "Unsupported patch_format. Use xml_inheritance or advisory_patch."
-        )
+        errors.append("Unsupported patch_format. Use xml_inheritance or advisory_patch.")
 
     if re.search(r"\bt-raw\s*=", str(patch)):
         checks["forbidden_patterns"].append("t-raw")
         warnings.append("Patch includes t-raw usage. Review security implications.")
 
     simulated_after = (
-        _apply_advisory_patch(base_arch, patch)
-        if patch_format == "advisory_patch"
-        else base_arch
+        _apply_advisory_patch(base_arch, patch) if patch_format == "advisory_patch" else base_arch
     )
     issues_after = _scan_arch_migration_issues(
         simulated_after, target_version=target_version, is_qweb=True
     )
-    checks["version_compatibility"] = (
-        len([i for i in issues_after if i["severity"] == "high"]) == 0
-    )
+    checks["version_compatibility"] = len([i for i in issues_after if i["severity"] == "high"]) == 0
     if not checks["version_compatibility"]:
         warnings.append("Patch still leaves high-severity migration issues.")
 
@@ -861,11 +835,9 @@ def test_view_compilation(
     client: OdooClient,
     sender_id: int,
     view_xmlid: str,
-    context: Optional[dict[str, Any]] = None,
+    context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    view_response = get_view_by_xmlid(
-        client, sender_id, view_xmlid, include_inherited_chain=False
-    )
+    view_response = get_view_by_xmlid(client, sender_id, view_xmlid, include_inherited_chain=False)
     if not view_response.get("ok"):
         return view_response
 
@@ -924,7 +896,7 @@ def apply_view_patch_safe(
     strict: bool = True,
     confirm: bool = False,
     dry_run: bool = False,
-    inherited_view_name: Optional[str] = None,
+    inherited_view_name: str | None = None,
     priority: int = 90,
 ) -> dict[str, Any]:
     view_response = get_view_by_xmlid(
@@ -960,8 +932,7 @@ def apply_view_patch_safe(
         }
 
     create_vals = {
-        "name": inherited_view_name
-        or f"mcp.patch.{base_view.get('name') or base_view_xmlid}",
+        "name": inherited_view_name or f"mcp.patch.{base_view.get('name') or base_view_xmlid}",
         "type": base_view.get("type") or "form",
         "model": base_view.get("model"),
         "inherit_id": int(base_view.get("id")),
@@ -1057,7 +1028,7 @@ def apply_report_patch_safe(
     strict: bool = True,
     confirm: bool = False,
     dry_run: bool = False,
-    inherited_view_name: Optional[str] = None,
+    inherited_view_name: str | None = None,
     priority: int = 90,
 ) -> dict[str, Any]:
     report_response = get_report_template(client, sender_id, report_xmlid)
@@ -1100,8 +1071,7 @@ def apply_report_patch_safe(
 
     report = report_response.get("report") or {}
     create_vals = {
-        "name": inherited_view_name
-        or f"mcp.patch.{report.get('name') or report_xmlid}",
+        "name": inherited_view_name or f"mcp.patch.{report.get('name') or report_xmlid}",
         "type": "qweb",
         "inherit_id": int(template.get("id")),
         "mode": "extension",
@@ -1350,7 +1320,7 @@ def assist_view_migration(
     xmlid: str,
     target_version: str = "18.0",
     intent: str = "migrate",
-    constraints: Optional[dict[str, Any]] = None,
+    constraints: dict[str, Any] | None = None,
     strict: bool = True,
     include_compile_test: bool = True,
 ) -> dict[str, Any]:
@@ -1389,9 +1359,7 @@ def assist_view_migration(
         patch=patch,
     )
     compilation = (
-        test_view_compilation(client, sender_id, view_xmlid=xmlid)
-        if include_compile_test
-        else None
+        test_view_compilation(client, sender_id, view_xmlid=xmlid) if include_compile_test else None
     )
 
     risk_level = proposal.get("risk_level", "medium")
@@ -1432,7 +1400,7 @@ def assist_report_migration(
     xmlid: str,
     target_version: str = "18.0",
     intent: str = "migrate",
-    constraints: Optional[dict[str, Any]] = None,
+    constraints: dict[str, Any] | None = None,
     strict: bool = True,
 ) -> dict[str, Any]:
     scan = scan_report_migration_issues(
@@ -1611,7 +1579,7 @@ def batch_assist_view_migration(
     xmlids: list[str],
     target_version: str = "18.0",
     intent: str = "migrate",
-    constraints: Optional[dict[str, Any]] = None,
+    constraints: dict[str, Any] | None = None,
     strict: bool = True,
     include_compile_test: bool = False,
     continue_on_error: bool = True,
@@ -1677,7 +1645,7 @@ def batch_assist_report_migration(
     xmlids: list[str],
     target_version: str = "18.0",
     intent: str = "migrate",
-    constraints: Optional[dict[str, Any]] = None,
+    constraints: dict[str, Any] | None = None,
     strict: bool = True,
     continue_on_error: bool = True,
 ) -> dict[str, Any]:
