@@ -1,8 +1,8 @@
 ---
 name: whisper-stt
 description: Speech-to-Text transcription using Whisper. Transcribes voice messages from Odoo attachments to text. Supports local Faster Whisper (no API key) and OpenAI Whisper API fallback. Use when user sends a voice note or audio attachment.
-homepage: https://github.com/nicolasramos/odooclaw
-metadata: {"openclaw":{"emoji":"🎤","requires":{"env":["ODOO_URL","ODOO_DB","ODOO_USERNAME","ODOO_PASSWORD","OPENAI_API_KEY"]}}}
+
+metadata: {"openclaw": {"emoji": "🎤", "requires": {"env": ["ODOO_URL", "ODOO_DB", "ODOO_USERNAME", "ODOO_PASSWORD", "OPENAI_API_KEY"]}}, "homepage": "https://github.com/nicolasramos/odooclaw"}
 ---
 
 # Whisper STT Skill

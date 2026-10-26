@@ -1,8 +1,8 @@
 ---
 name: ocr-invoice
 description: Extract supplier invoice data from Odoo attachment (PDF/image) using an OpenAI-compatible vision model and optionally create the vendor bill automatically in Odoo.
-homepage: https://github.com/nicolasramos/odooclaw
-metadata: {"openclaw":{"emoji":"🧾","requires":{"env":["ODOO_URL","ODOO_DB","ODOO_USERNAME","ODOO_PASSWORD","VISION_API_BASE","VISION_MODEL","OPENAI_API_KEY"]}}}
+
+metadata: {"openclaw": {"emoji": "🧾", "requires": {"env": ["ODOO_URL", "ODOO_DB", "ODOO_USERNAME", "ODOO_PASSWORD", "VISION_API_BASE", "VISION_MODEL", "OPENAI_API_KEY"]}}, "homepage": "https://github.com/nicolasramos/odooclaw"}
 ---
 
 # OCR Invoice Skill
