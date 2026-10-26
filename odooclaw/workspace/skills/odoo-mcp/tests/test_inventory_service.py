@@ -6,6 +6,7 @@ from odoo_mcp.core.client import OdooClient
 from odoo_mcp.services.inventory_service import (
     apply_inventory_adjustment,
     check_lot_requirements,
+    create_internal_transfer,
     find_internal_transfers,
     find_inventory_discrepancies,
     find_lot_serial,
@@ -14,23 +15,20 @@ from odoo_mcp.services.inventory_service import (
     find_reordering_rules,
     find_sale_deliveries,
     find_stock_locations,
+    get_delivery_summary,
     get_location_stock_summary,
     get_logistics_capabilities,
     get_lot_traceability,
     get_product_stock_context,
     get_receipt_summary,
-    get_transfer_summary,
-    get_delivery_summary,
+    get_replenishment_suggestions,
     get_stock_moves,
     match_delivery_to_sale_order,
     match_receipt_to_purchase_order,
-    prepare_receipt_validation,
-    get_replenishment_suggestions,
-    prepare_transfer_validation,
     prepare_internal_transfer,
     prepare_inventory_adjustment,
-    create_internal_transfer,
-    prepare_delivery_validation,
+    prepare_receipt_validation,
+    prepare_transfer_validation,
     validate_delivery,
     validate_receipt,
     validate_transfer,
@@ -208,9 +206,7 @@ def test_find_stock_locations_returns_safe_list(mock_client):
     _configure_capabilities(
         mock_client,
         models={"stock.location"},
-        fields_by_model={
-            "stock.location": {"id", "name", "complete_name", "usage", "active"}
-        },
+        fields_by_model={"stock.location": {"id", "name", "complete_name", "usage", "active"}},
     )
     mock_client.call_kw.return_value = [
         {"id": 3, "name": "Stock", "complete_name": "WH/Stock", "usage": "internal", "active": True}
@@ -233,9 +229,7 @@ def test_get_stock_moves_returns_unsupported_without_model(mock_client):
 
 def test_find_lot_serial_filters_by_name_and_product(mock_client):
     _receipt_capabilities(mock_client)
-    mock_client.call_kw.return_value = [
-        {"id": 70, "name": "LOT-001", "product_id": [10, "Cable"]}
-    ]
+    mock_client.call_kw.return_value = [{"id": 70, "name": "LOT-001", "product_id": [10, "Cable"]}]
 
     result = find_lot_serial(mock_client, sender_id=7, name="LOT-001", product_id=10)
 
@@ -250,8 +244,27 @@ def test_get_lot_traceability_returns_stock_and_move_history(mock_client):
     _receipt_capabilities(mock_client)
     mock_client.call_kw.side_effect = [
         [{"id": 70, "name": "LOT-001", "product_id": [10, "Cable"]}],
-        [{"id": 1, "lot_id": [70, "LOT-001"], "product_id": [10, "Cable"], "location_id": [8, "Stock"], "quantity": 4.0, "reserved_quantity": 1.0}],
-        [{"id": 11, "lot_id": [70, "LOT-001"], "product_id": [10, "Cable"], "location_id": [4, "Vendors"], "location_dest_id": [8, "Stock"], "quantity": 5.0, "picking_id": [30, "WH/IN/1"]}],
+        [
+            {
+                "id": 1,
+                "lot_id": [70, "LOT-001"],
+                "product_id": [10, "Cable"],
+                "location_id": [8, "Stock"],
+                "quantity": 4.0,
+                "reserved_quantity": 1.0,
+            }
+        ],
+        [
+            {
+                "id": 11,
+                "lot_id": [70, "LOT-001"],
+                "product_id": [10, "Cable"],
+                "location_id": [4, "Vendors"],
+                "location_dest_id": [8, "Stock"],
+                "quantity": 5.0,
+                "picking_id": [30, "WH/IN/1"],
+            }
+        ],
     ]
 
     result = get_lot_traceability(mock_client, sender_id=7, lot_id=70)
@@ -267,7 +280,15 @@ def test_check_lot_requirements_flags_serial_quantity_over_one(mock_client):
     mock_client.call_kw.side_effect = [
         [{"id": 40, "state": "assigned", "picking_type_code": "outgoing"}],
         [{"id": 2, "product_id": [10, "Serial"], "product_uom_qty": 2.0, "quantity": 2.0}],
-        [{"id": 21, "move_id": [2, "Move"], "product_id": [10, "Serial"], "quantity": 2.0, "lot_id": [70, "SER-001"]}],
+        [
+            {
+                "id": 21,
+                "move_id": [2, "Move"],
+                "product_id": [10, "Serial"],
+                "quantity": 2.0,
+                "lot_id": [70, "SER-001"],
+            }
+        ],
         [{"id": 10, "tracking": "serial"}],
     ]
 
@@ -291,9 +312,7 @@ def test_find_reordering_rules_filters_low_stock_rules(mock_client):
         }
     ]
 
-    result = find_reordering_rules(
-        mock_client, sender_id=7, product_id=10, low_stock_only=True
-    )
+    result = find_reordering_rules(mock_client, sender_id=7, product_id=10, low_stock_only=True)
 
     assert result["ok"] is True
     assert result["rules"][0]["id"] == 80
@@ -404,9 +423,7 @@ def test_prepare_inventory_adjustment_blocks_negative_count(mock_client):
 
 def test_apply_inventory_adjustment_requires_confirmation(mock_client):
     _receipt_capabilities(mock_client)
-    mock_client.call_kw.return_value = [
-        {"id": 90, "quantity": 5.0, "inventory_quantity": 5.0}
-    ]
+    mock_client.call_kw.return_value = [{"id": 90, "quantity": 5.0, "inventory_quantity": 5.0}]
 
     result = apply_inventory_adjustment(
         mock_client,
@@ -546,7 +563,13 @@ def _receipt_capabilities(mock_client):
 def test_find_purchase_receipts_filters_incoming_and_purchase_order(mock_client):
     _receipt_capabilities(mock_client)
     mock_client.call_kw.return_value = [
-        {"id": 30, "name": "WH/IN/0001", "state": "assigned", "picking_type_code": "incoming", "purchase_id": [20, "P00020"]}
+        {
+            "id": 30,
+            "name": "WH/IN/0001",
+            "state": "assigned",
+            "picking_type_code": "incoming",
+            "purchase_id": [20, "P00020"],
+        }
     ]
 
     result = find_purchase_receipts(mock_client, sender_id=7, purchase_order_id=20)
@@ -560,9 +583,35 @@ def test_find_purchase_receipts_filters_incoming_and_purchase_order(mock_client)
 def test_get_receipt_summary_flags_missing_serial_and_over_receipt(mock_client):
     _receipt_capabilities(mock_client)
     mock_client.call_kw.side_effect = [
-        [{"id": 30, "name": "WH/IN/0001", "state": "assigned", "picking_type_code": "incoming", "purchase_id": [20, "P00020"]}],
-        [{"id": 1, "product_id": [10, "Tracked"], "purchase_line_id": [100, "Line"], "product_uom_qty": 1.0, "quantity": 2.0, "state": "assigned"}],
-        [{"id": 11, "move_id": [1, "Move"], "product_id": [10, "Tracked"], "quantity": 2.0, "lot_id": False, "lot_name": False}],
+        [
+            {
+                "id": 30,
+                "name": "WH/IN/0001",
+                "state": "assigned",
+                "picking_type_code": "incoming",
+                "purchase_id": [20, "P00020"],
+            }
+        ],
+        [
+            {
+                "id": 1,
+                "product_id": [10, "Tracked"],
+                "purchase_line_id": [100, "Line"],
+                "product_uom_qty": 1.0,
+                "quantity": 2.0,
+                "state": "assigned",
+            }
+        ],
+        [
+            {
+                "id": 11,
+                "move_id": [1, "Move"],
+                "product_id": [10, "Tracked"],
+                "quantity": 2.0,
+                "lot_id": False,
+                "lot_name": False,
+            }
+        ],
         [{"id": 10, "tracking": "serial"}],
     ]
 
@@ -577,8 +626,25 @@ def test_get_receipt_summary_flags_missing_serial_and_over_receipt(mock_client):
 def test_match_receipt_to_purchase_order_matches_purchase_line(mock_client):
     _receipt_capabilities(mock_client)
     mock_client.call_kw.side_effect = [
-        [{"id": 30, "name": "WH/IN/0001", "state": "assigned", "picking_type_code": "incoming", "purchase_id": [20, "P00020"]}],
-        [{"id": 1, "product_id": [10, "Cable"], "purchase_line_id": [100, "Line"], "product_uom_qty": 5.0, "quantity": 5.0, "state": "assigned"}],
+        [
+            {
+                "id": 30,
+                "name": "WH/IN/0001",
+                "state": "assigned",
+                "picking_type_code": "incoming",
+                "purchase_id": [20, "P00020"],
+            }
+        ],
+        [
+            {
+                "id": 1,
+                "product_id": [10, "Cable"],
+                "purchase_line_id": [100, "Line"],
+                "product_uom_qty": 5.0,
+                "quantity": 5.0,
+                "state": "assigned",
+            }
+        ],
         [],
         [{"id": 10, "tracking": "none"}],
         [{"id": 100, "product_id": [10, "Cable"], "product_qty": 5.0, "qty_received": 5.0}],
@@ -596,7 +662,15 @@ def test_prepare_receipt_validation_blocks_done_receipt(mock_client):
     _receipt_capabilities(mock_client)
     mock_client.call_kw.side_effect = [
         [{"id": 30, "name": "WH/IN/0001", "state": "done", "picking_type_code": "incoming"}],
-        [{"id": 1, "product_id": [10, "Cable"], "product_uom_qty": 5.0, "quantity": 5.0, "state": "done"}],
+        [
+            {
+                "id": 1,
+                "product_id": [10, "Cable"],
+                "product_uom_qty": 5.0,
+                "quantity": 5.0,
+                "state": "done",
+            }
+        ],
         [],
         [{"id": 10, "tracking": "none"}],
     ]
@@ -612,15 +686,21 @@ def test_validate_receipt_returns_action_required_for_backorder_wizard(mock_clie
     _receipt_capabilities(mock_client)
     mock_client.call_kw.side_effect = [
         [{"id": 30, "name": "WH/IN/0001", "state": "assigned", "picking_type_code": "incoming"}],
-        [{"id": 1, "product_id": [10, "Cable"], "product_uom_qty": 5.0, "quantity": 3.0, "state": "assigned"}],
+        [
+            {
+                "id": 1,
+                "product_id": [10, "Cable"],
+                "product_uom_qty": 5.0,
+                "quantity": 3.0,
+                "state": "assigned",
+            }
+        ],
         [],
         [{"id": 10, "tracking": "none"}],
         {"type": "ir.actions.act_window", "res_model": "stock.backorder.confirmation"},
     ]
 
-    result = validate_receipt(
-        mock_client, sender_id=7, picking_id=30, confirm=True, dry_run=False
-    )
+    result = validate_receipt(mock_client, sender_id=7, picking_id=30, confirm=True, dry_run=False)
 
     assert result["ok"] is False
     assert result["status"] == "action_required"
@@ -657,8 +737,25 @@ def test_get_delivery_summary_flags_over_delivery(mock_client):
 def test_match_delivery_to_sale_order_matches_sale_line_and_flags_backorder(mock_client):
     _receipt_capabilities(mock_client)
     mock_client.call_kw.side_effect = [
-        [{"id": 40, "name": "WH/OUT/0001", "state": "assigned", "picking_type_code": "outgoing", "sale_id": [22, "S00022"]}],
-        [{"id": 2, "product_id": [10, "Cable"], "sale_line_id": [200, "Line"], "product_uom_qty": 5.0, "quantity": 3.0, "state": "assigned"}],
+        [
+            {
+                "id": 40,
+                "name": "WH/OUT/0001",
+                "state": "assigned",
+                "picking_type_code": "outgoing",
+                "sale_id": [22, "S00022"],
+            }
+        ],
+        [
+            {
+                "id": 2,
+                "product_id": [10, "Cable"],
+                "sale_line_id": [200, "Line"],
+                "product_uom_qty": 5.0,
+                "quantity": 3.0,
+                "state": "assigned",
+            }
+        ],
         [],
         [{"id": 10, "tracking": "none"}],
         [{"id": 200, "product_id": [10, "Cable"], "product_uom_qty": 5.0, "qty_delivered": 3.0}],
@@ -677,8 +774,24 @@ def test_match_delivery_to_sale_order_matches_sale_line_and_flags_backorder(mock
 def test_match_delivery_to_sale_order_flags_product_not_in_order(mock_client):
     _receipt_capabilities(mock_client)
     mock_client.call_kw.side_effect = [
-        [{"id": 40, "name": "WH/OUT/0001", "state": "assigned", "picking_type_code": "outgoing", "sale_id": [22, "S00022"]}],
-        [{"id": 2, "product_id": [10, "Cable"], "product_uom_qty": 2.0, "quantity": 2.0, "state": "assigned"}],
+        [
+            {
+                "id": 40,
+                "name": "WH/OUT/0001",
+                "state": "assigned",
+                "picking_type_code": "outgoing",
+                "sale_id": [22, "S00022"],
+            }
+        ],
+        [
+            {
+                "id": 2,
+                "product_id": [10, "Cable"],
+                "product_uom_qty": 2.0,
+                "quantity": 2.0,
+                "state": "assigned",
+            }
+        ],
         [],
         [{"id": 10, "tracking": "none"}],
         [{"id": 201, "product_id": [11, "Other"], "product_uom_qty": 2.0, "qty_delivered": 0.0}],
@@ -696,8 +809,25 @@ def test_match_delivery_to_sale_order_returns_unsupported_without_sale_lines(moc
     _receipt_capabilities(mock_client)
     mock_client.model_exists.side_effect = lambda model, sender_id=None: model != "sale.order.line"
     mock_client.call_kw.side_effect = [
-        [{"id": 40, "name": "WH/OUT/0001", "state": "assigned", "picking_type_code": "outgoing", "sale_id": [22, "S00022"]}],
-        [{"id": 2, "product_id": [10, "Cable"], "sale_line_id": [200, "Line"], "product_uom_qty": 5.0, "quantity": 3.0, "state": "assigned"}],
+        [
+            {
+                "id": 40,
+                "name": "WH/OUT/0001",
+                "state": "assigned",
+                "picking_type_code": "outgoing",
+                "sale_id": [22, "S00022"],
+            }
+        ],
+        [
+            {
+                "id": 2,
+                "product_id": [10, "Cable"],
+                "sale_line_id": [200, "Line"],
+                "product_uom_qty": 5.0,
+                "quantity": 3.0,
+                "state": "assigned",
+            }
+        ],
         [],
         [{"id": 10, "tracking": "none"}],
     ]
@@ -719,9 +849,7 @@ def test_validate_delivery_returns_action_required_for_wizard(mock_client):
         {"type": "ir.actions.act_window", "res_model": "stock.backorder.confirmation"},
     ]
 
-    result = validate_delivery(
-        mock_client, sender_id=7, picking_id=40, confirm=True, dry_run=False
-    )
+    result = validate_delivery(mock_client, sender_id=7, picking_id=40, confirm=True, dry_run=False)
 
     assert result["status"] == "action_required"
 
@@ -740,7 +868,15 @@ def test_find_internal_transfers_filters_internal(mock_client):
 def test_prepare_transfer_validation_blocks_same_location(mock_client):
     _receipt_capabilities(mock_client)
     mock_client.call_kw.side_effect = [
-        [{"id": 50, "state": "assigned", "picking_type_code": "internal", "location_id": [8, "Stock"], "location_dest_id": [8, "Stock"]}],
+        [
+            {
+                "id": 50,
+                "state": "assigned",
+                "picking_type_code": "internal",
+                "location_id": [8, "Stock"],
+                "location_dest_id": [8, "Stock"],
+            }
+        ],
         [{"id": 3, "product_id": [10, "Cable"], "product_uom_qty": 2.0, "quantity": 2.0}],
         [],
         [{"id": 10, "tracking": "none"}],
@@ -755,7 +891,15 @@ def test_prepare_transfer_validation_blocks_same_location(mock_client):
 def test_validate_transfer_requires_confirmation(mock_client):
     _receipt_capabilities(mock_client)
     mock_client.call_kw.side_effect = [
-        [{"id": 50, "state": "assigned", "picking_type_code": "internal", "location_id": [8, "Stock"], "location_dest_id": [9, "Shelf"]}],
+        [
+            {
+                "id": 50,
+                "state": "assigned",
+                "picking_type_code": "internal",
+                "location_id": [8, "Stock"],
+                "location_dest_id": [9, "Shelf"],
+            }
+        ],
         [{"id": 3, "product_id": [10, "Cable"], "product_uom_qty": 2.0, "quantity": 2.0}],
         [],
         [{"id": 10, "tracking": "none"}],
@@ -771,8 +915,19 @@ def test_validate_transfer_requires_confirmation(mock_client):
 def test_prepare_internal_transfer_returns_atomic_preview(mock_client):
     _receipt_capabilities(mock_client)
     mock_client.call_kw.side_effect = [
-        [{"id": 4, "name": "Internal Transfers", "code": "internal", "default_location_src_id": [8, "Stock"], "default_location_dest_id": [9, "Shelf"]}],
-        [{"id": 8, "display_name": "WH/Stock", "usage": "internal"}, {"id": 9, "display_name": "WH/Shelf", "usage": "internal"}],
+        [
+            {
+                "id": 4,
+                "name": "Internal Transfers",
+                "code": "internal",
+                "default_location_src_id": [8, "Stock"],
+                "default_location_dest_id": [9, "Shelf"],
+            }
+        ],
+        [
+            {"id": 8, "display_name": "WH/Stock", "usage": "internal"},
+            {"id": 9, "display_name": "WH/Shelf", "usage": "internal"},
+        ],
         [{"id": 10, "display_name": "Cable", "uom_id": [1, "Units"]}],
     ]
 

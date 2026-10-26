@@ -1,11 +1,14 @@
+import logging
 import os
 import threading
+from typing import Any
+
 import requests
-import logging
-from typing import Dict, Any, Optional
+
 from .exceptions import OdooAuthError
 
 _logger = logging.getLogger(__name__)
+
 
 class OdooSession:
     """Manages Odoo authentication and session state via JSON-RPC.
@@ -15,7 +18,7 @@ class OdooSession:
     """
 
     def __init__(self, url: str, db: str, username: str, password: str):
-        self.url = url.rstrip('/')
+        self.url = url.rstrip("/")
         self.db = db
         self.username = username
         self.password = password
@@ -25,9 +28,9 @@ class OdooSession:
         _token = os.environ.get("ODOOCLAW_REPLY_TOKEN", "")
         if _token:
             self.session.headers.update({"X-OdooClaw-Token": _token})
-        self.uid: Optional[int] = None
-        self.session_id: Optional[str] = None
-        self.context: Dict[str, Any] = {}
+        self.uid: int | None = None
+        self.session_id: str | None = None
+        self.context: dict[str, Any] = {}
         # Lock to serialize authenticate() calls across threads
         self._lock = threading.Lock()
 
@@ -46,7 +49,7 @@ class OdooSession:
                     "db": self.db,
                     "login": self.username,
                     "password": self.password,
-                }
+                },
             }
 
             _logger.debug(f"Authenticating against {auth_url} for user {self.username}")
@@ -60,7 +63,9 @@ class OdooSession:
                     raise OdooAuthError(f"Authentication failed: {err_msg}")
 
                 if "result" not in result or not result["result"].get("uid"):
-                    raise OdooAuthError("Authentication failed: Invalid credentials or missing uid.")
+                    raise OdooAuthError(
+                        "Authentication failed: Invalid credentials or missing uid."
+                    )
 
                 data = result["result"]
                 self.uid = data["uid"]
@@ -69,7 +74,7 @@ class OdooSession:
                 _logger.info(f"Successfully authenticated as UID {self.uid}")
 
             except requests.RequestException as e:
-                raise OdooAuthError(f"Network error during authentication: {str(e)}")
+                raise OdooAuthError(f"Network error during authentication: {str(e)}") from e
 
     def is_authenticated(self) -> bool:
         """Check if we have an active session UID.
@@ -89,10 +94,12 @@ class OdooSession:
         """
         with self._lock:
             uid = self.uid
-            assert uid is not None, "OdooSession not authenticated — get_uid() called before authenticate()"
+            assert (
+                uid is not None
+            ), "OdooSession not authenticated — get_uid() called before authenticate()"
             return uid
 
-    def get_context(self) -> Dict[str, Any]:
+    def get_context(self) -> dict[str, Any]:
         """Return a copy of the current user context (thread-safe read)."""
         with self._lock:
             return self.context.copy()

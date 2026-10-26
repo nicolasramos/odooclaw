@@ -1,7 +1,6 @@
 import ast
 from pathlib import Path
 
-
 SRC_ROOT = Path(__file__).parents[1] / "src" / "odoo_mcp"
 RPC_METHODS = {
     "call_kw",
@@ -46,9 +45,7 @@ def test_all_public_odoo_tools_accept_sender_id():
             continue
         if not node.name.startswith("odoo_"):
             continue
-        argument_names = {
-            argument.arg for argument in [*node.args.args, *node.args.kwonlyargs]
-        }
+        argument_names = {argument.arg for argument in [*node.args.args, *node.args.kwonlyargs]}
         if "sender_id" not in argument_names:
             missing.append(f"{node.name}:{node.lineno}")
 

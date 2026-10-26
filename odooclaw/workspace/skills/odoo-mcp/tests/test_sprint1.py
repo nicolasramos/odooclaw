@@ -1,13 +1,15 @@
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
+
 from odoo_mcp.core.client import OdooClient
-from odoo_mcp.services.partner_service import get_partner_summary
 from odoo_mcp.services.chatter_service import (
     create_activity,
     list_pending_activities,
     mark_activity_done,
     post_chatter_message,
 )
+from odoo_mcp.services.partner_service import get_partner_summary
 
 
 @pytest.fixture
@@ -60,9 +62,7 @@ def test_get_partner_summary(mock_client):
 
 def test_create_activity(mock_client):
     mock_client.call_kw.side_effect = [[17], 42]
-    act_id = create_activity(
-        mock_client, 1, "res.partner", 1, "Call", "Need to call them"
-    )
+    act_id = create_activity(mock_client, 1, "res.partner", 1, "Call", "Need to call them")
     assert act_id == 42
     mock_client.call_kw.assert_called_with(
         "mail.activity",

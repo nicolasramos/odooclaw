@@ -2,25 +2,25 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import odoo_mcp.services.view_migration_service as view_migration_service
 from odoo_mcp.core.client import OdooClient
 from odoo_mcp.services.view_migration_service import (
-    get_view_by_xmlid,
-    scan_view_migration_issues,
-    propose_view_patch,
-    validate_view_patch,
-    preview_view_patch,
-    preview_report_patch,
-    apply_view_patch_safe,
     apply_report_patch_safe,
-    rollback_patch_safe,
-    assist_view_migration,
+    apply_view_patch_safe,
     assist_report_migration,
-    visualize_view_patch,
-    visualize_report_patch,
-    batch_assist_view_migration,
+    assist_view_migration,
     batch_assist_report_migration,
+    batch_assist_view_migration,
+    get_view_by_xmlid,
+    preview_report_patch,
+    preview_view_patch,
+    propose_view_patch,
+    rollback_patch_safe,
+    scan_view_migration_issues,
+    validate_view_patch,
+    visualize_report_patch,
+    visualize_view_patch,
 )
-import odoo_mcp.services.view_migration_service as view_migration_service
 
 
 @pytest.fixture
@@ -139,9 +139,7 @@ def test_validate_view_patch_fails_when_xpath_matches_nothing(
         base_view_xmlid="sale.view_order_form",
         patch={
             "patch_format": "xml_inheritance",
-            "operations": [
-                {"xpath": "//field[@name='state']", "position": "attributes"}
-            ],
+            "operations": [{"xpath": "//field[@name='state']", "position": "attributes"}],
         },
         strict=True,
         target_version="18.0",

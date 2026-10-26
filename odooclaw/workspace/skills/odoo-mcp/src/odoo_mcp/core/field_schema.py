@@ -38,7 +38,8 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from collections.abc import Iterable
+from typing import Any, cast
 
 _logger = logging.getLogger(__name__)
 
@@ -47,14 +48,14 @@ FIELD_CACHE_TTL_SECONDS = 60.0
 #: ``{(model, sender_id): {field_name: fields_get properties}}``, shared by the
 #: summary services and by the field validation in ``tools.records``. Keyed by
 #: user because ``fields_get`` answers differently for each one.
-_field_cache: Dict[Tuple[str, Optional[int]], Dict[str, Any]] = {}
-_field_cache_timestamps: Dict[Tuple[str, Optional[int]], float] = {}
+_field_cache: dict[tuple[str, int | None], dict[str, Any]] = {}
+_field_cache_timestamps: dict[tuple[str, int | None], float] = {}
 
 #: ``{(model, sender_id): (stored_at, frozenset of field names)}`` — fields the
 #: last read proved this caller cannot read, remembered for the same TTL so only
 #: the first summary pays for locating them (29 reads on the instance measured
 #: below, 1 read afterwards).
-_unreadable_cache: Dict[Tuple[str, Optional[int]], Tuple[float, frozenset]] = {}
+_unreadable_cache: dict[tuple[str, int | None], tuple[float, frozenset]] = {}
 
 #: Field types a summary must not carry: binaries (images, attachments) are
 #: base64 blobs, and a one2many value is a list of ids that runs to thousands
@@ -77,9 +78,7 @@ _FALLBACK_FIELDS = ("name", "display_name", "id")
 _MAX_PROBE_READS = 32
 
 
-def get_field_schema(
-    client: Any, model: str, sender_id: Optional[int] = None
-) -> Dict[str, Any]:
+def get_field_schema(client: Any, model: str, sender_id: int | None = None) -> dict[str, Any]:
     """Return ``fields_get(model)`` for this caller, cached for 60 seconds.
 
     An unknown model, a permission failure or a transport error all yield an
@@ -113,9 +112,9 @@ def reset_field_cache() -> None:
 def select_summary_fields(
     client: Any,
     model: str,
-    sender_id: Optional[int] = None,
+    sender_id: int | None = None,
     exclude: Iterable[str] = (),
-) -> List[str]:
+) -> list[str]:
     """The fields a summary of *model* should read on this instance.
 
     Technical fields (``_``-prefixed, which also covers ``__``-prefixed synthetic
@@ -138,7 +137,7 @@ def select_summary_fields(
     ]
 
 
-def drop_empty_fields(values: Dict[str, Any]) -> Dict[str, Any]:
+def drop_empty_fields(values: dict[str, Any]) -> dict[str, Any]:
     """Keep only non-empty values.
 
     ``False``/``0``/``""``/``[]``/``None`` are dropped — a summary is what is
@@ -151,9 +150,9 @@ def read_summary_record(
     client: Any,
     model: str,
     res_id: int,
-    fields: List[str],
-    sender_id: Optional[int] = None,
-) -> Optional[Dict[str, Any]]:
+    fields: list[str],
+    sender_id: int | None = None,
+) -> dict[str, Any] | None:
     """Read one record, isolating the fields Odoo refuses to read.
 
     Returns the raw record (``id`` included, values untouched) or ``None`` when
@@ -205,7 +204,7 @@ def read_summary_record(
     return records[0]
 
 
-def _known_unreadable(model: str, sender_id: Optional[int]) -> frozenset:
+def _known_unreadable(model: str, sender_id: int | None) -> frozenset:
     """Fields proven unreadable for this caller in the last 60 seconds."""
     entry = _unreadable_cache.get((model, sender_id))
     if entry is None:
@@ -217,9 +216,7 @@ def _known_unreadable(model: str, sender_id: Optional[int]) -> frozenset:
     return names
 
 
-def _remember_unreadable(
-    model: str, sender_id: Optional[int], names: Iterable[str]
-) -> None:
+def _remember_unreadable(model: str, sender_id: int | None, names: Iterable[str]) -> None:
     """Remember the fields a read just proved unreadable (same 60 s TTL)."""
     names = frozenset(names)
     if not names:
@@ -235,9 +232,9 @@ def _read_isolating_failures(
     client: Any,
     model: str,
     res_id: int,
-    fields: List[str],
-    sender_id: Optional[int],
-) -> Tuple[Optional[Dict[str, Any]], List[str], int, int]:
+    fields: list[str],
+    sender_id: int | None,
+) -> tuple[dict[str, Any] | None, list[str], int, int]:
     """Split *fields* into the ones that read and the ones that raise.
 
     Breadth-first bisection: a chunk that reads contributes its values in one
@@ -249,10 +246,10 @@ def _read_isolating_failures(
     ``None`` when the record does not exist, and ``{}`` when nothing could be
     read.
     """
-    merged: Dict[str, Any] = {}
-    bad: List[str] = []
+    merged: dict[str, Any] = {}
+    bad: list[str] = []
     skipped = 0
-    queue: List[List[str]] = [list(fields)]
+    queue: list[list[str]] = [list(fields)]
     probes = 0
 
     while queue:
@@ -290,13 +287,16 @@ def _read(
     client: Any,
     model: str,
     res_id: int,
-    fields: List[str],
-    sender_id: Optional[int],
-) -> List[Dict[str, Any]]:
-    return client.call_kw(
-        model,
-        "read",
-        args=[[res_id]],
-        kwargs={"fields": fields},
-        sender_id=sender_id,
+    fields: list[str],
+    sender_id: int | None,
+) -> list[dict[str, Any]]:
+    return cast(
+        list[dict[str, Any]],
+        client.call_kw(
+            model,
+            "read",
+            args=[[res_id]],
+            kwargs={"fields": fields},
+            sender_id=sender_id,
+        ),
     )

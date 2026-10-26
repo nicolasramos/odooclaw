@@ -1,4 +1,5 @@
-from typing import Optional
+from typing import cast
+
 from odoo_mcp.core.client import OdooClient
 from odoo_mcp.core.field_schema import (
     drop_empty_fields,
@@ -11,14 +12,14 @@ from odoo_mcp.observability.logging import get_logger
 _logger = get_logger("partner_service")
 
 
-def _normalize_partner_name(name: Optional[str]) -> Optional[str]:
+def _normalize_partner_name(name: str | None) -> str | None:
     if not name:
         return None
     normalized = " ".join(name.split())
     return normalized or None
 
 
-def _search_partner_id(client: OdooClient, user_id: int, domain: list) -> Optional[int]:
+def _search_partner_id(client: OdooClient, user_id: int, domain: list) -> int | None:
     partners = client.call_kw(
         "res.partner",
         "search_read",
@@ -27,18 +28,18 @@ def _search_partner_id(client: OdooClient, user_id: int, domain: list) -> Option
         sender_id=user_id,
     )
     if partners:
-        return partners[0]["id"]
+        return cast(int | None, partners[0]["id"])
     return None
 
 
 def find_existing_partner_id(
     client: OdooClient,
     user_id: int,
-    name: Optional[str] = None,
-    vat: Optional[str] = None,
-    email: Optional[str] = None,
+    name: str | None = None,
+    vat: str | None = None,
+    email: str | None = None,
     allow_fuzzy_name: bool = False,
-) -> Optional[int]:
+) -> int | None:
     normalized_name = _normalize_partner_name(name)
 
     if vat:
@@ -56,9 +57,7 @@ def find_existing_partner_id(
         # ILIKE without surrounding wildcards): "Acme SL" matches "acme sl",
         # but NOT "Acme SL Holdings". Deliberately not accent-folding, to avoid
         # colliding distinct partners ("César" vs "Cesar" stay separate).
-        partner_id = _search_partner_id(
-            client, user_id, [("name", "=ilike", normalized_name)]
-        )
+        partner_id = _search_partner_id(client, user_id, [("name", "=ilike", normalized_name)])
         if partner_id:
             return partner_id
 
@@ -72,9 +71,9 @@ def find_partner(
     client: OdooClient,
     user_id: int,
     name: str,
-    vat: Optional[str] = None,
-    email: Optional[str] = None,
-) -> Optional[int]:
+    vat: str | None = None,
+    email: str | None = None,
+) -> int | None:
     partner_id = find_existing_partner_id(
         client,
         user_id,
@@ -92,8 +91,8 @@ def find_or_create_partner(
     client: OdooClient,
     user_id: int,
     name: str,
-    vat: Optional[str] = None,
-    email: Optional[str] = None,
+    vat: str | None = None,
+    email: str | None = None,
 ) -> int:
     partner_id = find_existing_partner_id(
         client,
@@ -114,12 +113,10 @@ def find_or_create_partner(
         values["email"] = email
 
     _logger.info(f"Creating new partner: {values['name']}")
-    return client.call_kw("res.partner", "create", args=[values], sender_id=user_id)
+    return cast(int, client.call_kw("res.partner", "create", args=[values], sender_id=user_id))
 
 
-def _count_or_none(
-    client: OdooClient, user_id: int, model: str, domain: list
-) -> Optional[int]:
+def _count_or_none(client: OdooClient, user_id: int, model: str, domain: list) -> int | None:
     """``search_count`` for *model*, or ``None`` when this instance lacks it.
 
     ``sale`` and ``account`` are optional modules: on an instance without them
@@ -129,7 +126,9 @@ def _count_or_none(
     if not get_field_schema(client, model, user_id):
         return None
     try:
-        return client.call_kw(model, "search_count", args=[domain], sender_id=user_id)
+        return cast(
+            int | None, client.call_kw(model, "search_count", args=[domain], sender_id=user_id)
+        )
     except Exception as exc:  # noqa: BLE001 - a count must not sink the summary
         _logger.info(f"search_count on {model} failed: {exc}")
         return None
@@ -172,7 +171,9 @@ def get_partner_summary(client: OdooClient, user_id: int, partner_id: int) -> di
     # Backward-compatible alias for the salesperson the old shape exposed.
     user = partner.get("user_id")
     if user and "salesperson" not in summary:
-        summary["salesperson"] = user[1] if isinstance(user, (list, tuple)) and len(user) > 1 else user
+        summary["salesperson"] = (
+            user[1] if isinstance(user, (list, tuple)) and len(user) > 1 else user
+        )
 
     summary["open_sale_orders"] = _count_or_none(
         client,
