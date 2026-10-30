@@ -1222,7 +1222,7 @@ func (al *AgentLoop) runLLMIteration(
 		maxTools := resolveMaxTools(agent, isLocal)
 		if maxTools > 0 && len(providerToolDefs) > maxTools {
 			query := lastUserMessageText(messages)
-			providerToolDefs = retrieveRelevantTools(providerToolDefs, query, maxTools)
+			providerToolDefs = retrieveToolDefs(agent, providerToolDefs, query, maxTools)
 		}
 
 		// Log LLM request details
@@ -2487,6 +2487,55 @@ func lastUserMessageText(messages []providers.Message) string {
 	return ""
 }
 
+// retrieveToolDefs narrows a tool catalogue to the k most relevant definitions.
+//
+// It prefers the FTS5/BM25 engine attached to the registry (which indexes tool
+// names, descriptions and parameter names) because it beats keyword matching on
+// recall. The keyword scorer stays as the fallback for registries without an
+// index, and keeps the previous behaviour intact.
+func retrieveToolDefs(agent *AgentInstance, defs []providers.ToolDefinition, query string, k int) []providers.ToolDefinition {
+	if agent != nil && agent.Tools != nil {
+		if names := agent.Tools.RetrieveRelevant(query, "", k); len(names) > 0 {
+			if picked := filterToolDefsByName(defs, names, k); len(picked) > 0 {
+				return picked
+			}
+		}
+	}
+	return retrieveRelevantTools(defs, query, k)
+}
+
+// filterToolDefsByName returns the definitions whose name appears in names, in
+// the order given by names. When the retrieved list is shorter than k, the
+// remaining slots are filled with the next definitions in catalogue order so a
+// retrieval miss never shrinks the prompt.
+func filterToolDefsByName(defs []providers.ToolDefinition, names []string, k int) []providers.ToolDefinition {
+	byName := make(map[string]providers.ToolDefinition, len(defs))
+	for _, d := range defs {
+		byName[d.Function.Name] = d
+	}
+	out := make([]providers.ToolDefinition, 0, k)
+	seen := make(map[string]bool, k)
+	for _, n := range names {
+		if len(out) >= k {
+			break
+		}
+		if d, ok := byName[n]; ok && !seen[n] {
+			out = append(out, d)
+			seen[n] = true
+		}
+	}
+	for _, d := range defs {
+		if len(out) >= k {
+			break
+		}
+		if !seen[d.Function.Name] {
+			out = append(out, d)
+			seen[d.Function.Name] = true
+		}
+	}
+	return out
+}
+
 // retrieveRelevantTools selects the top-K tool definitions most relevant to the
 // user query using lightweight keyword scoring over the tool name and domain.
 // It guarantees the query's most salient Odoo domain is represented.
@@ -2538,6 +2587,9 @@ func retrieveRelevantTools(defs []providers.ToolDefinition, query string, k int)
 	// not the generic odoo_create.
 	queryToolPairs := [][2]string{
 		{"saldo", "aging"}, {"saldo", "balance"}, {"saldo", "ar_ap"},
+		{"horas", "timesheet"}, {"reunion", "timesheet"}, {"imputar", "timesheet"},
+		{"ficha", "check_in"}, {"fichar", "check_in"}, {"entrada", "check_in"},
+		{"debemos", "pending"}, {"deuda", "pending"}, {"deudas", "pending"},
 		{"albaran", "receipt"}, {"recepcion", "receipt"}, {"receipt", "receipt"},
 		{"entrega", "delivery"}, {"entregas", "delivery"},
 		{"gasto", "expense"}, {"gastos", "expense"},
