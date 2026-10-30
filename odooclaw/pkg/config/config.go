@@ -595,6 +595,22 @@ type ModelConfig struct {
 	// of 128 tools; OdooClaw exposes 133+. When nil, the built-in default is
 	// used. Local small models are unaffected — their cap stays fixed at 5.
 	MaxCloudToolsInPrompt *int `json:"max_cloud_tools_in_prompt,omitempty"`
+
+	// MaxTools overrides every other cap, including the local-small-model
+	// heuristic. 0 means "no cap": every registered tool is sent to the model.
+	// Use it for local models that do native tool calling and can handle the
+	// full catalogue (the cap must never be the reason a tool is unreachable).
+	MaxTools *int `json:"max_tools,omitempty"`
+
+	// ToolMode pins how tool definitions are delivered: "native" sends the
+	// OpenAI tools array, "text" injects them as plain text in the system
+	// prompt. Empty (default) keeps the name-based heuristic.
+	ToolMode string `json:"tool_mode,omitempty"` // native | text | ""
+
+	// SupportsVision / SupportsAudio declare multimodal capability so the
+	// engine does not have to infer it from the model name.
+	SupportsVision *bool `json:"supports_vision,omitempty"`
+	SupportsAudio  *bool `json:"supports_audio,omitempty"`
 }
 
 // Validate checks if the ModelConfig has all required fields.

@@ -1219,13 +1219,7 @@ func (al *AgentLoop) runLLMIteration(
 		// cap is configurable per model (max_cloud_tools_in_prompt).
 		// Local small models are unaffected — their cap stays fixed at 5.
 		isLocal := isLocalSmallModel(agent.Model)
-		maxTools := maxCloudToolsInPrompt
-		if agent.MaxCloudToolsInPrompt != nil {
-			maxTools = *agent.MaxCloudToolsInPrompt
-		}
-		if isLocal {
-			maxTools = maxLocalToolsInPrompt
-		}
+		maxTools := resolveMaxTools(agent, isLocal)
 		if maxTools > 0 && len(providerToolDefs) > maxTools {
 			query := lastUserMessageText(messages)
 			providerToolDefs = retrieveRelevantTools(providerToolDefs, query, maxTools)
@@ -2444,6 +2438,25 @@ func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 // The fine-tuned OdooClaw models (Qwen 0.5B/1.5B) are trained with at most
 // 5 tools listed per example; more tools cause hallucination.
 const maxLocalToolsInPrompt = 5
+
+// resolveMaxTools decides how many tool definitions reach the model.
+//
+// Precedence: an explicit per-model max_tools always wins, including a value
+// of 0 meaning "no cap" (the whole catalogue). Otherwise a per-model cloud cap,
+// then the local-small-model heuristic, then the built-in default. The cap must
+// never be the reason a registered tool is unreachable.
+func resolveMaxTools(agent *AgentInstance, isLocal bool) int {
+	if agent != nil && agent.MaxTools != nil {
+		return *agent.MaxTools
+	}
+	if agent != nil && agent.MaxCloudToolsInPrompt != nil {
+		return *agent.MaxCloudToolsInPrompt
+	}
+	if isLocal {
+		return maxLocalToolsInPrompt
+	}
+	return maxCloudToolsInPrompt
+}
 
 // maxCloudToolsInPrompt caps how many tools are sent to cloud models
 // (OpenAI, Anthropic, etc.). Cloud providers have a hard limit of 128 tools;

@@ -45,6 +45,15 @@ type AgentInstance struct {
 	// many tools are sent to non-local (cloud) models. Local models keep a
 	// fixed cap of 5 regardless of this value.
 	MaxCloudToolsInPrompt *int
+
+	// MaxTools, when non-nil, overrides every other cap (including the fixed
+	// cap of 5 for local models). 0 means no cap at all: the whole catalogue
+	// reaches the model.
+	MaxTools *int
+
+	// ToolMode, when set, overrides the name-based heuristic for how tool
+	// definitions are delivered: "native" (OpenAI tools array) or "text".
+	ToolMode string
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -207,6 +216,20 @@ func NewAgentInstance(
 		}
 	}
 
+	// Per-model max_tools override: takes precedence over every other cap,
+	// including the fixed cap of 5 for local models. 0 = send everything.
+	var maxTools *int
+	var toolMode string
+	if cfg != nil {
+		if mc, err := cfg.GetModelConfig(model); err == nil && mc != nil {
+			if mc.MaxTools != nil {
+				v := *mc.MaxTools
+				maxTools = &v
+			}
+			toolMode = mc.ToolMode
+		}
+	}
+
 	return &AgentInstance{
 		ID:             agentID,
 		Name:           agentName,
@@ -226,6 +249,8 @@ func NewAgentInstance(
 		Candidates:     candidates,
 		PromptToolsInText: promptToolsInText,
 		MaxCloudToolsInPrompt: maxCloudToolsInPrompt,
+		MaxTools: maxTools,
+		ToolMode: toolMode,
 	}
 }
 
