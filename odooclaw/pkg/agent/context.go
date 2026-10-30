@@ -125,6 +125,10 @@ func (cb *ContextBuilder) isLocalSmallModel() bool {
 func buildMinimalSystemPrompt() string {
 	return `Eres odooclaw, un asistente que gestiona Odoo ERP.
 
+` + promptDateContext(time.Now()) + `
+
+` + antiNarrationClause + `
+
 Instrucciones:
 - Usa SIEMPRE una herramienta para realizar cualquier acción. No la describas ni la finjas.
 - Emite las tool calls con el formato <tool_call>{"name":"<herramienta>","arguments":"<JSON con los argumentos>"}</tool_call>.
@@ -187,6 +191,11 @@ func (cb *ContextBuilder) BuildSystemPrompt() string {
 
 	// Core identity section
 	parts = append(parts, cb.getIdentity())
+
+	// Date context and tool-call contract: both are cheap and prevent the two
+	// failure modes we keep measuring (invented dates, narrated calls).
+	parts = append(parts, promptDateContext(time.Now()))
+	parts = append(parts, antiNarrationClause)
 
 	// Bootstrap files
 	bootstrapContent := cb.LoadBootstrapFiles()
