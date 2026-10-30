@@ -60,6 +60,37 @@ type Config struct {
 	Heartbeat  HeartbeatConfig  `json:"heartbeat"`
 	Devices    DevicesConfig    `json:"devices"`
 	Multimodel MultimodelConfig `json:"multimodel,omitempty"`
+	Voice      VoiceConfig      `json:"voice,omitempty"`
+}
+
+// VoiceConfig configures speech input and output. Both sides are
+// OpenAI-compatible endpoints, so any server implementing
+// /v1/audio/transcriptions or /v1/audio/speech works without code changes:
+// Phonon, faster-whisper's server, Qwen3-TTS, Piper or a cloud API.
+type VoiceConfig struct {
+	STT STTConfig `json:"stt,omitempty"`
+	TTS TTSConfig `json:"tts,omitempty"`
+}
+
+// STTConfig describes the speech-to-text endpoint. Provider is informational;
+// an empty BaseURL disables transcription.
+type STTConfig struct {
+	Provider string `json:"provider,omitempty"` // phonon | whisper | openai | ""
+	BaseURL  string `json:"base_url,omitempty"` // e.g. http://127.0.0.1:8010/v1
+	Model    string `json:"model,omitempty"`    // e.g. phonon-2.5
+	APIKey   string `json:"api_key,omitempty"`
+	Language string `json:"language,omitempty"` // ISO code hint, e.g. es
+}
+
+// TTSConfig describes the speech output endpoint. An empty BaseURL disables
+// speech synthesis.
+type TTSConfig struct {
+	Provider string `json:"provider,omitempty"` // local | edge | openai | ""
+	BaseURL  string `json:"base_url,omitempty"` // e.g. http://127.0.0.1:8011/v1
+	Model    string `json:"model,omitempty"`
+	Voice    string `json:"voice,omitempty"` // e.g. sohee, es_es_f1
+	APIKey   string `json:"api_key,omitempty"`
+	Format   string `json:"format,omitempty"` // wav | mp3 | opus
 }
 
 // MarshalJSON implements custom JSON marshaling for Config
