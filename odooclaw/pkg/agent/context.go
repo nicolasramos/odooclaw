@@ -28,6 +28,7 @@ type ContextBuilder struct {
 	contextWindowTokens int // max estimated tokens to keep from history (0 = unlimited)
 	toolResultMaxChars  int // max chars per tool result content (0 = unlimited)
 	model               string // agent model name, used to gate a minimal system prompt for local small models
+	toolMode            string // "native" | "text" | "" — pins the decision above the name heuristic
 
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.
@@ -97,6 +98,15 @@ func (cb *ContextBuilder) SetModel(model string) {
 	cb.model = model
 }
 
+// SetToolMode pins how tool definitions are delivered for this agent, so the
+// prompt can follow the same decision: "native" keeps the full system prompt
+// and the OpenAI tools array, "text" switches to the minimal prompt because the
+// tools travel as plain text. Empty keeps the name-based heuristic.
+func (cb *ContextBuilder) SetToolMode(mode string) {
+	cb.toolMode = mode
+	cb.InvalidateCache()
+}
+
 // SaveRecipe stores a successful query→tool+args resolution in the
 // recipe store (always-on local memory) for reuse as few-shot context.
 func (cb *ContextBuilder) SaveRecipe(query, tool, args, channel, chatID, senderID string) {
@@ -105,9 +115,16 @@ func (cb *ContextBuilder) SaveRecipe(query, tool, args, channel, chatID, senderI
 	}
 }
 
-// isLocalSmallModel reports whether the model name refers to a small local
-// fine-tuned model that needs a minimal system prompt.
+// isLocalSmallModel reports whether the model needs a minimal system prompt.
+// An explicit tool_mode wins over the name heuristic; empty falls back to the
+// legacy substring match.
 func (cb *ContextBuilder) isLocalSmallModel() bool {
+	switch strings.ToLower(strings.TrimSpace(cb.toolMode)) {
+	case "native":
+		return false
+	case "text":
+		return true
+	}
 	lower := strings.ToLower(cb.model)
 	return strings.Contains(lower, "odooclaw") ||
 		strings.Contains(lower, "local") ||

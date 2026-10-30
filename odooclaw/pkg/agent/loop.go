@@ -1293,10 +1293,7 @@ func (al *AgentLoop) runLLMIteration(
 			// config override (prompt_tools_in_text) wins over the heuristic:
 			// native-tool-calling fine-tunes (v26-native) need the native
 			// "tools" array to reach 100% exact-match tool calling.
-			useTextInjection := isLocalSmallModel(agent.Model)
-			if agent.PromptToolsInText != nil {
-				useTextInjection = *agent.PromptToolsInText
-			}
+			useTextInjection := resolveTextInjection(agent, isLocalSmallModel(agent.Model))
 			// NRA-413: Force temperature=0.0 for local small models to ensure
 			// deterministic tool calling. Fine-tuned 0.5B/1.5B models degrade
 			// quickly with non-zero temperature — even 0.1 introduces enough
@@ -2439,8 +2436,27 @@ func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 // 5 tools listed per example; more tools cause hallucination.
 const maxLocalToolsInPrompt = 5
 
-// resolveMaxTools decides how many tool definitions reach the model.
+// resolveTextInjection decides how tool definitions reach the model.
 //
+// Precedence: tool_mode ("native"/"text") wins, then the prompt_tools_in_text
+// override, then the name-based heuristic. Keeping the order explicit stops a
+// model named like a local fine-tune from silently losing native tool calling.
+func resolveTextInjection(agent *AgentInstance, heuristic bool) bool {
+	if agent != nil {
+		switch strings.ToLower(strings.TrimSpace(agent.ToolMode)) {
+		case "native":
+			return false
+		case "text":
+			return true
+		}
+		if agent.PromptToolsInText != nil {
+			return *agent.PromptToolsInText
+		}
+	}
+	return heuristic
+}
+
+// resolveMaxTools decides how many tool definitions reach the model.
 // Precedence: an explicit per-model max_tools always wins, including a value
 // of 0 meaning "no cap" (the whole catalogue). Otherwise a per-model cloud cap,
 // then the local-small-model heuristic, then the built-in default. The cap must
