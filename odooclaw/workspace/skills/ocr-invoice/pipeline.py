@@ -46,8 +46,14 @@ class OCRConfig:
     ocr_timeout: int = 1500
     llm_timeout: int = 240
 
+    # Reasoning models (LFM3 and friends) spend the whole budget in
+    # reasoning_content and return content=null, which breaks every caller.
+    # The flag is understood by the chat template; servers that ignore it are
+    # unaffected.
+    disable_thinking: bool = True
 
-def _chat(base_url, model, api_key, messages, max_tokens, timeout):
+
+def _chat(base_url, model, api_key, messages, max_tokens, timeout, disable_thinking=True):
     """Generic OpenAI-compatible chat call (used by layers 1 and 3)."""
     payload = {
         "model": model,
@@ -55,6 +61,8 @@ def _chat(base_url, model, api_key, messages, max_tokens, timeout):
         "temperature": 0,
         "max_tokens": max_tokens,
     }
+    if disable_thinking:
+        payload["chat_template_kwargs"] = {"enable_thinking": False}
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -64,7 +72,10 @@ def _chat(base_url, model, api_key, messages, max_tokens, timeout):
         headers=headers,
     )
     r = urllib.request.urlopen(req, timeout=timeout)
-    return json.loads(r.read())["choices"][0]["message"]["content"]
+    message = json.loads(r.read())["choices"][0]["message"]
+    # Never return None: a reasoning model that ignored the flag still leaves
+    # its trace in reasoning_content, which is better than an AttributeError.
+    return message.get("content") or message.get("reasoning_content") or ""
 
 
 # --------------------------------------------------------------------------
@@ -101,7 +112,8 @@ def layer1_vision(cfg: OCRConfig, image_bytes) -> str:
         {"type": "text", "text": VISION_PROMPT},
     ]}]
     return _chat(cfg.vision_base_url, cfg.vision_model, cfg.vision_api_key,
-                 messages, max_tokens=2048, timeout=cfg.ocr_timeout)
+                 messages, max_tokens=2048, timeout=cfg.ocr_timeout,
+                 disable_thinking=cfg.disable_thinking)
 
 
 # --------------------------------------------------------------------------
@@ -246,13 +258,27 @@ def _parse_fiscal(text):
 def _parse_subtotal(text):
     """Find the SUBTOTAL (before tax) of the invoice."""
     num = r"[$\u20ac\u00a3]?\s*\d[\d.,\s]*\d|[$\u20ac\u00a3]?\s*\d"
-    for m in re.finditer(
-        rf"subtotal\s*[:=]?\s*({num})\s*(?:€|eur|usd)?",
-        text, re.IGNORECASE,
-    ):
+    pattern = (
+        r"(?:subtotal|untaxed\s+amount|base\s+imponible|importe\s+neto|neto)"
+        r"\s*[:=]?\s*(" + num + r")\s*(?:€|eur|usd)?"
+    )
+    for m in re.finditer(pattern, text, re.IGNORECASE):
         v = _norm_number(m.group(1))
         if v is not None and 0 < v < 1_000_000:
             return v
+    return None
+
+
+def _parse_invoice_number(text):
+    """Invoice number by shape, not by layout: INV/2026/00001, F-2026-001, etc."""
+    patterns = [
+        r"\b([A-Z]{2,6}[/-]\d{2,4}[/-]\d{1,6})\b",
+        r"(?:factura|invoice|fra)\s*(?:n[o°º.]*|number|#)?\s*[:#]?\s*([A-Z0-9][A-Z0-9/\-]{3,20})",
+    ]
+    for pat in patterns:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m:
+            return m.group(1).strip(" :#")
     return None
 
 
@@ -277,13 +303,18 @@ def _parse_total(text):
         rf"importe\s+total\s*[:=]?\s*({num})",
         rf"amount\s*(?:due|total)?\s*[:=]?\s*({num})\s*(?:€|eur|usd)?",
     ]
-    best = None
+    # Patterns are ordered by confidence: stop at the first one that matches.
+    # Scanning every pattern and keeping the last match let a loose "amount"
+    # label ("Untaxed Amount 100.00") overwrite the real "Total 115.00".
     for pat in patterns:
+        best = None
         for m in re.finditer(pat, text, re.IGNORECASE):
             v = _norm_number(m.group(1))
             if v is not None and 0 < v < 1_000_000:
-                best = v  # keep last: real total appears after table-header TOTAL
-    return best
+                best = v  # keep last within the pattern: the total closes the block
+        if best is not None:
+            return best
+    return None
 
 
 def _parse_tax_total(text):
@@ -365,7 +396,9 @@ def layer2_fiscal(text):
     return {
         "fiscal_lines": lines,
         "amount_total": total,
+        "amount_subtotal": _parse_subtotal(text),
         "amount_tax": tax,
+        "invoice_number": _parse_invoice_number(text),
         "fiscal_found": bool(pairs),
         "is_reverse_charge": reverse_charge,
     }
@@ -388,7 +421,8 @@ def layer3_header(cfg: OCRConfig, text):
     out = _chat(cfg.llm_base_url, cfg.llm_model, cfg.llm_api_key,
                 [{"role": "system", "content": HEADER_PROMPT},
                  {"role": "user", "content": text[:4500]}],
-                max_tokens=300, timeout=cfg.llm_timeout)
+                max_tokens=300, timeout=cfg.llm_timeout,
+                disable_thinking=cfg.disable_thinking)
     m = re.search(r"\{.*\}", out, re.DOTALL)
     if not m:
         return {}
@@ -415,6 +449,13 @@ def layer4_validate(header, fiscal):
         "amount_tax": fiscal["amount_tax"],
         "fiscal_found": fiscal["fiscal_found"],
     })
+    # Deterministic values win over the model: a 1.7B header guess is not a
+    # source of truth for numbers that can be read off the document.
+    for key in ("amount_subtotal", "invoice_number"):
+        if fiscal.get(key) is not None:
+            merged[key] = fiscal[key]
+    if merged.get("amount_subtotal") is not None:
+        merged.setdefault("amount_untaxed", merged["amount_subtotal"])
 
     total = fiscal["amount_total"]
     tax = fiscal["amount_tax"]
