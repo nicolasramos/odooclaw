@@ -11,9 +11,9 @@ func TestResolveMaxTools(t *testing.T) {
 		isLocal bool
 		want    int
 	}{
-		{"nil agent uses cloud default", nil, false, maxCloudToolsInPrompt},
-		{"local small model keeps 5", &AgentInstance{}, true, maxLocalToolsInPrompt},
-		{"cloud default", &AgentInstance{}, false, maxCloudToolsInPrompt},
+		{"nil agent means no cap", nil, false, 0},
+		{"local small model no cap by default", &AgentInstance{}, true, 0},
+		{"cloud default no cap", &AgentInstance{}, false, 0},
 		{"explicit max_tools wins over local cap", &AgentInstance{MaxTools: intPtr(85)}, true, 85},
 		{"max_tools 0 means no cap", &AgentInstance{MaxTools: intPtr(0)}, true, 0},
 		{"max_tools 0 beats cloud cap", &AgentInstance{MaxTools: intPtr(0), MaxCloudToolsInPrompt: intPtr(64)}, false, 0},

@@ -2468,10 +2468,11 @@ func resolveMaxTools(agent *AgentInstance, isLocal bool) int {
 	if agent != nil && agent.MaxCloudToolsInPrompt != nil {
 		return *agent.MaxCloudToolsInPrompt
 	}
-	if isLocal {
-		return maxLocalToolsInPrompt
-	}
-	return maxCloudToolsInPrompt
+	// No cap by default: a tool the model cannot see is worse than a long
+	// prompt, and the retrieval already ranks the catalogue before it is sent.
+	// Cloud providers with a hard tool limit are handled where the request is
+	// built, not here.
+	return 0
 }
 
 // maxCloudToolsInPrompt caps how many tools are sent to cloud models
