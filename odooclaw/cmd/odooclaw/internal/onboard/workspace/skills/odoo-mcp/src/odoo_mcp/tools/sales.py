@@ -1,5 +1,9 @@
 from odoo_mcp.core.client import OdooClient
-from odoo_mcp.services.sales_service import find_sale_order, get_sale_order_summary
+from odoo_mcp.services.sales_service import (
+    create_invoice_from_sale_order,
+    find_sale_order,
+    get_sale_order_summary,
+)
 from odoo_mcp.security.audit import audit_action
 from odoo_mcp.security.guards import guard_model_access
 
@@ -11,3 +15,15 @@ def odoo_get_sale_order_summary(client: OdooClient, user_id: int, order_id: int)
     guard_model_access("sale.order")
     audit_action("GET_SO_SUMMARY", user_id, "sale.order", [order_id], {})
     return get_sale_order_summary(client, user_id, order_id)
+
+def odoo_create_invoice_from_sale_order(client: OdooClient, user_id: int, order_id: int, invoice_date: str | None = None) -> dict:
+    """Invoices a confirmed sale order, copying its lines into an out_invoice.
+
+    Kept as a separate tool because Odoo 18 blocks remote calls to the private
+    `_create_invoices`, and because the model otherwise reaches for the vendor
+    invoice tool when asked for a customer invoice.
+    """
+    guard_model_access("sale.order")
+    guard_model_access("account.move")
+    audit_action("CREATE_INVOICE_FROM_SO", user_id, "sale.order", [order_id], {"invoice_date": invoice_date})
+    return create_invoice_from_sale_order(client, user_id, order_id, invoice_date)
