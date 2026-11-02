@@ -38,8 +38,16 @@ def test_creates_customer_invoice_from_confirmed_order(mock_client):
         [_order()],
         [_line(1, 2, 100.0, 0.0, [3])],
         7,  # account.move create returns the new id
-        [{"id": 7, "name": "INV/2026/0001", "amount_total": 230.0, "state": "draft",
-          "move_type": "out_invoice", "partner_id": [8, "Cliente Prueba"]}],
+        [
+            {
+                "id": 7,
+                "name": "INV/2026/0001",
+                "amount_total": 230.0,
+                "state": "draft",
+                "move_type": "out_invoice",
+                "partner_id": [8, "Cliente Prueba"],
+            }
+        ],
     ]
 
     result = create_invoice_from_sale_order(mock_client, 2, 4)
