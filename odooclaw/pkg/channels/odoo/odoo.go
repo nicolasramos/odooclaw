@@ -59,14 +59,40 @@ type ChatterMessage struct {
 	Body   string `json:"body"`
 }
 
+// FlexInt accepts a number, null or a boolean, because the Odoo module sends
+// `author_user_id: ... or False` and a bare false used to fail the whole
+// webhook decode ("cannot unmarshal bool into ... of type int") before the
+// message was ever processed.
+type FlexInt int
+
+func (f *FlexInt) UnmarshalJSON(data []byte) error {
+	raw := strings.TrimSpace(string(data))
+	switch raw {
+	case "", "null", "false", "\"\"":
+		*f = 0
+		return nil
+	case "true":
+		*f = 0
+		return nil
+	}
+	// Odoo also ships numeric strings in some fields.
+	raw = strings.Trim(raw, `"`)
+	var n int
+	if err := json.Unmarshal([]byte(raw), &n); err != nil {
+		return err
+	}
+	*f = FlexInt(n)
+	return nil
+}
+
 type OdooWebhookPayload struct {
 	MessageID         int              `json:"message_id"`
 	Model             string           `json:"model"`
 	ResID             int              `json:"res_id"`
 	ReplyModel        string           `json:"reply_model"`
-	ReplyResID        int              `json:"reply_res_id"`
+	ReplyResID        FlexInt          `json:"reply_res_id"`
 	AuthorID          int              `json:"author_id"`
-	AuthorUserID      int              `json:"author_user_id"`
+	AuthorUserID      FlexInt          `json:"author_user_id"`
 	AuthorName        string           `json:"author_name"`
 	Body              string           `json:"body"`
 	IsDM              bool             `json:"is_dm"`
@@ -263,15 +289,15 @@ func (c *OdooChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if replyModel == "" {
 		replyModel = payload.Model
 	}
-	replyResID := payload.ReplyResID
+	replyResID := int(payload.ReplyResID)
 	if replyResID <= 0 {
 		replyResID = payload.ResID
 	}
 	replyChatID := fmt.Sprintf("%s_%d", replyModel, replyResID)
 	hasPrivateReplyTarget := !payload.IsDM && payload.ReplyModel != "" && payload.ReplyResID > 0 &&
-		(payload.ReplyModel != payload.Model || payload.ReplyResID != payload.ResID)
+		(payload.ReplyModel != payload.Model || int(payload.ReplyResID) != payload.ResID)
 
-	senderNumericID := payload.AuthorUserID
+	senderNumericID := int(payload.AuthorUserID)
 	if senderNumericID <= 0 {
 		senderNumericID = payload.AuthorID
 	}
