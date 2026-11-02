@@ -13,7 +13,7 @@ def validate_domain(domain: List[Any]) -> None:
     """
     if not isinstance(domain, list):
         raise OdooSecurityError("Domain must be a list.")
-        
+
     depth = 0
     for term in domain:
         if isinstance(term, str):

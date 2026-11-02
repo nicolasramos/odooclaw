@@ -16,7 +16,7 @@ def get_record_summary(client: OdooClient, user_id: int, model: str, res_id: int
     fields = SUMMARY_FIELDS.get(model, ["display_name"])
     
     _logger.info(f"Getting generic summary for {model} id {res_id}")
-    records = client.call_kw(model, "read", args=[[res_id]], kwargs={"fields": fields}, sender_id=user_id)
+    records = client.call_kw(model, "read", args=[[res_id]], kwargs={"fields": fields})
     if not records:
         return {"error": f"Record {res_id} not found in {model}"}
         
@@ -27,10 +27,10 @@ def get_chatter_summary(client: OdooClient, user_id: int, model: str, res_id: in
     _logger.info(f"Getting chatter summary for {model} id {res_id}")
     
     # Get messages
-    messages = client.call_kw("mail.message", "search_read", args=[[("model", "=", model), ("res_id", "=", res_id)]], kwargs={"fields": ["body", "author_id", "date", "message_type"], "limit": 5, "order": "date desc"}, sender_id=user_id)
+    messages = client.call_kw("mail.message", "search_read", args=[[("model", "=", model), ("res_id", "=", res_id)]], kwargs={"fields": ["body", "author_id", "date", "message_type"], "limit": 5, "order": "date desc"})
     
     # Get pending activities
-    activities = client.call_kw("mail.activity", "search_read", args=[[("res_model", "=", model), ("res_id", "=", res_id)]], kwargs={"fields": ["summary", "user_id", "date_deadline", "state"]}, sender_id=user_id)
+    activities = client.call_kw("mail.activity", "search_read", args=[[("res_model", "=", model), ("res_id", "=", res_id)]], kwargs={"fields": ["summary", "user_id", "date_deadline", "state"]})
     
     return {
         "latest_messages": [{"author": m.get("author_id")[1] if m.get("author_id") else "System", "date": m.get("date"), "type": m.get("message_type"), "body_preview": m.get("body", "")[:200]} for m in messages],

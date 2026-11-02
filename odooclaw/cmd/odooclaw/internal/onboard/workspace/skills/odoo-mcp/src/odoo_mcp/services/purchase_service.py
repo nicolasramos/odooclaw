@@ -21,4 +21,4 @@ def create_purchase_order(client: OdooClient, user_id: int, partner_id: int, lin
         }))
         
     _logger.info(f"Creating PO for partner {partner_id} with {len(lines)} lines")
-    return client.call_kw("purchase.order", "create", args=[order_vals], sender_id=user_id)
+    return client.call_kw("purchase.order", "create", args=[order_vals])

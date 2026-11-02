@@ -10,7 +10,7 @@ def find_task(client: OdooClient, user_id: int, name: str = None, project_id: in
     if stage_id: domain.append(("stage_id", "=", stage_id))
     
     _logger.info(f"Finding tasks with domain: {domain}")
-    return client.call_kw("project.task", "search_read", args=[domain], kwargs={"fields": ["id", "name", "project_id", "stage_id", "user_ids"], "limit": limit}, sender_id=user_id)
+    return client.call_kw("project.task", "search_read", args=[domain], kwargs={"fields": ["id", "name", "project_id", "stage_id", "user_ids"], "limit": limit})
 
 def create_task(client: OdooClient, user_id: int, name: str, project_id: int = None, description: str = None, assigned_to: int = None, deadline: str = None) -> int:
     values = {"name": name}
@@ -20,7 +20,7 @@ def create_task(client: OdooClient, user_id: int, name: str, project_id: int = N
     if deadline: values["date_deadline"] = deadline
     
     _logger.info(f"Creating task '{name}'")
-    return client.call_kw("project.task", "create", args=[values], sender_id=user_id)
+    return client.call_kw("project.task", "create", args=[values])
 
 def update_task(client: OdooClient, user_id: int, task_id: int, stage_id: int = None, assigned_to: int = None, deadline: str = None) -> bool:
     values = {}
@@ -32,4 +32,4 @@ def update_task(client: OdooClient, user_id: int, task_id: int, stage_id: int = 
         return True
         
     _logger.info(f"Updating task {task_id} with {values}")
-    return client.call_kw("project.task", "write", args=[[task_id], values], sender_id=user_id)
+    return client.call_kw("project.task", "write", args=[[task_id], values])
