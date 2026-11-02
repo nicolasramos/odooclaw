@@ -142,9 +142,9 @@ func (cb *ContextBuilder) isLocalSmallModel() bool {
 func buildMinimalSystemPrompt() string {
 	return `Eres odooclaw, un asistente que gestiona Odoo ERP.
 
-` + promptDateContext(time.Now()) + `
+` + promptDateContextShort(time.Now()) + `
 
-` + antiNarrationClause + `
+` + antiNarrationClauseShort + `
 
 Instrucciones:
 - Usa SIEMPRE una herramienta para realizar cualquier acción. No la describas ni la finjas.

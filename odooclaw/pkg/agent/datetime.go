@@ -57,6 +57,24 @@ Si el usuario da una fecha relativa, usa el valor de esta tabla. Nunca inventes 
 	)
 }
 
+// promptDateContextShort is the minimal-prompt variant: today's date and the
+// rule, without the resolved reference table. A small model with a 2.5K prompt
+// needs one line, not a calendar; the full table only pays for itself when the
+// prompt has room for it.
+func promptDateContextShort(now time.Time) string {
+	y, m, d := now.Date()
+	return fmt.Sprintf(
+		"# Fecha\n\nHoy es %s, %d de %s de %d (%04d-%02d-%02d). No calcules fechas: usa esta.",
+		spanishWeekday[now.Weekday()], d, spanishMonth[m], y, y, int(m), d,
+	)
+}
+
+// antiNarrationClauseShort is the one-line variant used by the minimal prompt,
+// where the long paragraph would cost more context than it saves.
+const antiNarrationClauseShort = `# Herramientas
+
+Emite la llamada; no la describas ni la escribas como texto.`
+
 // antiNarrationClause is the tool-call contract in one paragraph: it goes into
 // every system prompt because the observed failure is the model writing the
 // planned call as prose and never emitting it.
