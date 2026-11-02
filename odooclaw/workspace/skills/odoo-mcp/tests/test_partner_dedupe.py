@@ -1,11 +1,12 @@
-import pytest
 from unittest.mock import MagicMock, call
+
+import pytest
 
 from odoo_mcp.core.client import OdooClient
 from odoo_mcp.security import policy
-from odoo_mcp.services.partner_service import find_partner, find_or_create_partner
-from odoo_mcp.tools.records import odoo_create
+from odoo_mcp.services.partner_service import find_or_create_partner, find_partner
 from odoo_mcp.tools.partners import odoo_find_partner
+from odoo_mcp.tools.records import odoo_create
 
 
 @pytest.fixture

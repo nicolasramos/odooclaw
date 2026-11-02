@@ -14,16 +14,14 @@ import pytest
 
 from odoo_mcp.core.exceptions import OdooRPCError
 from odoo_mcp.tools.records import (
-    _field_cache,
-    _field_cache_timestamps,
     odoo_read,
     odoo_search_read,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_mock_client(fields_get_result=None):
     """Build a mock client whose call_kw returns *fields_get_result* for
@@ -58,6 +56,7 @@ def _extract_fields_from_call(calls, call_index):
 # ---------------------------------------------------------------------------
 # odoo_read tests
 # ---------------------------------------------------------------------------
+
 
 def test_odoo_read_invalid_field_raises_explicit_error():
     """Invalid field → OdooRPCError listing unknown + valid fields."""
@@ -110,13 +109,18 @@ def test_odoo_read_only_underscore_fields_stripped():
 # odoo_search_read tests
 # ---------------------------------------------------------------------------
 
+
 def test_odoo_search_read_invalid_field_raises():
     """Invalid field in search_read → explicit error."""
     client = _make_mock_client()
     with pytest.raises(OdooRPCError) as exc_info:
         odoo_search_read(
-            client, 1, "res.partner", [["name", "ilike", "Acme"]],
-            ["name", "contact_nbr"], limit=10,
+            client,
+            1,
+            "res.partner",
+            [["name", "ilike", "Acme"]],
+            ["name", "contact_nbr"],
+            limit=10,
         )
     assert "contact_nbr" in str(exc_info.value)
 
@@ -125,8 +129,12 @@ def test_odoo_search_read_valid_fields_pass():
     """Valid fields pass through in search_read."""
     client = _make_mock_client()
     odoo_search_read(
-        client, 1, "res.partner", [["name", "ilike", "Acme"]],
-        ["name", "id"], limit=10,
+        client,
+        1,
+        "res.partner",
+        [["name", "ilike", "Acme"]],
+        ["name", "id"],
+        limit=10,
     )
     calls = client.call_kw.call_args_list
     # Two calls: fields_get (index 0) + search_read (index 1)
@@ -137,7 +145,10 @@ def test_odoo_search_read_none_fields_no_validation():
     """fields=None → no validation in search_read."""
     client = _make_mock_client()
     odoo_search_read(
-        client, 1, "res.partner", [["name", "ilike", "Acme"]],
+        client,
+        1,
+        "res.partner",
+        [["name", "ilike", "Acme"]],
         limit=10,
     )
     calls = client.call_kw.call_args_list
@@ -150,8 +161,12 @@ def test_odoo_search_read_strips_underscore_fields():
     """Synthetic ``__`` fields are stripped in search_read."""
     client = _make_mock_client()
     odoo_search_read(
-        client, 1, "res.partner", [["name", "ilike", "Acme"]],
-        ["name", "__url"], limit=10,
+        client,
+        1,
+        "res.partner",
+        [["name", "ilike", "Acme"]],
+        ["name", "__url"],
+        limit=10,
     )
     calls = client.call_kw.call_args_list
     # Two calls: fields_get (index 0) + search_read (index 1)

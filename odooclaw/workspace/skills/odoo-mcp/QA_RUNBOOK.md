@@ -131,6 +131,47 @@ Resources esperados:
 
 ---
 
+### 4. E2E automatizado de los resúmenes dinámicos
+
+`tests/e2e_summary_fields.py` ejecuta las tools reales contra la instancia
+(login, delegación `/odooclaw/call_kw_as_user`, resumen) y verifica el
+descubrimiento dinámico de campos (issue #81):
+
+```bash
+ODOO_URL=... ODOO_DB=... ODOO_USERNAME=... ODOO_PASSWORD=... ODOOCLAW_REPLY_TOKEN=... \
+  PYTHONPATH=src python tests/e2e_summary_fields.py
+```
+
+Resultado esperado: `16/16 checks passed` como el usuario de sesión y
+`17/17 checks passed` con `E2E_SENDER_LOGIN=<login>` (código de salida 0 en
+ambos).
+
+`E2E_SENDER_LOGIN` impersona a ese usuario en todas las llamadas con la sesión
+siguiendo siendo el admin — es la forma de probar el tool como un usuario
+interno sin permisos de facturación, que es donde `fields_get` anuncia campos
+cuyo compute revienta (`days_sales_outstanding`, `journal_item_count`,
+`supplier_invoice_count` sobre `res.partner` con `account`). El check añadido
+en ese modo afirma que esos campos se **omiten** y que el resumen no colapsa a
+`id`/`name`/`display_name`.
+
+Preparación que asume:
+
+- un partner con `mobile` relleno (`E2E_PARTNER_NAME`, por defecto `E2E Mobile Co`);
+- si se usa `E2E_SENDER_LOGIN`, ese usuario debe existir (interno: `base.group_user`);
+- para el caso del modelo inexistente, `odooclaw.extra_allowed_models` con ese
+  modelo (p. ej. `does.not.exist`); sin ese escape hatch —y para usuarios que
+  no pueden leer el parámetro— contesta antes el guard de seguridad, y el
+  check lo acepta siempre que el error nombre al modelo;
+- si la instancia no tiene `account` / `sale`, o el emisor no puede contarlos,
+  los contadores del resumen salen `null` — es lo que comprueba la rama del
+  "instance without accounting".
+
+Como el resumen del emisor interno localiza primero los campos que no puede
+leer, la **primera** llamada de un proceso cuesta ~30 `read` (registrados en el
+log como `after 29 reads`) y las siguientes, 1: los campos se recuerdan 60 s.
+
+---
+
 ## Fase 1 - Conexión y sesión
 
 ### Caso 1.1 - Login inicial

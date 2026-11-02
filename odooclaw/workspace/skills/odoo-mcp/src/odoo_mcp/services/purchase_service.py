@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, cast
 
 from odoo_mcp.core.client import OdooClient
 from odoo_mcp.observability.logging import get_logger
@@ -21,7 +21,7 @@ def _safe_float(value: Any) -> float:
         return 0.0
 
 
-def _safe_int(value: Any) -> Optional[int]:
+def _safe_int(value: Any) -> int | None:
     if value in (None, False, ""):
         return None
     if isinstance(value, (list, tuple)) and value:
@@ -32,7 +32,7 @@ def _safe_int(value: Any) -> Optional[int]:
         return None
 
 
-def _m2o_id(value: Any) -> Optional[int]:
+def _m2o_id(value: Any) -> int | None:
     return _safe_int(value)
 
 
@@ -66,41 +66,35 @@ def _oca_purchase_capabilities(client: OdooClient, sender_id: int) -> dict[str, 
             client, "purchase.order.line", "invoice_status", sender_id
         )
         or _field_available(client, "purchase.order.line", "qty_to_invoice", sender_id),
-        "purchase_stock_picking_invoice_link": _field_available(
-            client, "stock.picking", "invoice_ids", sender_id
-        )
-        if _model_available(client, "stock.picking", sender_id)
-        else False,
+        "purchase_stock_picking_invoice_link": (
+            _field_available(client, "stock.picking", "invoice_ids", sender_id)
+            if _model_available(client, "stock.picking", sender_id)
+            else False
+        ),
         "purchase_order_uninvoiced_amount": _field_available(
             client, "purchase.order", "uninvoiced_amount", sender_id
         )
         or _field_available(client, "purchase.order", "amount_uninvoiced", sender_id),
         "purchase_request": _model_available(client, "purchase.request", sender_id),
-        "purchase_blanket_order": _model_available(
-            client, "purchase.blanket.order", sender_id
+        "purchase_blanket_order": _model_available(client, "purchase.blanket.order", sender_id),
+        "purchase_invoice_plan": _model_available(client, "purchase.invoice.plan", sender_id),
+        "purchase_last_price_info": (
+            _field_available(client, "product.supplierinfo", "last_price", sender_id)
+            if _model_available(client, "product.supplierinfo", sender_id)
+            else False
         ),
-        "purchase_invoice_plan": _model_available(
-            client, "purchase.invoice.plan", sender_id
-        ),
-        "purchase_last_price_info": _field_available(
-            client, "product.supplierinfo", "last_price", sender_id
-        )
-        if _model_available(client, "product.supplierinfo", sender_id)
-        else False,
         "purchase_order_product_recommendation": _model_available(
             client, "purchase.order.product.recommendation", sender_id
         ),
     }
 
 
-def create_purchase_order(
-    client: OdooClient, user_id: int, partner_id: int, lines: list
-) -> int:
+def create_purchase_order(client: OdooClient, user_id: int, partner_id: int, lines: list) -> int:
     """
     Creates a purchase order with multiple lines.
     lines format: [{"product_id": 1, "product_qty": 2.0, "price_unit": 100.0}]
     """
-    order_vals = {"partner_id": partner_id, "order_line": []}
+    order_vals: dict[str, Any] = {"partner_id": partner_id, "order_line": []}
 
     for line in lines:
         order_vals["order_line"].append(
@@ -116,15 +110,17 @@ def create_purchase_order(
         )
 
     _logger.info(f"Creating PO for partner {partner_id} with {len(lines)} lines")
-    return client.call_kw("purchase.order", "create", args=[order_vals], sender_id=user_id)
+    return cast(
+        int, client.call_kw("purchase.order", "create", args=[order_vals], sender_id=user_id)
+    )
 
 
 def find_purchase_order(
     client: OdooClient,
     sender_id: int,
-    name: Optional[str] = None,
-    partner_id: Optional[int] = None,
-    state: Optional[str] = None,
+    name: str | None = None,
+    partner_id: int | None = None,
+    state: str | None = None,
     limit: int = 10,
 ) -> dict:
     if not _model_available(client, "purchase.order", sender_id):
@@ -236,18 +232,19 @@ def _read_purchase_order_lines(
             "date_planned",
         ],
     )
-    return client.call_kw(
-        "purchase.order.line",
-        "search_read",
-        args=[[["order_id", "=", order_id]]],
-        kwargs={"fields": fields, "order": "id asc"},
-        sender_id=sender_id,
+    return cast(
+        list[dict[str, Any]],
+        client.call_kw(
+            "purchase.order.line",
+            "search_read",
+            args=[[["order_id", "=", order_id]]],
+            kwargs={"fields": fields, "order": "id asc"},
+            sender_id=sender_id,
+        ),
     )
 
 
-def get_purchase_order_summary(
-    client: OdooClient, sender_id: int, order_id: int
-) -> dict:
+def get_purchase_order_summary(client: OdooClient, sender_id: int, order_id: int) -> dict:
     if not _model_available(client, "purchase.order", sender_id):
         return build_unsupported_response(
             "purchase.get_purchase_order_summary",
@@ -271,9 +268,7 @@ def get_purchase_order_summary(
     )
 
 
-def get_purchase_receipt_status(
-    client: OdooClient, sender_id: int, purchase_order_id: int
-) -> dict:
+def get_purchase_receipt_status(client: OdooClient, sender_id: int, purchase_order_id: int) -> dict:
     summary = get_purchase_order_summary(client, sender_id, purchase_order_id)
     if not summary.get("ok"):
         summary["capability"] = "purchase.get_purchase_receipt_status"
@@ -323,9 +318,7 @@ def get_purchase_receipt_status(
     )
 
 
-def get_purchase_invoice_status(
-    client: OdooClient, sender_id: int, purchase_order_id: int
-) -> dict:
+def get_purchase_invoice_status(client: OdooClient, sender_id: int, purchase_order_id: int) -> dict:
     summary = get_purchase_order_summary(client, sender_id, purchase_order_id)
     if not summary.get("ok"):
         summary["capability"] = "purchase.get_purchase_invoice_status"
@@ -357,8 +350,7 @@ def get_purchase_invoice_status(
         purchase_order_id=purchase_order_id,
         invoice_status=order.get("invoice_status"),
         invoice_ids=order.get("invoice_ids") or [],
-        uninvoiced_amount=order.get("uninvoiced_amount")
-        or order.get("amount_uninvoiced"),
+        uninvoiced_amount=order.get("uninvoiced_amount") or order.get("amount_uninvoiced"),
         lines=invoice_lines,
         oca_capabilities=summary.get("oca_capabilities", {}),
     )
@@ -368,7 +360,7 @@ def suggest_vendor_products(
     client: OdooClient,
     sender_id: int,
     partner_id: int,
-    query: Optional[str] = None,
+    query: str | None = None,
     limit: int = 10,
 ) -> dict:
     if not _model_available(client, "product.supplierinfo", sender_id):
@@ -416,7 +408,7 @@ def suggest_vendor_products(
     )
 
 
-def _normalize_ocr_lines(ocr_payload: Optional[dict[str, Any]]) -> list[dict[str, Any]]:
+def _normalize_ocr_lines(ocr_payload: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not ocr_payload:
         return []
     raw_lines = ocr_payload.get("lines") or ocr_payload.get("invoice_lines") or []
@@ -492,9 +484,9 @@ def match_vendor_bill_to_purchase_order(
     client: OdooClient,
     sender_id: int,
     partner_id: int,
-    vendor_bill_number: Optional[str] = None,
-    purchase_order_id: Optional[int] = None,
-    ocr_payload: Optional[dict[str, Any]] = None,
+    vendor_bill_number: str | None = None,
+    purchase_order_id: int | None = None,
+    ocr_payload: dict[str, Any] | None = None,
     tolerance: float = 0.01,
 ) -> dict:
     if not _model_available(client, "purchase.order", sender_id):
@@ -508,7 +500,10 @@ def match_vendor_bill_to_purchase_order(
         candidate_orders = [_read_purchase_order(client, sender_id, purchase_order_id)]
         candidate_orders = [order for order in candidate_orders if order]
     else:
-        domain: list[list[Any]] = [["partner_id", "=", partner_id], ["state", "in", ["purchase", "done"]]]
+        domain: list[list[Any]] = [
+            ["partner_id", "=", partner_id],
+            ["state", "in", ["purchase", "done"]],
+        ]
         candidate_orders = client.call_kw(
             "purchase.order",
             "search_read",
@@ -518,7 +513,17 @@ def match_vendor_bill_to_purchase_order(
                     client,
                     "purchase.order",
                     sender_id,
-                    ["id", "name", "state", "partner_id", "date_order", "amount_total", "invoice_status", "receipt_status", "reception_status"],
+                    [
+                        "id",
+                        "name",
+                        "state",
+                        "partner_id",
+                        "date_order",
+                        "amount_total",
+                        "invoice_status",
+                        "receipt_status",
+                        "reception_status",
+                    ],
                 ),
                 "limit": 5,
                 "order": "date_order desc, id desc",
@@ -537,14 +542,12 @@ def match_vendor_bill_to_purchase_order(
         matched_po_line_ids: set[int] = set()
         line_matches = []
         for index, ocr_line in enumerate(ocr_lines):
-            best: Optional[dict[str, Any]] = None
+            best: dict[str, Any] | None = None
             for po_line in po_lines:
                 po_line_id = _safe_int(po_line.get("id"))
                 if po_line_id in matched_po_line_ids:
                     continue
-                score, reasons, discrepancies = _score_line_match(
-                    ocr_line, po_line, tolerance
-                )
+                score, reasons, discrepancies = _score_line_match(ocr_line, po_line, tolerance)
                 if best is None or score > best["score"]:
                     best = {
                         "ocr_line_index": index,

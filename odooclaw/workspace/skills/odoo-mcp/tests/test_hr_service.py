@@ -80,9 +80,6 @@ def test_log_task_timesheet_raises_when_task_has_no_project(mock_client):
         )
 
 
-
-
-
 # ---------------------------------------------------------------------------
 # Domain-shape regression, measured against a live Odoo 17 (stock.picking,
 # account.move and hr.employee all behave identically).
@@ -106,6 +103,7 @@ def test_log_task_timesheet_raises_when_task_has_no_project(mock_client):
 # data silently.
 # ---------------------------------------------------------------------------
 
+
 def _is_leaf(item):
     """A leaf is a non-empty sequence of scalars, e.g. ``["user_id", "=", 7]``."""
     return (
@@ -116,11 +114,7 @@ def _is_leaf(item):
 
 
 def _is_domain(items):
-    return (
-        isinstance(items, (list, tuple))
-        and len(items) > 0
-        and all(_is_leaf(e) for e in items)
-    )
+    return isinstance(items, (list, tuple)) and len(items) > 0 and all(_is_leaf(e) for e in items)
 
 
 def _domain_nested_one_level_too_deep(value):
@@ -154,13 +148,11 @@ def test_find_attendance_employee_domain_is_a_well_formed_domain(mock_client):
     find_attendance(mock_client, sender_id=7)
 
     args = mock_client.call_kw.call_args_list[0].kwargs["args"]
-    assert args == [[("user_id", "=", 7)]], (
-        "hr.employee.search_read must receive exactly [[leaf, ...]]; got %r" % (args,)
-    )
-    assert _is_domain(args[0]), (
-        "expected a flat list of leaves as the domain, got %r" % (args[0],)
-    )
+    assert args == [
+        [("user_id", "=", 7)]
+    ], f"hr.employee.search_read must receive exactly [[leaf, ...]]; got {args!r}"
+    assert _is_domain(args[0]), f"expected a flat list of leaves as the domain, got {args[0]!r}"
     assert not _domain_nested_one_level_too_deep(args[0]), (
-        "domain is nested one level too deep (%r) -- Odoo raises IndexError and "
-        "the ORM error surfaces as HTTP 500" % (args[0],)
+        f"domain is nested one level too deep ({args[0]!r}) -- Odoo raises IndexError and "
+        "the ORM error surfaces as HTTP 500"
     )

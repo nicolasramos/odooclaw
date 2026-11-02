@@ -4,14 +4,14 @@ Covers the record URL constructor (build_record_url) and the serializer
 injection of ``__url`` into odoo_read / odoo_search_read results.
 """
 
-from unittest.mock import MagicMock, call as mock_call
+from unittest.mock import MagicMock
+from unittest.mock import call as mock_call
 
 import pytest
 
 from odoo_mcp.core.serializers import build_record_url, serialize_records
 from odoo_mcp.security.policy import reset_allowed_models_cache
 from odoo_mcp.tools.records import odoo_read, odoo_search_read
-
 
 # --- build_record_url -------------------------------------------------------
 
@@ -50,12 +50,8 @@ def test_build_record_url_rejects_url_without_scheme():
 
 def test_serialize_records_injects_url_when_model_and_base_url_given():
     records = [{"id": 42, "name": "Acme SL"}]
-    res = serialize_records(
-        records, model="res.partner", base_url="https://erp.example.com"
-    )
-    assert res[0]["__url"] == (
-        "https://erp.example.com/web#id=42&model=res.partner&view_type=form"
-    )
+    res = serialize_records(records, model="res.partner", base_url="https://erp.example.com")
+    assert res[0]["__url"] == ("https://erp.example.com/web#id=42&model=res.partner&view_type=form")
     assert res[0]["name"] == "Acme SL"
 
 
@@ -92,9 +88,7 @@ def test_serialize_records_does_not_clobber_existing_url_field():
     records = [{"id": 1, "url": "https://custom.example.com/thing"}]
     res = serialize_records(records, model="res.partner", base_url="https://erp.example.com")
     assert res[0]["url"] == "https://custom.example.com/thing"
-    assert res[0]["__url"] == (
-        "https://erp.example.com/web#id=1&model=res.partner&view_type=form"
-    )
+    assert res[0]["__url"] == ("https://erp.example.com/web#id=1&model=res.partner&view_type=form")
 
 
 # --- records.py integration -------------------------------------------------
@@ -135,9 +129,7 @@ def test_odoo_read_includes_url_per_record(mock_client):
     # warmed the module-level cache and the call count would differ).
     reset_allowed_models_cache()
     res = odoo_read(mock_client, 1, "res.partner", [42], ["name"])
-    assert res[0]["__url"] == (
-        "https://erp.example.com/web#id=42&model=res.partner&view_type=form"
-    )
+    assert res[0]["__url"] == ("https://erp.example.com/web#id=42&model=res.partner&view_type=form")
     # Three calls: ir.model allowlist lookup (index 0) + fields_get (index 1)
     # + read (index 2). The allowlist lookup is added by guard_model_access.
     assert mock_client.call_kw.call_count == 3
@@ -156,7 +148,9 @@ def test_odoo_search_read_includes_url_per_record(mock_client):
         [
             {"id": 7, "name": "Acme SL"},
             {"id": 9, "name": "Acme GmbH"},
-        ] if method != "fields_get" else {
+        ]
+        if method != "fields_get"
+        else {
             "id": {"type": "integer"},
             "name": {"type": "char"},
             "is_public": {"type": "boolean"},
@@ -167,12 +161,8 @@ def test_odoo_search_read_includes_url_per_record(mock_client):
     res = odoo_search_read(
         mock_client, 1, "res.partner", [["name", "ilike", "Acme"]], ["name"], limit=10
     )
-    assert res[0]["__url"] == (
-        "https://erp.example.com/web#id=7&model=res.partner&view_type=form"
-    )
-    assert res[1]["__url"] == (
-        "https://erp.example.com/web#id=9&model=res.partner&view_type=form"
-    )
+    assert res[0]["__url"] == ("https://erp.example.com/web#id=7&model=res.partner&view_type=form")
+    assert res[1]["__url"] == ("https://erp.example.com/web#id=9&model=res.partner&view_type=form")
 
 
 def test_odoo_read_without_session_url_adds_no_url(mock_client):

@@ -20,6 +20,9 @@ jobs:
           go-version-file: odooclaw/go.mod
           cache-dependency-path: odooclaw/go.sum
 
+      - name: Generate embedded skills
+        run: make generate
+
       - name: Build
         run: go build ./...
 
@@ -35,12 +38,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        skill: [workspace, onboard]
+        skill: [workspace]
     defaults:
       run:
         working-directory: odooclaw
     steps:
       - uses: actions/checkout@v4
+
+      - name: Generate embedded skills
+        run: make generate
 
       - uses: actions/setup-python@v5
         with:
@@ -58,7 +64,7 @@ jobs:
         working-directory: odooclaw/workspace/skills/odoo-mcp
         run: pip install --no-cache-dir -r requirements.txt
 
-      - name: Install odoo-mcp onboard deps
+      - name: Install odoo-mcp generated deps
         working-directory: odooclaw/cmd/odooclaw/internal/onboard/workspace/skills/odoo-mcp
         run: pip install --no-cache-dir -r requirements.txt
 
@@ -66,6 +72,39 @@ jobs:
         working-directory: odooclaw/workspace/skills/odoo-mcp
         run: PYTHONPATH=src python3 -m pytest tests/ -q
 
-      - name: Run onboard tests
+      - name: Run generated tests
         working-directory: odooclaw/cmd/odooclaw/internal/onboard/workspace/skills/odoo-mcp
         run: PYTHONPATH=src python3 -m pytest tests/ -q
+
+  workspace-divergence:
+    name: workspace divergence check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: odooclaw
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate embedded skills
+        run: make generate
+
+      - name: Check source and embedded match
+        run: |
+          set -euo pipefail
+          # diff -rq must be empty — no extra files, no content differences
+          diff -rq workspace cmd/odooclaw/internal/onboard/workspace || {
+            echo "::error::Divergence detected: source tree (odooclaw/workspace) and embedded copy differ."
+            echo "The embedded copy must be regenerated via 'make generate'."
+            exit 1
+          }
+
+      - name: Check no dead directories in embedded copy
+        run: |
+          set -euo pipefail
+          # Check for directories present only in embedded, not in source
+          # (odoo-manager was resurrected by the stale copy)
+          if [ -d "cmd/odooclaw/internal/onboard/workspace/skills/odoo-manager" ]; then
+            echo "::error::odoo-manager directory found in embedded copy but not in source"
+            echo "The source (odooclaw/workspace) removed odoo-manager; the embedded copy must not resurrect it."
+            exit 1
+          fi

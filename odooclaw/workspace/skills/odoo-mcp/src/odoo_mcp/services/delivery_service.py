@@ -1,12 +1,10 @@
-from typing import Optional
-
 import base64
 import binascii
 
 from odoo_mcp.core.client import OdooClient
 from odoo_mcp.observability.logging import get_logger
-from odoo_mcp.security.guards import guard_model_access
 from odoo_mcp.security.audit import audit_action
+from odoo_mcp.security.guards import guard_model_access
 
 _logger = get_logger("delivery_service")
 
@@ -27,8 +25,8 @@ def attach_file_to_chat(
     *,
     filename: str,
     content_base64: str,
-    mimetype: Optional[str] = None,
-    body: Optional[str] = None,
+    mimetype: str | None = None,
+    body: str | None = None,
     max_bytes: int = MAX_UPLOAD_BYTES,
 ) -> dict:
     """Upload a file and post it to a chatter thread as a real attachment.
@@ -66,9 +64,7 @@ def attach_file_to_chat(
         raise ValueError(f"content_base64 is not valid base64: {exc}") from exc
 
     if len(raw) > max_bytes:
-        raise ValueError(
-            f"file is {len(raw)} bytes, over the {max_bytes}-byte limit"
-        )
+        raise ValueError(f"file is {len(raw)} bytes, over the {max_bytes}-byte limit")
 
     audit_action(
         "ATTACH_FILE",
@@ -87,12 +83,8 @@ def attach_file_to_chat(
     if mimetype:
         values["mimetype"] = mimetype
 
-    _logger.info(
-        f"Uploading {filename} ({len(raw)} bytes) to {model} id {res_id}"
-    )
-    attachment_id = client.call_kw(
-        ATTACHMENT_MODEL, "create", args=[values], sender_id=user_id
-    )
+    _logger.info(f"Uploading {filename} ({len(raw)} bytes) to {model} id {res_id}")
+    attachment_id = client.call_kw(ATTACHMENT_MODEL, "create", args=[values], sender_id=user_id)
 
     # `message_post` requires attachment_ids as a literal list of ints. Odoo
     # 17 raises ValueError on the x2many command form before the message

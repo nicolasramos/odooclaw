@@ -1,10 +1,10 @@
 from odoo_mcp.core.client import OdooClient
-from odoo_mcp.services.partner_service import find_partner, get_partner_summary
 from odoo_mcp.security.audit import audit_action
+from odoo_mcp.services.partner_service import find_partner, get_partner_summary
 
 
 def odoo_find_partner(
-    client: OdooClient, user_id: int, name: str, vat: str = None, email: str = None
+    client: OdooClient, user_id: int, name: str, vat: str | None = None, email: str | None = None
 ) -> int:
     """Wrapper for odoo_find_partner tool."""
     audit_action("FIND_PARTNER", user_id, "res.partner", [], {"name": name, "vat": vat})

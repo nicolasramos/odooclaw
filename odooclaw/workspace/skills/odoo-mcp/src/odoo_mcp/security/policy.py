@@ -1,16 +1,17 @@
 import os
 import time
-from typing import Optional, Set, Tuple
-from odoo_mcp.config import DEFAULT_ALLOWED_MODELS, DEFAULT_DENIED_MODELS, DEFAULT_DENIED_FIELDS
+from typing import cast
+
+from odoo_mcp.config import DEFAULT_ALLOWED_MODELS, DEFAULT_DENIED_FIELDS, DEFAULT_DENIED_MODELS
 
 # Cache for dynamic allowed models without a client (env-var only, static per process).
-_allowed_models_cache: Optional[Set[str]] = None
+_allowed_models_cache: set[str] | None = None
 # Cache for client-based lookups (ir.config_parameter): short TTL so runtime changes apply.
-_client_cache: Optional[Tuple[float, Set[str]]] = None
+_client_cache: tuple[float, set[str]] | None = None
 _CLIENT_CACHE_TTL_SECONDS = 60.0
 
 
-def get_allowed_models(client=None, sender_id: Optional[int] = None) -> Set[str]:
+def get_allowed_models(client=None, sender_id: int | None = None) -> set[str]:
     """Returns the set of models the MCP is authorized to interact with in write mode.
 
     With a client: queries ir.model for installed non-transient models as the primary
@@ -40,7 +41,7 @@ def get_allowed_models(client=None, sender_id: Optional[int] = None) -> Set[str]
     return _allowed_models_cache
 
 
-def _get_allowed_models_with_client(client, sender_id: Optional[int] = None) -> Set[str]:
+def _get_allowed_models_with_client(client, sender_id: int | None = None) -> set[str]:
     """Client-based lookups are cached briefly so ir.config_parameter changes apply at runtime."""
     global _client_cache
     now = time.monotonic()
@@ -53,7 +54,7 @@ def _get_allowed_models_with_client(client, sender_id: Optional[int] = None) -> 
     return models
 
 
-def _compute_dynamic_allowed_models(client, sender_id: Optional[int] = None) -> Set[str]:
+def _compute_dynamic_allowed_models(client, sender_id: int | None = None) -> set[str]:
     """Query ir.model for installed non-transient models as the dynamic allowlist base.
 
     Returns an empty set on any failure so the caller can fall back to DEFAULT_ALLOWED_MODELS.
@@ -83,7 +84,7 @@ def _compute_dynamic_allowed_models(client, sender_id: Optional[int] = None) -> 
         return set()
 
 
-def _get_instance_denied_models(client, sender_id: Optional[int] = None) -> Set[str]:
+def _get_instance_denied_models(client, sender_id: int | None = None) -> set[str]:
     """Read odooclaw.denied_models from ir.config_parameter or ODOOCLAW_DENIED_MODELS env var.
 
     Args:
@@ -111,7 +112,7 @@ def _get_instance_denied_models(client, sender_id: Optional[int] = None) -> Set[
     return set()
 
 
-def _compute_allowed_models(client=None, sender_id: Optional[int] = None) -> Set[str]:
+def _compute_allowed_models(client=None, sender_id: int | None = None) -> set[str]:
     """Merge dynamic allowlist (or DEFAULT_ALLOWED_MODELS fallback) with escape hatch and apply blacklists."""
     if client is not None:
         dynamic = _compute_dynamic_allowed_models(client, sender_id)
@@ -134,7 +135,7 @@ def _compute_allowed_models(client=None, sender_id: Optional[int] = None) -> Set
     return allowed
 
 
-def _get_escape_hatch_models(client=None, sender_id: Optional[int] = None) -> str:
+def _get_escape_hatch_models(client=None, sender_id: int | None = None) -> str:
     """Get extra allowed models from ir.config_parameter or env var.
 
     Args:
@@ -152,10 +153,10 @@ def _get_escape_hatch_models(client=None, sender_id: Optional[int] = None) -> st
                 "get_param",
                 args=["odooclaw.extra_allowed_models"],
                 sender_id=sender_id,
-                default=None
+                default=None,
             )
             if value:
-                return value
+                return cast(str, value)
         except Exception:
             # Fall through to env var if config parameter lookup fails
             pass
@@ -164,7 +165,7 @@ def _get_escape_hatch_models(client=None, sender_id: Optional[int] = None) -> st
     return os.environ.get("ODOOCLAW_EXTRA_ALLOWED_MODELS", "")
 
 
-def get_denied_write_fields() -> Set[str]:
+def get_denied_write_fields() -> set[str]:
     """Returns the set of fields that cannot be written directly by tools."""
     return DEFAULT_DENIED_FIELDS
 

@@ -1,13 +1,15 @@
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
+
 from odoo_mcp.core.client import OdooClient
-from odoo_mcp.services.partner_service import get_partner_summary
 from odoo_mcp.services.chatter_service import (
     create_activity,
     list_pending_activities,
     mark_activity_done,
     post_chatter_message,
 )
+from odoo_mcp.services.partner_service import get_partner_summary
 
 
 @pytest.fixture
@@ -17,22 +19,50 @@ def mock_client():
 
 
 def test_get_partner_summary(mock_client):
-    mock_client.call_kw.side_effect = [
-        [
-            {"id": 1, "name": "Test Partner", "user_id": [2, "Salesperson"]}
-        ],  # partner read
-        1000.50,  # some hypothetical sales sum
-        3,  # total activities
-    ]
+    """The summary is built from the instance schema, not a fixed field list."""
+    schema = {
+        "name": {"type": "char"},
+        "email": {"type": "char"},
+        "mobile": {"type": "char"},
+        "user_id": {"type": "many2one"},
+        "credit": {"type": "monetary"},
+        "debit": {"type": "monetary"},
+    }
+
+    def _call_kw(model, method, *args, **kwargs):
+        if method == "fields_get":
+            if model == "res.partner":
+                return schema
+            # no sale/account module on this instance
+            raise ValueError(f"Model {model} doesn't exist")
+        if method == "read":
+            return [
+                {
+                    "id": 1,
+                    "name": "Test Partner",
+                    "mobile": "+34600000001",
+                    "user_id": [2, "Salesperson"],
+                    "credit": 0.0,
+                    "debit": 0.0,
+                }
+            ]
+        raise AssertionError(f"unexpected call_kw: {model}.{method}")
+
+    mock_client.call_kw.side_effect = _call_kw
+
     summary = get_partner_summary(mock_client, 1, 1)
+
     assert summary["name"] == "Test Partner"
+    assert summary["mobile"] == "+34600000001"
+    assert summary["salesperson"] == "Salesperson"
+    assert summary["financial_balance"] == 0.0
+    assert summary["open_sale_orders"] is None
+    assert summary["open_invoices"] is None
 
 
 def test_create_activity(mock_client):
     mock_client.call_kw.side_effect = [[17], 42]
-    act_id = create_activity(
-        mock_client, 1, "res.partner", 1, "Call", "Need to call them"
-    )
+    act_id = create_activity(mock_client, 1, "res.partner", 1, "Call", "Need to call them")
     assert act_id == 42
     mock_client.call_kw.assert_called_with(
         "mail.activity",

@@ -1,8 +1,8 @@
 ---
 name: edge-tts
 description: Microsoft Edge Text-to-Speech (TTS) synthesis. Converts text to natural audio using Edge's AI voices. Uploads directly to Odoo as voice attachments with discuss.voice.metadata. Use when user wants voice/audio response, asks to "speak this", "read aloud", "voice response".
-homepage: https://github.com/nicolasramos/odooclaw
-metadata: {"openclaw":{"emoji":"🔊","requires":{"env":["ODOO_URL","ODOO_DB","ODOO_USERNAME","ODOO_PASSWORD"]}}}
+
+metadata: {"openclaw": {"emoji": "🔊", "requires": {"env": ["ODOO_URL", "ODOO_DB", "ODOO_USERNAME", "ODOO_PASSWORD"]}}, "homepage": "https://github.com/nicolasramos/odooclaw"}
 ---
 
 # Edge TTS Skill

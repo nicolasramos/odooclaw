@@ -14,7 +14,6 @@ Bidirectional control: the shape tests fail without `_normalize_attachment_ids`
 pass-through tests assert we did NOT rewrite anything that was already valid.
 """
 
-import pytest
 from unittest.mock import MagicMock
 
 from odoo_mcp.tools.records import _normalize_attachment_ids, odoo_create
@@ -25,32 +24,32 @@ class TestNormalizeAttachmentIds:
 
     def test_x2many_command_form_is_flattened(self):
         # the exact shape the model produced against the live client
-        assert _normalize_attachment_ids(
-            {"attachment_ids": [(6, 0, [48341])]}
-        )["attachment_ids"] == [48341]
+        assert _normalize_attachment_ids({"attachment_ids": [(6, 0, [48341])]})[
+            "attachment_ids"
+        ] == [48341]
 
     def test_x2many_command_form_as_list_of_lists(self):
         # JSON-RPC delivers tuples as lists
-        assert _normalize_attachment_ids(
-            {"attachment_ids": [[6, 0, [1, 2]]]}
-        )["attachment_ids"] == [1, 2]
+        assert _normalize_attachment_ids({"attachment_ids": [[6, 0, [1, 2]]]})[
+            "attachment_ids"
+        ] == [1, 2]
 
     def test_bare_list_of_ints_is_untouched(self):
         out = _normalize_attachment_ids({"attachment_ids": [1, 2, 3]})
         assert out["attachment_ids"] == [1, 2, 3]
 
     def test_mixed_bare_and_command(self):
-        assert _normalize_attachment_ids(
-            {"attachment_ids": [48341, [6, 0, [1]]]}
-        )["attachment_ids"] == [48341, 1]
+        assert _normalize_attachment_ids({"attachment_ids": [48341, [6, 0, [1]]]})[
+            "attachment_ids"
+        ] == [48341, 1]
 
     def test_unknown_shape_is_left_alone(self):
         # never guess: an unrecognised value must pass through unchanged
         weird = {"attachment_ids": "not-a-list-shape"}
         assert _normalize_attachment_ids(weird) is weird
-        assert _normalize_attachment_ids(
-            {"attachment_ids": [{"nope": 1}]}
-        )["attachment_ids"] == [{"nope": 1}]
+        assert _normalize_attachment_ids({"attachment_ids": [{"nope": 1}]})["attachment_ids"] == [
+            {"nope": 1}
+        ]
 
     def test_empty_and_absent_are_noops(self):
         assert _normalize_attachment_ids({"body": "hi"}) == {"body": "hi"}
@@ -79,8 +78,7 @@ class TestOdooCreateForwardsTheNormalizedShape:
 
     def test_mail_message_command_form_is_converted_before_rpc(self):
         c = self._client()
-        odoo_create(c, 19, "mail.message",
-                    {"body": "x", "attachment_ids": [(6, 0, [48341])]})
+        odoo_create(c, 19, "mail.message", {"body": "x", "attachment_ids": [(6, 0, [48341])]})
         sent = c.call_kw.call_args
         values = sent.args[2][0] if len(sent.args) > 2 else sent.kwargs["args"][0]
         assert values["attachment_ids"] == [48341], (
@@ -91,8 +89,7 @@ class TestOdooCreateForwardsTheNormalizedShape:
     def test_non_message_models_are_not_rewritten(self):
         # a x2many write on another model legitimately uses the command form
         c = self._client()
-        odoo_create(c, 19, "sale.order",
-                    {"partner_id": 3, "order_line": [(6, 0, [11])]})
+        odoo_create(c, 19, "sale.order", {"partner_id": 3, "order_line": [(6, 0, [11])]})
         sent = c.call_kw.call_args
         values = sent.args[2][0] if len(sent.args) > 2 else sent.kwargs["args"][0]
         assert values["order_line"] == [(6, 0, [11])]

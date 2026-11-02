@@ -1,7 +1,8 @@
-from datetime import date as date_cls
-from typing import Optional
-from odoo_mcp.core.client import OdooClient
 import logging
+from datetime import date as date_cls
+from typing import Any, cast
+
+from odoo_mcp.core.client import OdooClient
 
 _logger = logging.getLogger(__name__)
 
@@ -9,9 +10,9 @@ _logger = logging.getLogger(__name__)
 def _resolve_employee_id(
     client: OdooClient,
     sender_id: int,
-    employee_id: Optional[int] = None,
-    user_id: Optional[int] = None,
-) -> Optional[int]:
+    employee_id: int | None = None,
+    user_id: int | None = None,
+) -> int | None:
     if employee_id:
         return employee_id
 
@@ -24,17 +25,17 @@ def _resolve_employee_id(
         sender_id=sender_id,
     )
     if employees:
-        return employees[0].get("id")
+        return cast(int | None, employees[0].get("id"))
     return None
 
 
 def find_attendance(
     client: OdooClient,
     sender_id: int,
-    user_id: Optional[int] = None,
-    employee_id: Optional[int] = None,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
+    user_id: int | None = None,
+    employee_id: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     limit: int = 50,
 ) -> list:
     if not client.model_exists("hr.attendance", sender_id=sender_id):
@@ -61,16 +62,19 @@ def find_attendance(
     ]
 
     _logger.info("Finding attendances with domain: %s", domain)
-    return client.call_kw(
-        "hr.attendance",
-        "search_read",
-        args=[domain],
-        kwargs={
-            "fields": ["id", "employee_id", "check_in", "check_out", "worked_hours"],
-            "limit": limit,
-            "order": "check_in desc",
-        },
-        sender_id=sender_id,
+    return cast(
+        list[Any],
+        client.call_kw(
+            "hr.attendance",
+            "search_read",
+            args=[domain],
+            kwargs={
+                "fields": ["id", "employee_id", "check_in", "check_out", "worked_hours"],
+                "limit": limit,
+                "order": "check_in desc",
+            },
+            sender_id=sender_id,
+        ),
     )
 
 
@@ -80,9 +84,9 @@ def log_timesheet(
     project_id: int,
     name: str,
     unit_amount: float,
-    date: str,
-    task_id: Optional[int] = None,
-    employee_id: Optional[int] = None,
+    date: str | None = None,
+    task_id: int | None = None,
+    employee_id: int | None = None,
 ) -> int:
     """Log a new timesheet entry."""
     vals = {
@@ -101,7 +105,7 @@ def log_timesheet(
         timesheet_id = client.call_kw(
             "account.analytic.line", "create", sender_id=sender_id, args=[vals]
         )
-        return timesheet_id
+        return cast(int, timesheet_id)
     except Exception as e:
         _logger.error(f"Error logging timesheet: {e}")
         raise
@@ -113,15 +117,13 @@ def log_task_timesheet(
     task_id: int,
     name: str,
     unit_amount: float,
-    date: Optional[str] = None,
-    employee_id: Optional[int] = None,
+    date: str | None = None,
+    employee_id: int | None = None,
 ) -> int:
     if not client.model_exists("project.task", sender_id=sender_id):
         raise ValueError("Model project.task is not available in this Odoo instance")
     if not client.model_exists("account.analytic.line", sender_id=sender_id):
-        raise ValueError(
-            "Model account.analytic.line is not available in this Odoo instance"
-        )
+        raise ValueError("Model account.analytic.line is not available in this Odoo instance")
 
     tasks = client.call_kw(
         "project.task",
@@ -146,16 +148,17 @@ def log_task_timesheet(
         "date": date or date_cls.today().isoformat(),
     }
 
-    resolved_employee_id = _resolve_employee_id(
-        client, sender_id, employee_id=employee_id
-    )
+    resolved_employee_id = _resolve_employee_id(client, sender_id, employee_id=employee_id)
     if resolved_employee_id:
         vals["employee_id"] = resolved_employee_id
 
     _logger.info("Logging task timesheet for task %s", task_id)
-    return client.call_kw(
-        "account.analytic.line",
-        "create",
-        sender_id=sender_id,
-        args=[vals],
+    return cast(
+        int,
+        client.call_kw(
+            "account.analytic.line",
+            "create",
+            sender_id=sender_id,
+            args=[vals],
+        ),
     )

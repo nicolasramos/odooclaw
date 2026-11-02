@@ -10,11 +10,13 @@ import (
 	"regexp"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/nicolasramos/odooclaw/pkg/logger"
 )
 
 var (
-	namePattern        = regexp.MustCompile(`^[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*$`)
+	namePattern        = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 	reFrontmatter      = regexp.MustCompile(`(?s)^---(?:\r\n|\n|\r)(.*?)(?:\r\n|\n|\r)---`)
 	reStripFrontmatter = regexp.MustCompile(`(?s)^---(?:\r\n|\n|\r)(.*?)(?:\r\n|\n|\r)---(?:\r\n|\n|\r)*`)
 )
@@ -24,18 +26,26 @@ const (
 	MaxDescriptionLength = 1024
 )
 
+// SkillMetadata holds the parsed frontmatter for a skill.
 type SkillMetadata struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name          string            `yaml:"name"`
+	Description   string            `yaml:"description"`
+	License       string            `yaml:"license,omitempty"`
+	Compatibility string            `yaml:"compatibility,omitempty"`
+	Metadata      map[string]string `yaml:"metadata,omitempty"`
 }
 
+// SkillInfo is the public-facing representation returned by ListSkills.
 type SkillInfo struct {
 	Name        string `json:"name"`
 	Path        string `json:"path"`
 	Source      string `json:"source"`
 	Description string `json:"description"`
+	dirName     string // internal: directory name for validation
 }
 
+// validate checks the skill info against agentskills.io requirements.
+// It rejects when name differs from the directory or violates the pattern.
 func (info SkillInfo) validate() error {
 	var errs error
 	if info.Name == "" {
@@ -45,14 +55,20 @@ func (info SkillInfo) validate() error {
 			errs = errors.Join(errs, fmt.Errorf("name exceeds %d characters", MaxNameLength))
 		}
 		if !namePattern.MatchString(info.Name) {
-			errs = errors.Join(errs, errors.New("name must be alphanumeric with hyphens"))
+			errs = errors.Join(errs, fmt.Errorf(
+				"name must match agentskills.io pattern [a-z0-9-] (got %q)", info.Name))
+		}
+		// Name must match the parent directory.
+		if info.dirName != "" && info.Name != info.dirName {
+			errs = errors.Join(errs, fmt.Errorf(
+				"name %q does not match directory name %q", info.Name, info.dirName))
 		}
 	}
 
 	if info.Description == "" {
 		errs = errors.Join(errs, errors.New("description is required"))
 	} else if len(info.Description) > MaxDescriptionLength {
-		errs = errors.Join(errs, fmt.Errorf("description exceeds %d character", MaxDescriptionLength))
+		errs = errors.Join(errs, fmt.Errorf("description exceeds %d characters", MaxDescriptionLength))
 	}
 	return errs
 }
@@ -116,18 +132,26 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 			if _, err := os.Stat(skillFile); err != nil {
 				continue
 			}
+			dirName := d.Name()
 			info := SkillInfo{
-				Name:   d.Name(),
-				Path:   skillFile,
-				Source: source,
+				dirName: dirName,
+				Path:    skillFile,
+				Source:  source,
 			}
 			metadata := sl.getSkillMetadata(skillFile)
 			if metadata != nil {
 				info.Description = metadata.Description
-				info.Name = metadata.Name
+				n := metadata.Name
+				if n != "" {
+					info.Name = n
+				} else {
+					info.Name = dirName
+				}
+			} else {
+				info.Name = dirName
 			}
 			if err := info.validate(); err != nil {
-				slog.Warn("invalid skill from "+source, "name", info.Name, "error", err)
+				slog.Warn("invalid skill from "+source, "name", info.Name, "directory", dirName, "error", err)
 				continue
 			}
 			if seen[info.Name] {
@@ -215,6 +239,8 @@ func (sl *SkillsLoader) BuildSkillsSummary() string {
 	return strings.Join(lines, "\n")
 }
 
+// getSkillMetadata parses the frontmatter of a SKILL.md file using a real
+// YAML parser (gopkg.in/yaml.v3). It returns nil when no frontmatter exists.
 func (sl *SkillsLoader) getSkillMetadata(skillPath string) *SkillMetadata {
 	content, err := os.ReadFile(skillPath)
 	if err != nil {
@@ -233,52 +259,93 @@ func (sl *SkillsLoader) getSkillMetadata(skillPath string) *SkillMetadata {
 		}
 	}
 
-	// Try JSON first (for backward compatibility)
-	var jsonMeta struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-	}
-	if err := json.Unmarshal([]byte(frontmatter), &jsonMeta); err == nil {
+	// Parse with real YAML v3 — handles folded scalars (|, >),
+	// nested maps, and all YAML features.
+	var raw map[string]yaml.Node
+	if err := yaml.Unmarshal([]byte(frontmatter), &raw); err != nil {
+		// If YAML parsing fails, fall back to no metadata
+		slog.Warn("could not parse frontmatter as YAML",
+			"skill_path", skillPath, "error", err)
 		return &SkillMetadata{
-			Name:        jsonMeta.Name,
-			Description: jsonMeta.Description,
+			Name: filepath.Base(filepath.Dir(skillPath)),
 		}
 	}
 
-	// Fall back to simple YAML parsing
-	yamlMeta := sl.parseSimpleYAML(frontmatter)
-	return &SkillMetadata{
-		Name:        yamlMeta["name"],
-		Description: yamlMeta["description"],
+	meta := &SkillMetadata{
+		Name:        getString(raw, "name"),
+		Description: getString(raw, "description"),
+		License:     getString(raw, "license"),
 	}
+
+	// Build metadata map. The agentskills.io standard defines metadata as
+	// a string→string map. For backward compatibility we handle three cases:
+	// 1. metadata is already a string→string map.
+	// 2. metadata is a top-level "homepage" string (move into metadata).
+	// 3. metadata is a nested map (e.g. {"openclaw": {...}}) → serialize as JSON string.
+	if node, ok := raw["metadata"]; ok {
+		meta.Metadata = buildMetadataMap(&node)
+	}
+	if hp := getString(raw, "homepage"); hp != "" {
+		if meta.Metadata == nil {
+			meta.Metadata = make(map[string]string)
+		}
+		meta.Metadata["homepage"] = hp
+	}
+
+	return meta
 }
 
-// parseSimpleYAML parses simple key: value YAML format
-// Example: name: github\n description: "..."
-// Normalizes line endings to handle \n (Unix), \r\n (Windows), and \r (classic Mac)
-func (sl *SkillsLoader) parseSimpleYAML(content string) map[string]string {
+// getString returns the string value of a YAML node, or "" if absent/not a string.
+func getString(raw map[string]yaml.Node, key string) string {
+	node, ok := raw[key]
+	if !ok || node.Kind != yaml.DocumentNode && node.Kind != yaml.ScalarNode {
+		return ""
+	}
+	if node.Kind == yaml.ScalarNode {
+		return node.Value
+	}
+	return ""
+}
+
+// buildMetadataMap converts a metadata YAML node into a string→string map.
+// It handles:
+//   - string→string maps (standard)
+//   - nested maps → serialize inner values as JSON strings
+//   - top-level "homepage" key → already handled by getSkillMetadata
+func buildMetadataMap(node *yaml.Node) map[string]string {
 	result := make(map[string]string)
+	if node.Kind != yaml.MappingNode {
+		return result
+	}
+	for i := 0; i < len(node.Content); i += 2 {
+		keyNode := node.Content[i]
+		valNode := node.Content[i+1]
+		key := keyNode.Value
 
-	// Normalize line endings: convert \r\n and \r to \n
-	normalized := strings.ReplaceAll(content, "\r\n", "\n")
-	normalized = strings.ReplaceAll(normalized, "\r", "\n")
-
-	for line := range strings.SplitSeq(normalized, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) == 2 {
-			key := strings.TrimSpace(parts[0])
-			value := strings.TrimSpace(parts[1])
-			// Remove quotes if present
-			value = strings.Trim(value, "\"'")
-			result[key] = value
+		switch valNode.Kind {
+		case yaml.ScalarNode:
+			// string value → keep as-is
+			result[key] = valNode.Value
+		case yaml.MappingNode, yaml.SequenceNode:
+			// nested structure → decode to Go value, then marshal to JSON string
+			var v any
+			if err := valNode.Decode(&v); err == nil {
+				if b, err := json.Marshal(v); err == nil {
+					result[key] = string(b)
+				}
+			}
+		case yaml.AliasNode:
+			// alias node → decode the aliased value, then marshal as JSON string
+			if valNode.Alias != nil {
+				var v any
+				if err := valNode.Alias.Decode(&v); err == nil {
+					if b, err := json.Marshal(v); err == nil {
+						result[key] = string(b)
+					}
+				}
+			}
 		}
 	}
-
 	return result
 }
 

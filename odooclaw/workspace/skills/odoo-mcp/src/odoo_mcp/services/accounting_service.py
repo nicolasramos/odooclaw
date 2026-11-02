@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date, datetime
-from typing import Any, Optional
+from typing import Any, cast
 
 from odoo_mcp.core.client import OdooClient
 from odoo_mcp.services.capability_service import (
@@ -11,7 +11,7 @@ from odoo_mcp.services.capability_service import (
 )
 
 
-def _parse_iso_date(value: Optional[str], fallback: Optional[date] = None) -> date:
+def _parse_iso_date(value: str | None, fallback: date | None = None) -> date:
     if value:
         return datetime.strptime(value, "%Y-%m-%d").date()
     if fallback:
@@ -28,9 +28,7 @@ def _safe_float(value: Any) -> float:
         return 0.0
 
 
-
-
-def _safe_int(value: Any) -> Optional[int]:
+def _safe_int(value: Any) -> int | None:
     if value in (None, False, ""):
         return None
     if isinstance(value, (list, tuple)) and value:
@@ -49,9 +47,7 @@ def _first_text(payload: dict[str, Any], keys: list[str]) -> str:
     return ""
 
 
-def _safe_field_exists(
-    client: OdooClient, model: str, field_name: str, sender_id: int
-) -> bool:
+def _safe_field_exists(client: OdooClient, model: str, field_name: str, sender_id: int) -> bool:
     try:
         return bool(client.field_exists(model, field_name, sender_id=sender_id))
     except Exception:
@@ -92,7 +88,7 @@ def _validate_ocr_total(
 
 def _resolve_vendor_from_ocr(
     client: OdooClient, sender_id: int, payload: dict[str, Any]
-) -> tuple[Optional[int], dict[str, Any]]:
+) -> tuple[int | None, dict[str, Any]]:
     explicit_partner_id = _safe_int(payload.get("partner_id"))
     if explicit_partner_id:
         return explicit_partner_id, {
@@ -119,16 +115,14 @@ def _resolve_vendor_from_ocr(
         attempts.append(("ref", ref, [["ref", "=", ref]]))
     name = _first_text(payload, ["vendor_name", "partner_name", "supplier_name", "commercial_name"])
     if name:
-        domain = [["name", "ilike", name]]
+        domain: list[list[Any]] = [["name", "ilike", name]]
         if _safe_field_exists(client, "res.partner", "supplier_rank", sender_id):
             domain.append(["supplier_rank", ">", 0])
         attempts.append(("name", name, domain))
 
     all_candidates: list[dict[str, Any]] = []
     fields = ["id", "name", "vat", "ref"]
-    has_supplier_rank = _safe_field_exists(
-        client, "res.partner", "supplier_rank", sender_id
-    )
+    has_supplier_rank = _safe_field_exists(client, "res.partner", "supplier_rank", sender_id)
     if has_supplier_rank:
         fields.append("supplier_rank")
     if _safe_field_exists(client, "res.partner", "commercial_partner_id", sender_id):
@@ -173,7 +167,6 @@ def _resolve_vendor_from_ocr(
     }
 
 
-
 def _prepare_vendor_create_vals_from_ocr(
     client: OdooClient, sender_id: int, payload: dict[str, Any]
 ) -> tuple[dict[str, Any], list[str]]:
@@ -197,9 +190,7 @@ def _prepare_vendor_create_vals_from_ocr(
 
     field_candidates = {
         "vat": _first_text(payload, ["vat", "vendor_vat", "supplier_vat", "tax_id"]),
-        "ref": _first_text(
-            payload, ["partner_ref", "supplier_ref", "vendor_ref", "ref_supplier"]
-        ),
+        "ref": _first_text(payload, ["partner_ref", "supplier_ref", "vendor_ref", "ref_supplier"]),
         "email": _first_text(payload, ["email", "vendor_email", "supplier_email"]),
         "phone": _first_text(payload, ["phone", "vendor_phone", "supplier_phone"]),
         "mobile": _first_text(payload, ["mobile", "vendor_mobile", "supplier_mobile"]),
@@ -231,7 +222,7 @@ def _vendor_create_proposal_response(
     vendor_resolution: dict[str, Any],
     suggested_partner: dict[str, Any],
     missing_required: list[str],
-    total_check: Optional[dict[str, Any]] = None,
+    total_check: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "ok": False,
@@ -254,9 +245,8 @@ def _vendor_create_proposal_response(
         **({"total_check": total_check} if total_check else {}),
     }
 
-def _date_domain(
-    field_name: str, date_from: Optional[str], date_to: Optional[str]
-) -> list:
+
+def _date_domain(field_name: str, date_from: str | None, date_to: str | None) -> list:
     domain: list[list[Any]] = []
     if date_from:
         domain.append([field_name, ">=", date_from])
@@ -288,11 +278,11 @@ def _to_line_commands(lines: list[dict]) -> list[tuple[int, int, dict[str, Any]]
 def find_unreconciled_bank_lines(
     client: OdooClient,
     sender_id: int,
-    journal_id: Optional[int] = None,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
-    amount_min: Optional[float] = None,
-    amount_max: Optional[float] = None,
+    journal_id: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    amount_min: float | None = None,
+    amount_max: float | None = None,
     limit: int = 50,
 ) -> dict:
     if not client.model_exists("account.bank.statement.line", sender_id=sender_id):
@@ -360,9 +350,7 @@ def suggest_bank_reconciliation(
         "account.bank.statement.line",
         "read",
         args=[[statement_line_id]],
-        kwargs={
-            "fields": ["id", "date", "amount", "partner_id", "payment_ref", "name"]
-        },
+        kwargs={"fields": ["id", "date", "amount", "partner_id", "payment_ref", "name"]},
         sender_id=sender_id,
     )
     if not statement:
@@ -425,9 +413,7 @@ def suggest_bank_reconciliation(
         if days_diff <= days_window:
             score += max(0.0, 15.0 - (days_diff * 0.5))
 
-        partner_ref = (
-            row.get("partner_id", [None])[0] if row.get("partner_id") else None
-        )
+        partner_ref = row.get("partner_id", [None])[0] if row.get("partner_id") else None
         if st_partner and partner_ref == st_partner:
             score += 15.0
 
@@ -481,7 +467,7 @@ def reconcile_bank_line(
             ["account.bank.statement.line"],
         )
 
-    attempts = [
+    attempts: list[tuple[str, list[Any], dict[str, Any]]] = [
         (
             "process_reconciliation",
             [
@@ -493,7 +479,7 @@ def reconcile_bank_line(
         ("action_reconcile", [[statement_line_id], move_line_ids], {}),
         ("reconcile", [[statement_line_id], move_line_ids], {}),
     ]
-    last_error: Optional[str] = None
+    last_error: str | None = None
     for method, args, kwargs in attempts:
         try:
             client.call_kw(
@@ -525,10 +511,10 @@ def register_invoice_payment(
     client: OdooClient,
     sender_id: int,
     invoice_id: int,
-    amount: Optional[float] = None,
-    payment_date: Optional[str] = None,
-    journal_id: Optional[int] = None,
-    memo: Optional[str] = None,
+    amount: float | None = None,
+    payment_date: str | None = None,
+    journal_id: int | None = None,
+    memo: str | None = None,
 ) -> dict:
     if not client.model_exists("account.move", sender_id=sender_id):
         return build_unsupported_response(
@@ -624,8 +610,8 @@ def get_ar_ap_aging(
     client: OdooClient,
     sender_id: int,
     report_type: str = "both",
-    as_of: Optional[str] = None,
-    company_id: Optional[int] = None,
+    as_of: str | None = None,
+    company_id: int | None = None,
     limit: int = 500,
 ) -> dict:
     if not client.model_exists("account.move", sender_id=sender_id):
@@ -719,9 +705,9 @@ def get_ar_ap_aging(
 def run_period_close_checks(
     client: OdooClient,
     sender_id: int,
-    period_start: str,
-    period_end: str,
-    company_id: Optional[int] = None,
+    period_start: str | None = None,
+    period_end: str | None = None,
+    company_id: int | None = None,
 ) -> dict:
     if not client.model_exists("account.move", sender_id=sender_id):
         return build_unsupported_response(
@@ -801,10 +787,10 @@ def create_journal_entry(
     client: OdooClient,
     sender_id: int,
     journal_id: int,
-    entry_date: str,
+    entry_date: str | None,
     lines: list[dict[str, Any]],
-    ref: Optional[str] = None,
-    company_id: Optional[int] = None,
+    ref: str | None = None,
+    company_id: int | None = None,
 ) -> dict:
     if not client.model_exists("account.move", sender_id=sender_id):
         return build_unsupported_response(
@@ -889,10 +875,10 @@ def post_journal_entry(
 def get_tax_summary(
     client: OdooClient,
     sender_id: int,
-    date_from: str,
-    date_to: str,
-    company_id: Optional[int] = None,
-    tax_group_id: Optional[int] = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    company_id: int | None = None,
+    tax_group_id: int | None = None,
 ) -> dict:
     if not client.model_exists("account.move.line", sender_id=sender_id):
         return build_unsupported_response(
@@ -951,9 +937,7 @@ def get_tax_summary(
             for t in tax_rows
             if t.get("tax_group_id") and int(t["tax_group_id"][0]) == tax_group_id
         }
-        tax_totals = {
-            tax_id: info for tax_id, info in tax_totals.items() if tax_id in allowed
-        }
+        tax_totals = {tax_id: info for tax_id, info in tax_totals.items() if tax_id in allowed}
 
     taxes = [
         {
@@ -980,10 +964,10 @@ def validate_vendor_bill_duplicate(
     client: OdooClient,
     sender_id: int,
     partner_id: int,
-    vendor_bill_number: Optional[str],
-    invoice_date: Optional[str],
-    amount_total: Optional[float],
-    currency_id: Optional[int] = None,
+    vendor_bill_number: str | None,
+    invoice_date: str | None,
+    amount_total: float | None,
+    currency_id: int | None = None,
     tolerance: float = 0.01,
 ) -> dict:
     if not client.model_exists("account.move", sender_id=sender_id):
@@ -1063,10 +1047,10 @@ def suggest_expense_account_and_taxes(
     client: OdooClient,
     sender_id: int,
     description: str,
-    amount: float,
-    partner_id: Optional[int] = None,
-    product_id: Optional[int] = None,
-    company_id: Optional[int] = None,
+    amount: float | None = None,
+    partner_id: int | None = None,
+    product_id: int | None = None,
+    company_id: int | None = None,
 ) -> dict:
     if not client.model_exists("account.move.line", sender_id=sender_id):
         return build_unsupported_response(
@@ -1117,10 +1101,7 @@ def suggest_expense_account_and_taxes(
         else None
     )
     suggested_tax_ids = [
-        tax
-        for tax, _ in sorted(
-            tax_counter.items(), key=lambda item: item[1], reverse=True
-        )[:3]
+        tax for tax, _ in sorted(tax_counter.items(), key=lambda item: item[1], reverse=True)[:3]
     ]
 
     if (
@@ -1150,11 +1131,7 @@ def suggest_expense_account_and_taxes(
         amount=amount,
         suggested_account_id=suggested_account_id,
         suggested_tax_ids=suggested_tax_ids,
-        confidence="high"
-        if account_counter
-        else "medium"
-        if suggested_account_id
-        else "low",
+        confidence="high" if account_counter else "medium" if suggested_account_id else "low",
     )
 
 
@@ -1166,9 +1143,7 @@ def _normalize_ocr_lines(payload: dict[str, Any]) -> list[dict[str, Any]]:
             {
                 "name": raw.get("name") or raw.get("description") or "Line",
                 "quantity": _safe_float(raw.get("quantity") or 1.0),
-                "price_unit": _safe_float(
-                    raw.get("price_unit") or raw.get("unit_price") or 0.0
-                ),
+                "price_unit": _safe_float(raw.get("price_unit") or raw.get("unit_price") or 0.0),
                 "product_id": raw.get("product_id"),
                 "account_id": raw.get("account_id"),
                 "tax_ids": raw.get("tax_ids") or [],
@@ -1186,11 +1161,11 @@ def create_vendor_bill_from_ocr_validated(
     client: OdooClient,
     sender_id: int,
     ocr_payload: dict[str, Any],
-    attachment_id: Optional[int] = None,
+    attachment_id: int | None = None,
     confirm: bool = False,
     dry_run: bool = False,
-    company_id: Optional[int] = None,
-    allowed_company_ids: Optional[list[int]] = None,
+    company_id: int | None = None,
+    allowed_company_ids: list[int] | None = None,
     total_tolerance: float = 0.01,
     vendor_create_policy: str = "propose_create",
     confirm_partner_create: bool = False,
@@ -1217,9 +1192,7 @@ def create_vendor_bill_from_ocr_validated(
         }
 
     partner_created = False
-    partner_id, vendor_resolution = _resolve_vendor_from_ocr(
-        client, sender_id, ocr_payload
-    )
+    partner_id, vendor_resolution = _resolve_vendor_from_ocr(client, sender_id, ocr_payload)
     if not partner_id:
         if vendor_resolution.get("status") != "not_found" or vendor_create_policy == "search_only":
             return {
@@ -1268,8 +1241,7 @@ def create_vendor_bill_from_ocr_validated(
         client=client,
         sender_id=sender_id,
         partner_id=int(partner_id),
-        vendor_bill_number=ocr_payload.get("ref")
-        or ocr_payload.get("vendor_bill_number"),
+        vendor_bill_number=ocr_payload.get("ref") or ocr_payload.get("vendor_bill_number"),
         invoice_date=ocr_payload.get("invoice_date"),
         amount_total=ocr_payload.get("amount_total"),
         currency_id=ocr_payload.get("currency_id"),
@@ -1295,8 +1267,7 @@ def create_vendor_bill_from_ocr_validated(
                 client=client,
                 sender_id=sender_id,
                 description=str(line.get("name") or "Line"),
-                amount=_safe_float(line.get("price_unit"))
-                * _safe_float(line.get("quantity")),
+                amount=_safe_float(line.get("price_unit")) * _safe_float(line.get("quantity")),
                 partner_id=int(partner_id),
                 product_id=line.get("product_id"),
                 company_id=company_id,
@@ -1330,8 +1301,7 @@ def create_vendor_bill_from_ocr_validated(
         or ocr_payload.get("invoice_payment_term_id"),
         "currency_id": ocr_payload.get("currency_id"),
         "fiscal_position_id": ocr_payload.get("fiscal_position_id"),
-        "invoice_date_due": ocr_payload.get("invoice_date_due")
-        or ocr_payload.get("date_due"),
+        "invoice_date_due": ocr_payload.get("invoice_date_due") or ocr_payload.get("date_due"),
         "company_id": company_id or ocr_payload.get("company_id"),
     }
     for field_name, value in optional_move_fields.items():
@@ -1401,7 +1371,7 @@ def create_vendor_bill_from_ocr_validated(
 def get_financial_snapshot(
     client: OdooClient,
     sender_id: int,
-    company_id: Optional[int] = None,
+    company_id: int | None = None,
     limit: int = 100,
 ) -> dict:
     """Financial situation snapshot: AR/AP aging + pending invoices + month sales/purchases.
@@ -1416,10 +1386,11 @@ def get_financial_snapshot(
             ["account.move"],
         )
 
-    aging = get_ar_ap_aging(client, sender_id, report_type="both", company_id=company_id, limit=limit)
+    aging = get_ar_ap_aging(
+        client, sender_id, report_type="both", company_id=company_id, limit=limit
+    )
 
     month_start = date.today().replace(day=1)
-    iso = month_start.isoformat()
 
     def _moves(move_types: list[str], state: str = "posted") -> list[dict]:
         domain: list[list[Any]] = [
@@ -1432,15 +1403,29 @@ def get_financial_snapshot(
             "account.move",
             "search_read",
             args=[domain],
-            kwargs={"fields": ["id", "name", "partner_id", "amount_total", "invoice_date", "payment_state"], "limit": limit},
+            kwargs={
+                "fields": [
+                    "id",
+                    "name",
+                    "partner_id",
+                    "amount_total",
+                    "invoice_date",
+                    "payment_state",
+                ],
+                "limit": limit,
+            },
             sender_id=sender_id,
         )
-        return rows
+        return cast(list[dict[Any, Any]], rows)
 
     sales = _moves(["out_invoice"])
     purchases = _moves(["in_invoice"])
-    month_sales = [r for r in sales if (r.get("invoice_date") or "")[:7] == month_start.strftime("%Y-%m")]
-    month_purchases = [r for r in purchases if (r.get("invoice_date") or "")[:7] == month_start.strftime("%Y-%m")]
+    month_sales = [
+        r for r in sales if (r.get("invoice_date") or "")[:7] == month_start.strftime("%Y-%m")
+    ]
+    month_purchases = [
+        r for r in purchases if (r.get("invoice_date") or "")[:7] == month_start.strftime("%Y-%m")
+    ]
 
     def _sum(rows: list[dict]) -> float:
         return round(sum(_safe_float(r.get("amount_total")) for r in rows), 2)

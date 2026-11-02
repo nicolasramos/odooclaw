@@ -1,20 +1,21 @@
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from odoo_mcp.core.client import OdooClient
 from odoo_mcp.services.capability_service import get_capabilities
+from odoo_mcp.services.chatter_service import (
+    close_activity_with_reason,
+    create_activity_summary,
+)
+from odoo_mcp.services.contract_service import (
+    close_contract_line,
+    create_contract_line,
+    replace_contract_line,
+)
 from odoo_mcp.services.helpdesk_service import (
     create_helpdesk_ticket,
     draft_ticket_email,
-)
-from odoo_mcp.services.chatter_service import (
-    create_activity_summary,
-    close_activity_with_reason,
-)
-from odoo_mcp.services.contract_service import (
-    create_contract_line,
-    replace_contract_line,
-    close_contract_line,
 )
 
 
@@ -49,9 +50,7 @@ def test_create_helpdesk_ticket_returns_unsupported_when_missing_model(mock_clie
 
 
 def test_draft_ticket_email_returns_structured_draft(mock_client):
-    mock_client.try_get_model_fields.side_effect = lambda model, sender_id=None: {
-        "name": {}
-    }
+    mock_client.try_get_model_fields.side_effect = lambda model, sender_id=None: {"name": {}}
     mock_client.call_kw.side_effect = [
         [{"id": 12, "name": "Ticket 12", "partner_id": [44, "ACME"]}],
         [{"id": 44, "email": "ops@acme.test"}],

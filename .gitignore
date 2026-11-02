@@ -36,3 +36,6 @@ docs/slices/
 
 # Node dependencies (build-time only; the compiled bundle is what ships)
 node_modules/
+
+# Generated embedded skills (source of truth is odooclaw/workspace/)
+cmd/odooclaw/internal/onboard/workspace/
