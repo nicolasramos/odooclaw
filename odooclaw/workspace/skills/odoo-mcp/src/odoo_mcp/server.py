@@ -219,9 +219,7 @@ def get_odoo_models() -> str:
 @mcp.resource("odoo://model/{model_name}/schema")
 def get_model_schema(model_name: str) -> str:
     client = get_odoo_client()
-    return introspection.odoo_model_schema(
-        client, client.odoo_session.get_uid(), model_name
-    )
+    return introspection.odoo_model_schema(client, client.odoo_session.get_uid(), model_name)
 
 
 @mcp.resource("odoo://record/{model}/{id}/summary")
@@ -229,9 +227,7 @@ def get_resource_record_summary(model: str, id: str) -> str:
     client = get_odoo_client()
     import json
 
-    res = generic.odoo_get_record_summary(
-        client, client.odoo_session.get_uid(), model, int(id)
-    )
+    res = generic.odoo_get_record_summary(client, client.odoo_session.get_uid(), model, int(id))
     return json.dumps(res, indent=2)
 
 
@@ -906,9 +902,7 @@ def odoo_get_invoice_summary(
     """Get complete details of a specific invoice (account.move), including lines."""
     with measure_time("odoo_get_invoice_summary"):
         client = get_odoo_client()
-        return get_invoice_summary(
-            client, sender_id or client.odoo_session.get_uid(), move_id
-        )
+        return get_invoice_summary(client, sender_id or client.odoo_session.get_uid(), move_id)
 
 
 @mcp.tool()
@@ -1505,9 +1499,7 @@ def odoo_find_sale_deliveries(
 def odoo_get_delivery_summary(picking_id: int, sender_id: int | None = None) -> dict:
     with measure_time("odoo_get_delivery_summary"):
         client = get_odoo_client()
-        return get_delivery_summary(
-            client, sender_id or client.odoo_session.get_uid(), picking_id
-        )
+        return get_delivery_summary(client, sender_id or client.odoo_session.get_uid(), picking_id)
 
 
 @mcp.tool()
@@ -1527,9 +1519,7 @@ def odoo_match_delivery_to_sale_order(
 
 
 @mcp.tool()
-def odoo_prepare_delivery_validation(
-    picking_id: int, sender_id: int | None = None
-) -> dict:
+def odoo_prepare_delivery_validation(picking_id: int, sender_id: int | None = None) -> dict:
     with measure_time("odoo_prepare_delivery_validation"):
         client = get_odoo_client()
         return prepare_delivery_validation(
@@ -1599,9 +1589,7 @@ def odoo_find_lot_serial(
 def odoo_get_lot_traceability(lot_id: int, sender_id: int | None = None) -> dict:
     with measure_time("odoo_get_lot_traceability"):
         client = get_odoo_client()
-        return get_lot_traceability(
-            client, sender_id or client.odoo_session.get_uid(), lot_id
-        )
+        return get_lot_traceability(client, sender_id or client.odoo_session.get_uid(), lot_id)
 
 
 @mcp.tool()
@@ -1617,15 +1605,11 @@ def odoo_check_lot_requirements(picking_id: int, sender_id: int | None = None) -
 def odoo_get_transfer_summary(picking_id: int, sender_id: int | None = None) -> dict:
     with measure_time("odoo_get_transfer_summary"):
         client = get_odoo_client()
-        return get_transfer_summary(
-            client, sender_id or client.odoo_session.get_uid(), picking_id
-        )
+        return get_transfer_summary(client, sender_id or client.odoo_session.get_uid(), picking_id)
 
 
 @mcp.tool()
-def odoo_prepare_transfer_validation(
-    picking_id: int, sender_id: int | None = None
-) -> dict:
+def odoo_prepare_transfer_validation(picking_id: int, sender_id: int | None = None) -> dict:
     with measure_time("odoo_prepare_transfer_validation"):
         client = get_odoo_client()
         return prepare_transfer_validation(

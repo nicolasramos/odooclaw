@@ -20,9 +20,7 @@ def odoo_find_sale_order(
     return find_sale_order(client, user_id, name, partner_id, state, limit)
 
 
-def odoo_get_sale_order_summary(
-    client: OdooClient, user_id: int, order_id: int
-) -> dict:
+def odoo_get_sale_order_summary(client: OdooClient, user_id: int, order_id: int) -> dict:
     guard_model_access("sale.order")
     audit_action("GET_SO_SUMMARY", user_id, "sale.order", [order_id], {})
     return get_sale_order_summary(client, user_id, order_id)

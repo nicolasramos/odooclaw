@@ -90,9 +90,7 @@ def get_sale_order_summary(client: OdooClient, user_id: int, order_id: int) -> d
             lines_info.append(
                 {
                     "product": (
-                        line.get("product_id")[1]
-                        if line.get("product_id")
-                        else line.get("name")
+                        line.get("product_id")[1] if line.get("product_id") else line.get("name")
                     ),
                     "qty": line.get("product_uom_qty"),
                     "price": line.get("price_unit"),
@@ -114,9 +112,7 @@ def get_sale_order_summary(client: OdooClient, user_id: int, order_id: int) -> d
     }
 
 
-def create_sale_order(
-    client: OdooClient, sender_id: int, partner_id: int, lines: list
-) -> int:
+def create_sale_order(client: OdooClient, sender_id: int, partner_id: int, lines: list) -> int:
     """Create a new sale.order with the provided lines."""
     order_vals: dict[str, Any] = {"partner_id": partner_id, "order_line": []}
 
@@ -131,18 +127,14 @@ def create_sale_order(
         # Odoo format for creation in one2many: (0, 0, values_dict)
         order_vals["order_line"].append((0, 0, line_vals))
 
-    order_id = client.call_kw(
-        "sale.order", "create", args=[order_vals], sender_id=sender_id
-    )
+    order_id = client.call_kw("sale.order", "create", args=[order_vals], sender_id=sender_id)
     return cast(int, order_id)
 
 
 def confirm_sale_order(client: OdooClient, sender_id: int, order_id: int) -> bool:
     """Confirm a sale.order (moves it from draft/sent to sale)."""
     # Equivalent to clicking "Confirm" button
-    client.call_kw(
-        "sale.order", "action_confirm", args=[[order_id]], sender_id=sender_id
-    )
+    client.call_kw("sale.order", "action_confirm", args=[[order_id]], sender_id=sender_id)
     return True
 
 
@@ -163,9 +155,7 @@ def create_invoice_from_sale_order(
         "sale.order",
         "read",
         args=[[order_id]],
-        kwargs={
-            "fields": ["name", "partner_id", "state", "invoice_status", "order_line"]
-        },
+        kwargs={"fields": ["name", "partner_id", "state", "invoice_status", "order_line"]},
         sender_id=user_id,
     )
     if not orders:
@@ -209,9 +199,7 @@ def create_invoice_from_sale_order(
                 0,
                 0,
                 {
-                    "product_id": (
-                        line["product_id"][0] if line.get("product_id") else False
-                    ),
+                    "product_id": (line["product_id"][0] if line.get("product_id") else False),
                     "name": line.get("name") or "",
                     "quantity": line.get("product_uom_qty") or 1,
                     "price_unit": line.get("price_unit") or 0.0,
@@ -230,9 +218,7 @@ def create_invoice_from_sale_order(
     if invoice_date:
         values["invoice_date"] = invoice_date
 
-    move_id = client.call_kw(
-        "account.move", "create", args=[values], kwargs={}, sender_id=user_id
-    )
+    move_id = client.call_kw("account.move", "create", args=[values], kwargs={}, sender_id=user_id)
     created = client.call_kw(
         "account.move",
         "read",
