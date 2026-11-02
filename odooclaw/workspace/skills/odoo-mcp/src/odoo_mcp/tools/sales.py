@@ -1,4 +1,3 @@
-from typing import Optional
 
 from odoo_mcp.core.client import OdooClient
 from odoo_mcp.security.audit import audit_action
@@ -32,7 +31,7 @@ def odoo_create_invoice_from_sale_order(
     client: OdooClient,
     user_id: int,
     order_id: int,
-    invoice_date: Optional[str] = None,
+    invoice_date: str | None = None,
 ) -> dict:
     """Invoices a confirmed sale order, copying its lines into an out_invoice."""
     guard_model_access("sale.order")

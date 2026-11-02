@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from odoo_mcp.core.client import OdooClient
 from odoo_mcp.services.sales_service import create_invoice_from_sale_order

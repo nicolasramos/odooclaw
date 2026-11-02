@@ -1,4 +1,4 @@
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 from odoo_mcp.core.client import OdooClient
 from odoo_mcp.observability.logging import get_logger
@@ -129,7 +129,7 @@ def create_invoice_from_sale_order(
     client: OdooClient,
     user_id: int,
     order_id: int,
-    invoice_date: Optional[str] = None,
+    invoice_date: str | None = None,
 ) -> dict:
     """Creates the customer invoice for a confirmed sale order.
 
@@ -151,15 +151,14 @@ def create_invoice_from_sale_order(
     order = orders[0]
     if order.get("state") not in ("sale", "done"):
         return {
-            "error": "Sale order %s is in state '%s'; confirm it before invoicing"
-            % (order.get("name"), order.get("state"))
+            "error": "Sale order {} is in state '{}'; confirm it before invoicing".format(order.get("name"), order.get("state"))
         }
     if order.get("invoice_status") == "invoiced":
-        return {"error": "Sale order %s is already invoiced" % order.get("name")}
+        return {"error": "Sale order {} is already invoiced".format(order.get("name"))}
 
     line_ids = order.get("order_line") or []
     if not line_ids:
-        return {"error": "Sale order %s has no lines" % order.get("name")}
+        return {"error": "Sale order {} has no lines".format(order.get("name"))}
 
     lines = client.call_kw(
         "sale.order.line",
