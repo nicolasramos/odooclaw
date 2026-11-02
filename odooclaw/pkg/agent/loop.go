@@ -1219,16 +1219,10 @@ func (al *AgentLoop) runLLMIteration(
 		// cap is configurable per model (max_cloud_tools_in_prompt).
 		// Local small models are unaffected — their cap stays fixed at 5.
 		isLocal := isLocalSmallModel(agent.Model)
-		maxTools := maxCloudToolsInPrompt
-		if agent.MaxCloudToolsInPrompt != nil {
-			maxTools = *agent.MaxCloudToolsInPrompt
-		}
-		if isLocal {
-			maxTools = maxLocalToolsInPrompt
-		}
+		maxTools := resolveMaxTools(agent, isLocal)
 		if maxTools > 0 && len(providerToolDefs) > maxTools {
 			query := lastUserMessageText(messages)
-			providerToolDefs = retrieveRelevantTools(providerToolDefs, query, maxTools)
+			providerToolDefs = retrieveToolDefs(agent, providerToolDefs, query, maxTools)
 		}
 
 		// Log LLM request details
@@ -1299,10 +1293,7 @@ func (al *AgentLoop) runLLMIteration(
 			// config override (prompt_tools_in_text) wins over the heuristic:
 			// native-tool-calling fine-tunes (v26-native) need the native
 			// "tools" array to reach 100% exact-match tool calling.
-			useTextInjection := isLocalSmallModel(agent.Model)
-			if agent.PromptToolsInText != nil {
-				useTextInjection = *agent.PromptToolsInText
-			}
+			useTextInjection := resolveTextInjection(agent, isLocalSmallModel(agent.Model))
 			// NRA-413: Force temperature=0.0 for local small models to ensure
 			// deterministic tool calling. Fine-tuned 0.5B/1.5B models degrade
 			// quickly with non-zero temperature — even 0.1 introduces enough
@@ -2445,6 +2436,45 @@ func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 // 5 tools listed per example; more tools cause hallucination.
 const maxLocalToolsInPrompt = 5
 
+// resolveTextInjection decides how tool definitions reach the model.
+//
+// Precedence: tool_mode ("native"/"text") wins, then the prompt_tools_in_text
+// override, then the name-based heuristic. Keeping the order explicit stops a
+// model named like a local fine-tune from silently losing native tool calling.
+func resolveTextInjection(agent *AgentInstance, heuristic bool) bool {
+	if agent != nil {
+		switch strings.ToLower(strings.TrimSpace(agent.ToolMode)) {
+		case "native":
+			return false
+		case "text":
+			return true
+		}
+		if agent.PromptToolsInText != nil {
+			return *agent.PromptToolsInText
+		}
+	}
+	return heuristic
+}
+
+// resolveMaxTools decides how many tool definitions reach the model.
+// Precedence: an explicit per-model max_tools always wins, including a value
+// of 0 meaning "no cap" (the whole catalogue). Otherwise a per-model cloud cap,
+// then the local-small-model heuristic, then the built-in default. The cap must
+// never be the reason a registered tool is unreachable.
+func resolveMaxTools(agent *AgentInstance, isLocal bool) int {
+	if agent != nil && agent.MaxTools != nil {
+		return *agent.MaxTools
+	}
+	if agent != nil && agent.MaxCloudToolsInPrompt != nil {
+		return *agent.MaxCloudToolsInPrompt
+	}
+	// No cap by default: a tool the model cannot see is worse than a long
+	// prompt, and the retrieval already ranks the catalogue before it is sent.
+	// Cloud providers with a hard tool limit are handled where the request is
+	// built, not here.
+	return 0
+}
+
 // maxCloudToolsInPrompt caps how many tools are sent to cloud models
 // (OpenAI, Anthropic, etc.). Cloud providers have a hard limit of 128 tools;
 // OdooClaw exposes 133+ tools, so we cap at 64 to stay well under the limit
@@ -2472,6 +2502,55 @@ func lastUserMessageText(messages []providers.Message) string {
 		}
 	}
 	return ""
+}
+
+// retrieveToolDefs narrows a tool catalogue to the k most relevant definitions.
+//
+// It prefers the FTS5/BM25 engine attached to the registry (which indexes tool
+// names, descriptions and parameter names) because it beats keyword matching on
+// recall. The keyword scorer stays as the fallback for registries without an
+// index, and keeps the previous behaviour intact.
+func retrieveToolDefs(agent *AgentInstance, defs []providers.ToolDefinition, query string, k int) []providers.ToolDefinition {
+	if agent != nil && agent.Tools != nil {
+		if names := agent.Tools.RetrieveRelevant(query, "", k); len(names) > 0 {
+			if picked := filterToolDefsByName(defs, names, k); len(picked) > 0 {
+				return picked
+			}
+		}
+	}
+	return retrieveRelevantTools(defs, query, k)
+}
+
+// filterToolDefsByName returns the definitions whose name appears in names, in
+// the order given by names. When the retrieved list is shorter than k, the
+// remaining slots are filled with the next definitions in catalogue order so a
+// retrieval miss never shrinks the prompt.
+func filterToolDefsByName(defs []providers.ToolDefinition, names []string, k int) []providers.ToolDefinition {
+	byName := make(map[string]providers.ToolDefinition, len(defs))
+	for _, d := range defs {
+		byName[d.Function.Name] = d
+	}
+	out := make([]providers.ToolDefinition, 0, k)
+	seen := make(map[string]bool, k)
+	for _, n := range names {
+		if len(out) >= k {
+			break
+		}
+		if d, ok := byName[n]; ok && !seen[n] {
+			out = append(out, d)
+			seen[n] = true
+		}
+	}
+	for _, d := range defs {
+		if len(out) >= k {
+			break
+		}
+		if !seen[d.Function.Name] {
+			out = append(out, d)
+			seen[d.Function.Name] = true
+		}
+	}
+	return out
 }
 
 // retrieveRelevantTools selects the top-K tool definitions most relevant to the
@@ -2525,6 +2604,9 @@ func retrieveRelevantTools(defs []providers.ToolDefinition, query string, k int)
 	// not the generic odoo_create.
 	queryToolPairs := [][2]string{
 		{"saldo", "aging"}, {"saldo", "balance"}, {"saldo", "ar_ap"},
+		{"horas", "timesheet"}, {"reunion", "timesheet"}, {"imputar", "timesheet"},
+		{"ficha", "check_in"}, {"fichar", "check_in"}, {"entrada", "check_in"},
+		{"debemos", "pending"}, {"deuda", "pending"}, {"deudas", "pending"},
 		{"albaran", "receipt"}, {"recepcion", "receipt"}, {"receipt", "receipt"},
 		{"entrega", "delivery"}, {"entregas", "delivery"},
 		{"gasto", "expense"}, {"gastos", "expense"},

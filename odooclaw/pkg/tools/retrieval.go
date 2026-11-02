@@ -59,6 +59,17 @@ func NewSynonymRewriter() *SynonymRewriter {
 			"partner": {"customer", "client", "proveedor", "cliente"},
 			"product": {"item", "articulo", "producto"},
 			"stock":   {"inventory", "inventario", "almacen"},
+			// Measured misses: these queries fell through to generic tools.
+			// Keys are the words the user actually types (Spanish, unaccented).
+			"horas":       {"timesheet", "log"},
+			"reunion":     {"timesheet", "activity", "event"},
+			"ficha":       {"check_in", "attendance", "attendance"},
+			"fichar":      {"check_in", "attendance"},
+			"debemos":     {"pending", "invoice", "partner"},
+			"deuda":       {"pending", "invoice", "aging"},
+			"albaran":     {"receipt", "picking"},
+			"presupuesto": {"sale_order", "quote"},
+			"antiguedad":  {"aging", "ar_ap"},
 		},
 	}
 }

@@ -309,6 +309,15 @@ func parseResponse(body []byte) (*LLMResponse, error) {
 		}
 	}
 	if len(toolCalls) == 0 {
+		if extracted := extractJSONBlockToolCalls(content); len(extracted) > 0 {
+			toolCalls = extracted
+			content = stripJSONBlockToolCalls(content)
+			if finishReason == "" || finishReason == "stop" {
+				finishReason = "tool_calls"
+			}
+		}
+	}
+	if len(toolCalls) == 0 {
 		if extracted := extractGemmaContentToolCalls(content); len(extracted) > 0 {
 			toolCalls = extracted
 			content = stripGemmaContentToolCalls(content)

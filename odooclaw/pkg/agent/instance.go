@@ -45,6 +45,15 @@ type AgentInstance struct {
 	// many tools are sent to non-local (cloud) models. Local models keep a
 	// fixed cap of 5 regardless of this value.
 	MaxCloudToolsInPrompt *int
+
+	// MaxTools, when non-nil, overrides every other cap (including the fixed
+	// cap of 5 for local models). 0 means no cap at all: the whole catalogue
+	// reaches the model.
+	MaxTools *int
+
+	// ToolMode, when set, overrides the name-based heuristic for how tool
+	// definitions are delivered: "native" (OpenAI tools array) or "text".
+	ToolMode string
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -95,6 +104,7 @@ func NewAgentInstance(
 	// Local small models need a minimal system prompt. Wire the resolved model
 	// so BuildSystemPrompt can switch to the compact prompt for them.
 	contextBuilder.SetModel(model)
+	contextBuilder.SetToolMode(modelToolMode(cfg, model))
 	contextBuilder.InvalidateCache()
 
 	// NRA-3845: the knowledge base must live in the process that serves the
@@ -207,6 +217,20 @@ func NewAgentInstance(
 		}
 	}
 
+	// Per-model max_tools override: takes precedence over every other cap,
+	// including the fixed cap of 5 for local models. 0 = send everything.
+	var maxTools *int
+	var toolMode string
+	if cfg != nil {
+		if mc, err := cfg.GetModelConfig(model); err == nil && mc != nil {
+			if mc.MaxTools != nil {
+				v := *mc.MaxTools
+				maxTools = &v
+			}
+			toolMode = mc.ToolMode
+		}
+	}
+
 	return &AgentInstance{
 		ID:             agentID,
 		Name:           agentName,
@@ -226,7 +250,20 @@ func NewAgentInstance(
 		Candidates:     candidates,
 		PromptToolsInText: promptToolsInText,
 		MaxCloudToolsInPrompt: maxCloudToolsInPrompt,
+		MaxTools: maxTools,
+		ToolMode: toolMode,
 	}
+}
+
+// modelToolMode returns the tool_mode declared for a model, or "" when unset.
+func modelToolMode(cfg *config.Config, model string) string {
+	if cfg == nil {
+		return ""
+	}
+	if mc, err := cfg.GetModelConfig(model); err == nil && mc != nil {
+		return mc.ToolMode
+	}
+	return ""
 }
 
 // resolveAgentWorkspace determines the workspace directory for an agent.

@@ -60,6 +60,37 @@ type Config struct {
 	Heartbeat  HeartbeatConfig  `json:"heartbeat"`
 	Devices    DevicesConfig    `json:"devices"`
 	Multimodel MultimodelConfig `json:"multimodel,omitempty"`
+	Voice      VoiceConfig      `json:"voice,omitempty"`
+}
+
+// VoiceConfig configures speech input and output. Both sides are
+// OpenAI-compatible endpoints, so any server implementing
+// /v1/audio/transcriptions or /v1/audio/speech works without code changes:
+// Phonon, faster-whisper's server, Qwen3-TTS, Piper or a cloud API.
+type VoiceConfig struct {
+	STT STTConfig `json:"stt,omitempty"`
+	TTS TTSConfig `json:"tts,omitempty"`
+}
+
+// STTConfig describes the speech-to-text endpoint. Provider is informational;
+// an empty BaseURL disables transcription.
+type STTConfig struct {
+	Provider string `json:"provider,omitempty"` // phonon | whisper | openai | ""
+	BaseURL  string `json:"base_url,omitempty"` // e.g. http://127.0.0.1:8010/v1
+	Model    string `json:"model,omitempty"`    // e.g. phonon-2.5
+	APIKey   string `json:"api_key,omitempty"`
+	Language string `json:"language,omitempty"` // ISO code hint, e.g. es
+}
+
+// TTSConfig describes the speech output endpoint. An empty BaseURL disables
+// speech synthesis.
+type TTSConfig struct {
+	Provider string `json:"provider,omitempty"` // local | edge | openai | ""
+	BaseURL  string `json:"base_url,omitempty"` // e.g. http://127.0.0.1:8011/v1
+	Model    string `json:"model,omitempty"`
+	Voice    string `json:"voice,omitempty"` // e.g. sohee, es_es_f1
+	APIKey   string `json:"api_key,omitempty"`
+	Format   string `json:"format,omitempty"` // wav | mp3 | opus
 }
 
 // MarshalJSON implements custom JSON marshaling for Config
@@ -595,6 +626,22 @@ type ModelConfig struct {
 	// of 128 tools; OdooClaw exposes 133+. When nil, the built-in default is
 	// used. Local small models are unaffected — their cap stays fixed at 5.
 	MaxCloudToolsInPrompt *int `json:"max_cloud_tools_in_prompt,omitempty"`
+
+	// MaxTools overrides every other cap, including the local-small-model
+	// heuristic. 0 means "no cap": every registered tool is sent to the model.
+	// Use it for local models that do native tool calling and can handle the
+	// full catalogue (the cap must never be the reason a tool is unreachable).
+	MaxTools *int `json:"max_tools,omitempty"`
+
+	// ToolMode pins how tool definitions are delivered: "native" sends the
+	// OpenAI tools array, "text" injects them as plain text in the system
+	// prompt. Empty (default) keeps the name-based heuristic.
+	ToolMode string `json:"tool_mode,omitempty"` // native | text | ""
+
+	// SupportsVision / SupportsAudio declare multimodal capability so the
+	// engine does not have to infer it from the model name.
+	SupportsVision *bool `json:"supports_vision,omitempty"`
+	SupportsAudio  *bool `json:"supports_audio,omitempty"`
 }
 
 // Validate checks if the ModelConfig has all required fields.

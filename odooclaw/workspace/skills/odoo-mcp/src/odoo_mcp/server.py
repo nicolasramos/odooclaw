@@ -674,6 +674,28 @@ def odoo_get_sale_order_summary(
 
 
 @mcp.tool()
+def odoo_create_invoice_from_sale_order(
+    order_id: int,
+    invoice_date: str | None = None,
+    sender_id: int | None = None,
+) -> dict:
+    """Creates the customer invoice (factura de cliente) for a confirmed sale order.
+
+    Use this whenever the user asks to invoice an order. Do not use
+    odoo_create_vendor_invoice: that one is for supplier bills. The order must be
+    in state 'sale' or 'done' and not already invoiced.
+    """
+    with measure_time("odoo_create_invoice_from_sale_order"):
+        client = get_odoo_client()
+        return sales.odoo_create_invoice_from_sale_order(
+            client,
+            sender_id or client.odoo_session.get_uid(),
+            order_id,
+            invoice_date,
+        )
+
+
+@mcp.tool()
 def odoo_get_record_summary(
     model: str,
     res_id: int,
@@ -723,7 +745,12 @@ def odoo_find_purchase_order(
     with measure_time("odoo_find_purchase_order"):
         client = get_odoo_client()
         return purchases.odoo_find_purchase_order(
-            client, sender_id or client.odoo_session.get_uid(), name, partner_id, state, limit
+            client,
+            sender_id or client.odoo_session.get_uid(),
+            name,
+            partner_id,
+            state,
+            limit,
         )
 
 
@@ -1510,7 +1537,11 @@ def odoo_validate_delivery(
     with measure_time("odoo_validate_delivery"):
         client = get_odoo_client()
         return validate_delivery(
-            client, sender_id or client.odoo_session.get_uid(), picking_id, confirm, dry_run
+            client,
+            sender_id or client.odoo_session.get_uid(),
+            picking_id,
+            confirm,
+            dry_run,
         )
 
 
@@ -1525,7 +1556,12 @@ def odoo_find_internal_transfers(
     with measure_time("odoo_find_internal_transfers"):
         client = get_odoo_client()
         return find_internal_transfers(
-            client, sender_id or client.odoo_session.get_uid(), state, date_from, date_to, limit
+            client,
+            sender_id or client.odoo_session.get_uid(),
+            state,
+            date_from,
+            date_to,
+            limit,
         )
 
 
@@ -1540,7 +1576,12 @@ def odoo_find_lot_serial(
     with measure_time("odoo_find_lot_serial"):
         client = get_odoo_client()
         return find_lot_serial(
-            client, sender_id or client.odoo_session.get_uid(), name, product_id, company_id, limit
+            client,
+            sender_id or client.odoo_session.get_uid(),
+            name,
+            product_id,
+            company_id,
+            limit,
         )
 
 
@@ -1586,7 +1627,11 @@ def odoo_validate_transfer(
     with measure_time("odoo_validate_transfer"):
         client = get_odoo_client()
         return validate_transfer(
-            client, sender_id or client.odoo_session.get_uid(), picking_id, confirm, dry_run
+            client,
+            sender_id or client.odoo_session.get_uid(),
+            picking_id,
+            confirm,
+            dry_run,
         )
 
 

@@ -153,7 +153,14 @@ func (c *OdooChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		reply.ReplyToken = token.(string)
 	} else {
 		// No token — Odoo would reject this reply anyway, skip LLM cost
-		slog.Warn("No reply token for chatID, skipping send", "chatID", msg.ChatID)
+		pending := make([]string, 0, 4)
+		c.pendingTokens.Range(func(key, _ any) bool {
+			if s, ok := key.(string); ok {
+				pending = append(pending, s)
+			}
+			return true
+		})
+		slog.Warn("No reply token for chatID, skipping send", "chatID", msg.ChatID, "pending", pending)
 		return nil
 	}
 
@@ -338,6 +345,7 @@ func (c *OdooChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c.pendingTokens.Store(replyChatID, payload.ReplyToken)
+	slog.Info("Registered Odoo reply token", "chatID", replyChatID, "message_id", payload.MessageID)
 
 	c.HandleMessage(r.Context(), peer, strconv.Itoa(payload.MessageID), senderID, replyChatID, content, mediaPaths, metadata, sender)
 
