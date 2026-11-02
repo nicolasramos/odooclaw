@@ -71,10 +71,14 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 	channel, _ := args["channel"].(string)
 	chatID, _ := args["chat_id"].(string)
 
-	if channel == "" {
+	// The turn's own conversation wins over whatever destination the model names:
+	// a reply belongs where the message came from. Models do invent ids for this
+	// field (seen in the Odoo channel: chat_id=2, the author id, instead of the
+	// discuss.channel id), and honouring them drops the answer on the floor.
+	if t.defaultChannel != "" {
 		channel = t.defaultChannel
 	}
-	if chatID == "" {
+	if t.defaultChatID != "" {
 		chatID = t.defaultChatID
 	}
 

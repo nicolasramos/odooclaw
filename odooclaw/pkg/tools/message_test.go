@@ -58,9 +58,11 @@ func TestMessageTool_Execute_Success(t *testing.T) {
 	}
 }
 
-func TestMessageTool_Execute_WithCustomChannel(t *testing.T) {
+func TestMessageTool_Execute_ContextWinsOverModelDestination(t *testing.T) {
+	// A reply belongs where the message came from. Models do invent ids for this
+	// field, so the turn's chat must win over whatever the model names.
 	tool := NewMessageTool()
-	tool.SetContext("default-channel", "default-chat-id")
+	tool.SetContext("odoo", "discuss.channel_3")
 
 	var sentChannel, sentChatID string
 	tool.SetSendCallback(func(channel, chatID, content string) error {
@@ -69,28 +71,45 @@ func TestMessageTool_Execute_WithCustomChannel(t *testing.T) {
 		return nil
 	})
 
-	ctx := context.Background()
-	args := map[string]any{
+	result := tool.Execute(context.Background(), map[string]any{
 		"content": "Test message",
-		"channel": "custom-channel",
-		"chat_id": "custom-chat-id",
-	}
+		"channel": "odoo",
+		"chat_id": "2",
+	})
 
-	result := tool.Execute(ctx, args)
-
-	// Verify custom channel/chatID were used instead of defaults
-	if sentChannel != "custom-channel" {
-		t.Errorf("Expected channel 'custom-channel', got '%s'", sentChannel)
+	if sentChannel != "odoo" {
+		t.Errorf("Expected channel 'odoo', got '%s'", sentChannel)
 	}
-	if sentChatID != "custom-chat-id" {
-		t.Errorf("Expected chatID 'custom-chat-id', got '%s'", sentChatID)
+	if sentChatID != "discuss.channel_3" {
+		t.Errorf("Expected the turn chat 'discuss.channel_3', got '%s'", sentChatID)
 	}
-
 	if !result.Silent {
 		t.Error("Expected Silent=true")
 	}
+}
+
+func TestMessageTool_Execute_ModelChoosesWithoutContext(t *testing.T) {
+	// Proactive sends (cron, wakeups) have no turn chat; there the model picks.
+	tool := NewMessageTool()
+
+	var sentChannel, sentChatID string
+	tool.SetSendCallback(func(channel, chatID, content string) error {
+		sentChannel = channel
+		sentChatID = chatID
+		return nil
+	})
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"content": "Test message",
+		"channel": "custom-channel",
+		"chat_id": "custom-chat-id",
+	})
+
+	if sentChannel != "custom-channel" || sentChatID != "custom-chat-id" {
+		t.Errorf("Expected the model destination, got %s:%s", sentChannel, sentChatID)
+	}
 	if result.ForLLM != "Message sent to custom-channel:custom-chat-id" {
-		t.Errorf("Expected ForLLM 'Message sent to custom-channel:custom-chat-id', got '%s'", result.ForLLM)
+		t.Errorf("Unexpected ForLLM: %s", result.ForLLM)
 	}
 }
 
