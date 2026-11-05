@@ -214,7 +214,16 @@ func (c *OdooChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		slog.Error("Odoo returned non-200 status", "status", resp.StatusCode)
+		// The body carries the reason ("Invalid or expired reply_token",
+		// "Unauthorized", ...). Without it a 403 during a live conversation is
+		// indistinguishable from a bad IP, a stale token or a missing one.
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		slog.Error("Odoo returned non-200 status",
+			"status", resp.StatusCode,
+			"model", reply.Model,
+			"res_id", reply.ResID,
+			"token_len", len(reply.ReplyToken),
+			"body", strings.TrimSpace(string(body)))
 		return fmt.Errorf("odoo api error: %d", resp.StatusCode)
 	}
 
