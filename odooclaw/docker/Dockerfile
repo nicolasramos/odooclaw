@@ -80,6 +80,8 @@ RUN chmod +x /usr/local/bin/ocr-invoice-mcp.py
 # 4-layer pipeline engine (OCR_MODE=pipeline): pipeline.py must sit next to the MCP script
 COPY workspace/skills/ocr-invoice/pipeline.py /usr/local/bin/pipeline.py
 RUN chmod +x /usr/local/bin/pipeline.py
+# read_document: attachment bytes -> text -> structured block (imported by server.py)
+COPY workspace/skills/ocr-invoice/document_reader.py /usr/local/bin/document_reader.py
 
 # Copy RLM-utils MCP server script (needs shebang for exec format)
 COPY workspace/skills/rlm-utils/server.py /usr/local/bin/rlm-utils-mcp.py
