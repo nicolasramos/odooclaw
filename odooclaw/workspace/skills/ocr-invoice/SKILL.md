@@ -97,6 +97,13 @@ Extract and create vendor bill in Odoo.
 
 - `dry_run=true`: extract and normalize only; do not create `account.move`.
 - `sender_id` + company context: executes ORM as the Odoo user and respects multi-company (`company_id`, `allowed_company_ids`).
+- Reads the same way `read_document` does: the PDF text layer first, the
+  deterministic fiscal parser for the numbers, printed item rows for the lines
+  when they add up to the untaxed base. Vision is only reached for a page with
+  no text layer, so a deployment without a vision model still books a digital
+  invoice correctly.
+- Refuses to create a bill when no total and no priced line were read: it
+  answers with an error naming the attachment instead of writing a 0.00 draft.
 
 ### `ocr-create-employee-expense`
 
