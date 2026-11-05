@@ -80,6 +80,29 @@ func TestFormatOCRResult(t *testing.T) {
 	}
 }
 
+// TestFormatOCRResultShowsTheBookedNumbers pins the difference between a bill
+// that was read and one that was created empty: before this, both looked the
+// same in the chat because only the move link was printed.
+func TestFormatOCRResultShowsTheBookedNumbers(t *testing.T) {
+	payload := `{"success": true, "move_id": 26, "partner_id": 45, "attachment_linked": true,` +
+		` "invoice_data": {"ref": "F-2026-0042", "invoice_date": "2026-11-03",` +
+		` "amount_untaxed": 200.0, "amount_tax": 42.0, "amount_total": 242.0,` +
+		` "invoice_line_ids": [{"name": "Servicio de prueba", "quantity": 2, "price_unit": 100.0}]}}`
+
+	out := formatOCRResult(876, payload)
+	for _, want := range []string{
+		"F-2026-0042",
+		"Base: 200.00",
+		"Impuestos: 42.00",
+		"Total: 242.00",
+		"Servicio de prueba: 2 x 100.00",
+	} {
+		if !contains(out, want) {
+			t.Errorf("missing %q in: %s", want, out)
+		}
+	}
+}
+
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && (func() bool {
 		for i := 0; i+len(sub) <= len(s); i++ {

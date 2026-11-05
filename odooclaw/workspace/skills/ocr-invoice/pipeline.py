@@ -282,6 +282,74 @@ def _parse_invoice_number(text):
     return None
 
 
+_MONEY_TOKEN = re.compile(
+    r"^-?\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?$"  # 1.234,56 / 200,00 / 7
+    r"|^-?\d+(?:[.,]\d{1,2})?$"  # 200.00 / 200
+)
+
+
+def _parse_item_lines(text, max_rows=50):
+    """Read the item table: quantity, description, unit price, amount.
+
+    Works on the ``pdftotext -layout`` row shape (``2  Servicio  100,00  200,00``)
+    and on the same row after a vision model has flattened it. Purely
+    deterministic: a row counts only when ``quantity * unit == amount``, and the
+    caller only accepts the block when the rows add up to the untaxed base the
+    fiscal layer read. That double check is what stops a stray numeric line from
+    becoming an invoice line.
+    """
+    rows = []
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if len(line) < 6:
+            continue
+        tokens = line.split()
+        if len(tokens) < 3:
+            continue
+
+        # A row carries (quantity, unit price, amount) in that order somewhere
+        # between the description and the line end: "2 100,00 200,00" or
+        # "Servicio de prueba 2 100,00 200,00". Find the leftmost triple whose
+        # multiplication holds; the tokens before it are the description.
+        found = None
+        for index in range(len(tokens) - 2):
+            quantity = _norm_number(tokens[index])
+            if quantity is None or not 0 < quantity <= 10_000:
+                continue
+            if not _MONEY_TOKEN.match(tokens[index + 1]):
+                continue
+            if not _MONEY_TOKEN.match(tokens[index + 2]):
+                continue
+            unit_price = _norm_number(tokens[index + 1])
+            amount = _norm_number(tokens[index + 2])
+            if not unit_price or unit_price <= 0 or amount is None or amount <= 0:
+                continue
+            if abs(round(quantity * unit_price, 2) - round(amount, 2)) > 0.02:
+                continue
+            found = (index, tokens[index], quantity, unit_price, amount)
+            break
+        if found is None:
+            continue
+
+        index, qty_token, quantity, unit_price, amount = found
+        name = " ".join(tokens[:index]).strip(" -:x\t*")
+        if not name:
+            # No description column: leave the rest of the line out of the name.
+            name = " ".join(tokens[index + 3 :]).strip(" -:x\t*") or "Item"
+        rows.append(
+            {
+                "name": name,
+                "quantity": _norm_number(qty_token),
+                "price_unit": unit_price,
+                "price_subtotal": round(amount, 2),
+                "tax_percentage": None,
+            }
+        )
+        if len(rows) >= max_rows:
+            break
+    return rows
+
+
 def _parse_rate_cuota(text):
     """Capture per-rate quota lines like 'I.G.I.C. General (7%): 7,00' -> (rate, cuota)."""
     for m in re.finditer(
@@ -393,6 +461,21 @@ def layer2_fiscal(text):
                 "tax_percentage": 0,
             })
 
+    # Prefer the printed item rows over the per-rate base when they reproduce
+    # the untaxed base: a bill with "2 x 100" is the document's own shape, and
+    # the arithmetic check above is what makes that safe. Only with a single
+    # tax rate, since assigning a rate per item would be a guess.
+    item_lines = _parse_item_lines(text)
+    if (
+        item_lines
+        and subtotal is not None
+        and len(pairs) == 1
+        and abs(sum(row["price_subtotal"] for row in item_lines) - subtotal) <= 0.02
+    ):
+        for row in item_lines:
+            row["tax_percentage"] = pairs[0][0]
+        lines = item_lines
+
     return {
         "fiscal_lines": lines,
         "amount_total": total,
@@ -405,7 +488,7 @@ def layer2_fiscal(text):
 
 
 # --------------------------------------------------------------------------
-# Layer 3 — Header via LLM (model-agnostic; interpretation only).
+# Layer 3 — Header: deterministic rules first, the model only fills gaps.
 # --------------------------------------------------------------------------
 HEADER_PROMPT = """You are an accounting assistant. From the OCR text of a supplier invoice,
 extract ONLY these header fields as JSON (no explanations):
@@ -415,9 +498,105 @@ Rules: partner_name is the SUPPLIER name (not the recipient). vat is the SUPPLIE
 (CIF/NIF). invoice_date: convert to ISO (Spanish dates are DD/MM/YYYY). If a field is not
 present use an empty string. Output ONLY the JSON."""
 
+# A fiscal id is written with a label far more often than bare.
+_VAT_LABEL = re.compile(
+    r"(?:\bCIF\b|\bNIF\b|\bVAT\b|\bC\.?I\.?F\.?|\bN\.?I\.?F\.?)\.?\s*[:#]?\s*"
+    r"([A-Za-z]{1,2}\d{5,8}[A-Za-z0-9]?)\b",
+    re.IGNORECASE,
+)
+_VAT_BARE = re.compile(r"\b([ABCDEFGHJNPQRSUVW]\d{7}[0-9A-J])\b")
+_DATE_LABEL = re.compile(
+    r"(?:fecha\s*(?:de\s*emisi[oó]n)?|date|f\.?\s*fecha)\s*[:.\-]?\s*"
+    r"(\d{4}-\d{2}-\d{2}|\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
+    re.IGNORECASE,
+)
+_DATE_ANY = re.compile(r"\b(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\b")
+# Lines that are labels, addresses or column headers, never the supplier name.
+_NOT_A_NAME = re.compile(
+    r"\b(?:factura|invoice|fra\.?|cif|nif|vat|fecha|date|tel[eé]fono|tel|fax|iban|"
+    r"descripci[oó]n|concepto|cantidad|precio|importe|base|total|iva|igic|"
+    r"www|http|calle|avda|avenida|pol[ií]gono|n[uú]mero)\b|@|^\d",
+    re.IGNORECASE,
+)
 
-def layer3_header(cfg: OCRConfig, text):
-    """Text -> header JSON. Swap cfg.llm_* to use any LLM."""
+
+def _iso_date(token):
+    """``03/11/2026`` / ``03-11-26`` / ``2026-11-03`` -> ``2026-11-03``."""
+    token = (token or "").strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", token):
+        return token
+    parts = re.split(r"[/.\-]", token)
+    if len(parts) != 3:
+        return ""
+    day, month, year = parts
+    if len(year) == 2:
+        year = ("20" if int(year) < 70 else "19") + year
+    try:
+        return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+    except ValueError:
+        return ""
+
+
+def _parse_partner_name(text):
+    """Supplier name: the first line that reads as a name, not as a label.
+
+    The letterhead is the first block of a supplier invoice, so the rule is
+    readable and cheap. It matters that it is deterministic: a small model that
+    runs past its JSON budget used to leave this empty, and an empty supplier
+    created a partner called "Proveedor OCR" on every bill.
+    """
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if not 3 <= len(line) <= 80:
+            continue
+        if ":" in line or "@" in line:
+            continue
+        if _NOT_A_NAME.search(line):
+            continue
+        if len([char for char in line if char.isalpha()]) < 3:
+            continue
+        return line
+    return ""
+
+
+def layer3_header_rules(text):
+    """Text -> header fields the document states plainly. No model involved."""
+    text = text or ""
+    header = {
+        "partner_name": _parse_partner_name(text),
+        "vat": "",
+        "customer_vat": "",
+        "ref": _parse_invoice_number(text) or "",
+        "invoice_date": "",
+        "currency": "",
+    }
+
+    match = _VAT_LABEL.search(text) or _VAT_BARE.search(text)
+    if match:
+        header["vat"] = re.sub(r"\s+", "", match.group(1)).upper()
+
+    match = _DATE_LABEL.search(text)
+    if match:
+        header["invoice_date"] = _iso_date(match.group(1))
+    if not header["invoice_date"]:
+        match = _DATE_ANY.search(text)
+        if match:
+            header["invoice_date"] = _iso_date(match.group(1))
+
+    if re.search(r"€|\bEUR\b", text, re.IGNORECASE):
+        header["currency"] = "EUR"
+    elif header["vat"] and re.search(
+        r"\bIVA\b|\bIGIC\b|base\s+imponible", text, re.IGNORECASE
+    ):
+        # Spanish tax id plus Spanish tax wording: the document is in euros even
+        # when it never prints the symbol, and this stops a model from guessing
+        # a foreign currency on a Spanish supplier invoice.
+        header["currency"] = "EUR"
+    return header
+
+
+def _layer3_header_llm(cfg: OCRConfig, text):
+    """Text -> header JSON from the configured model. Swap cfg.llm_* for any."""
     out = _chat(cfg.llm_base_url, cfg.llm_model, cfg.llm_api_key,
                 [{"role": "system", "content": HEADER_PROMPT},
                  {"role": "user", "content": text[:4500]}],
@@ -434,6 +613,26 @@ def layer3_header(cfg: OCRConfig, text):
         except Exception:
             continue
     return {}
+
+
+def layer3_header(cfg: OCRConfig, text):
+    """Text -> header JSON: rules first, the model only fills what is missing.
+
+    The document is the source of truth for what it states plainly (letterhead,
+    CIF, date), so a guess never overwrites it. The model is best-effort: an
+    endpoint that is down or rejects the key leaves the deterministic header
+    intact instead of failing the whole pipeline, because the amounts come from
+    the fiscal layer and those must still reach the caller.
+    """
+    header = layer3_header_rules(text)
+    try:
+        guessed = _layer3_header_llm(cfg, text)
+    except Exception:  # noqa: BLE001 — a dead model must not lose the numbers
+        return header
+    for key, value in (guessed or {}).items():
+        if value and not header.get(key):
+            header[key] = value
+    return header
 
 
 # --------------------------------------------------------------------------

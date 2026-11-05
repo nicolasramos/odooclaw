@@ -143,6 +143,58 @@ func formatOCRResult(attachmentID int, raw string) string {
 	if linked {
 		summary += "\n📎 Documento original adjuntado a la factura."
 	}
+	summary += formatInvoiceData(payload["invoice_data"])
+	return summary
+}
+
+// formatInvoiceData shows what was actually booked. A draft with 0.00 used to
+// look the same as a good one in the chat; printing the numbers means a bad
+// extraction is visible where the user is, not only in Odoo.
+func formatInvoiceData(raw any) string {
+	data, ok := raw.(map[string]any)
+	if !ok || len(data) == 0 {
+		return ""
+	}
+
+	summary := ""
+	if ref, _ := data["ref"].(string); ref != "" {
+		summary += fmt.Sprintf("\n🔖 Referencia: %s", ref)
+	}
+	if date, _ := data["invoice_date"].(string); date != "" {
+		summary += fmt.Sprintf("\n📅 Fecha: %s", date)
+	}
+
+	amounts := ""
+	for _, field := range []struct {
+		key   string
+		label string
+	}{
+		{"amount_untaxed", "Base"},
+		{"amount_tax", "Impuestos"},
+		{"amount_total", "Total"},
+	} {
+		if value, ok := data[field.key].(float64); ok {
+			amounts += fmt.Sprintf("\n   %s: %.2f", field.label, value)
+		}
+	}
+	if amounts != "" {
+		summary += "\n💶 Importes:" + amounts
+	}
+
+	if lines, ok := data["invoice_line_ids"].([]any); ok && len(lines) > 0 {
+		summary += fmt.Sprintf("\n📋 Líneas (%d):", len(lines))
+		for index, rawLine := range lines {
+			if index == 10 {
+				summary += "\n   ..."
+				break
+			}
+			line, _ := rawLine.(map[string]any)
+			name, _ := line["name"].(string)
+			quantity, _ := line["quantity"].(float64)
+			price, _ := line["price_unit"].(float64)
+			summary += fmt.Sprintf("\n   - %s: %g x %.2f", name, quantity, price)
+		}
+	}
 	return summary
 }
 
