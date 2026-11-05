@@ -76,6 +76,38 @@ jobs:
         working-directory: odooclaw/cmd/odooclaw/internal/onboard/workspace/skills/odoo-mcp
         run: PYTHONPATH=src python3 -m pytest tests/ -q
 
+  pytest-ocr-invoice:
+    name: pytest ocr-invoice
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: odooclaw
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate embedded skills
+        run: make generate
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system deps (poppler)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils
+
+      - name: Install test deps
+        run: pip install --no-cache-dir pytest requests
+
+      - name: Run workspace skills/ocr-invoice tests
+        working-directory: odooclaw/workspace/skills/ocr-invoice
+        run: python3 -m pytest tests/ -q
+
+      - name: Run generated skills/ocr-invoice tests
+        working-directory: odooclaw/cmd/odooclaw/internal/onboard/workspace/skills/ocr-invoice
+        run: python3 -m pytest tests/ -q
+
   workspace-divergence:
     name: workspace divergence check
     runs-on: ubuntu-latest

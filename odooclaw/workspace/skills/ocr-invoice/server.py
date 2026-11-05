@@ -180,6 +180,173 @@ class OdooOCRSkill:
     def _to_data_url(self, raw: bytes, mimetype: str) -> str:
         return f"data:{mimetype};base64,{base64.b64encode(raw).decode('utf-8')}"
 
+    # ------------------------------------------------------------------
+    # read_document: attachment bytes -> text -> structured block
+    # ------------------------------------------------------------------
+    def _read_timeout(self) -> int:
+        try:
+            return int(float(os.environ.get("OCR_READ_TIMEOUT_SECONDS", "120")))
+        except (TypeError, ValueError):
+            return 120
+
+    def _vision_endpoint(self):
+        """Resolve the OCR vision endpoint, pipeline env first, chat env second."""
+        base = (
+            os.environ.get("OCR_PIPELINE_VISION_URL")
+            or os.environ.get("VISION_API_BASE")
+            or ""
+        ).rstrip("/")
+        model = (
+            os.environ.get("OCR_PIPELINE_VISION_MODEL")
+            or os.environ.get("VISION_MODEL")
+            or ""
+        )
+        key = os.environ.get("OCR_PIPELINE_VISION_KEY") or self.openai_api_key or ""
+        return base, model, key
+
+    def _vision_ocr_text(self, image_bytes, mimetype="image/png"):
+        """Image bytes -> text, through any OpenAI-compatible vision model.
+
+        Kept separate from ``_call_vision``: that one asks a small model for a
+        JSON invoice and throws the text away, which is useless when the
+        document is not an invoice. Here the text is the product.
+        """
+        base, model, key = self._vision_endpoint()
+        if not base or not model:
+            raise RuntimeError(
+                "no vision endpoint configured "
+                "(OCR_PIPELINE_VISION_URL/OCR_PIPELINE_VISION_MODEL or VISION_API_BASE/VISION_MODEL)"
+            )
+
+        from pipeline import VISION_PROMPT
+
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": self._to_data_url(image_bytes, mimetype)},
+                        },
+                        {"type": "text", "text": VISION_PROMPT},
+                    ],
+                }
+            ],
+            "temperature": 0,
+            "max_tokens": 2048,
+            "chat_template_kwargs": {"enable_thinking": False},
+        }
+        headers = {"Content-Type": "application/json"}
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+
+        response = requests.post(
+            f"{base}/chat/completions",
+            json=payload,
+            headers=headers,
+            timeout=self._read_timeout(),
+        )
+        response.raise_for_status()
+        message = response.json().get("choices", [{}])[0].get("message", {})
+        return message.get("content") or message.get("reasoning_content") or ""
+
+    def _pipeline_runner(self):
+        """Return ``text -> structured block`` running the 4-layer pipeline.
+
+        Configured from the environment at call time so one container image can
+        point at any OpenAI-compatible pair of endpoints.
+        """
+        timeout = self._read_timeout()
+
+        def run(text):
+            from pipeline import OCRConfig, run_pipeline_from_text
+
+            cfg = OCRConfig(
+                vision_base_url=os.environ.get(
+                    "OCR_PIPELINE_VISION_URL", "http://127.0.0.1:8093/v1"
+                ),
+                vision_model=os.environ.get("OCR_PIPELINE_VISION_MODEL", "odooclaw-vision"),
+                vision_api_key=os.environ.get("OCR_PIPELINE_VISION_KEY", ""),
+                llm_base_url=os.environ.get("OCR_PIPELINE_LLM_URL", "http://127.0.0.1:8000/v1"),
+                llm_model=os.environ.get(
+                    "OCR_PIPELINE_LLM_MODEL", "LFM2.5-1.2B-Instruct-MLX-4bit"
+                ),
+                llm_api_key=os.environ.get("OCR_PIPELINE_LLM_KEY", ""),
+                ocr_timeout=timeout,
+                llm_timeout=timeout,
+            )
+            return run_pipeline_from_text(text, cfg)
+
+        return run
+
+    def read_document(
+        self,
+        attachment_id: int,
+        sender_id=None,
+        max_pages=None,
+        include_text: bool = True,
+        company_id=None,
+        allowed_company_ids=None,
+    ):
+        """Download an attachment and return its text plus invoice fields.
+
+        The whole sequence the caller used to script by hand, in one call:
+        decode ``ir.attachment.datas``, write a scratch file, read the PDF text
+        layer (or OCR the rendered pages), run the 4-layer pipeline, delete the
+        scratch file. The numeric fields come from the deterministic parser;
+        the model only interprets the header.
+        """
+        self.runtime_sender_id = self._to_int(sender_id)
+        self.runtime_rpc_context = self._build_rpc_context(
+            company_id=company_id, allowed_company_ids=allowed_company_ids
+        )
+
+        attachment = self._download_attachment(attachment_id)
+        if attachment.get("isError"):
+            return attachment
+
+        try:
+            from document_reader import DocumentReaderError, read_document_bytes
+        except ImportError as exc:  # pragma: no cover - deployment guard
+            return {
+                "isError": True,
+                "content": f"document_reader.py must sit next to the MCP server: {exc}",
+            }
+
+        max_pages_value = self.ocr_max_pages
+        if max_pages is not None:
+            requested = self._to_int(max_pages)
+            if requested and 1 <= requested <= 20:
+                max_pages_value = requested
+
+        workdir = os.environ.get("OCR_READ_WORKDIR") or None
+        if workdir and not os.path.isdir(workdir):
+            workdir = None
+
+        try:
+            payload = read_document_bytes(
+                attachment["data"],
+                filename=attachment["name"],
+                mimetype=attachment["mimetype"],
+                attachment_id=attachment_id,
+                max_pages=max_pages_value,
+                dpi=self.ocr_image_dpi,
+                ocr_image=self._vision_ocr_text,
+                pipeline_runner=self._pipeline_runner(),
+                timeout=self._read_timeout(),
+                workdir=workdir,
+            )
+        except DocumentReaderError as exc:
+            return {"isError": True, "content": str(exc)}
+
+        if not include_text:
+            payload.pop("text", None)
+            payload.pop("text_truncated", None)
+
+        return {"content": json.dumps(payload, ensure_ascii=False)}
+
     def _extract_first_json(self, text: str):
         if not text:
             raise ValueError("Empty model response")
@@ -1484,6 +1651,48 @@ ocr = OdooOCRSkill()
 def build_tools():
     return [
         {
+            "name": "read_document",
+            "description": (
+                "Read an attached document from Odoo and return its text. For an invoice it "
+                "also returns the structured fields (partner_name, invoice_number, "
+                "amount_total, lines) plus validation issues. Downloads the attachment, "
+                "writes a scratch file, reads the PDF text layer or OCRs the pages, runs the "
+                "4-layer pipeline and cleans up. Use it before answering about an attached "
+                "document; never guess its content."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "attachment_id": {
+                        "type": "integer",
+                        "description": "ir.attachment ID of the document",
+                    },
+                    "max_pages": {
+                        "type": "integer",
+                        "description": "PDF pages to read (default 4, capped at 20)",
+                    },
+                    "include_text": {
+                        "type": "boolean",
+                        "description": "Include the extracted text in the answer (default true)",
+                    },
+                    "sender_id": {
+                        "type": "integer",
+                        "description": "res.users ID of the message author (for permission/company inheritance)",
+                    },
+                    "company_id": {
+                        "type": "integer",
+                        "description": "Active company ID from Odoo context",
+                    },
+                    "allowed_company_ids": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Allowed company IDs from Odoo context",
+                    },
+                },
+                "required": ["attachment_id"],
+            },
+        },
+        {
             "name": "ocr-invoice",
             "description": "Extract structured invoice data from an Odoo attachment (PDF/image).",
             "inputSchema": {
@@ -1633,7 +1842,7 @@ def handle_request(request):
             "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "ocr-invoice-mcp", "version": "3.1.0"},
+                "serverInfo": {"name": "ocr-invoice-mcp", "version": "3.2.0"},
             },
         }
 
@@ -1700,6 +1909,18 @@ def handle_request(request):
             "isError": True,
             "content": "'attachment_id' is required and must be integer",
         }
+    elif name == "read_document":
+        include_text = arguments.get("include_text", True)
+        if isinstance(include_text, str):
+            include_text = include_text.strip().lower() not in ("false", "0", "no", "")
+        res = ocr.read_document(
+            attachment_id,
+            sender_id=sender_id,
+            max_pages=arguments.get("max_pages"),
+            include_text=bool(include_text),
+            company_id=company_id,
+            allowed_company_ids=allowed_company_ids,
+        )
     elif name == "ocr-invoice":
         res = ocr.extract_invoice(
             attachment_id,
@@ -1756,7 +1977,7 @@ def handle_request(request):
 
 
 def main():
-    log("OCR Invoice MCP server v3.1 started")
+    log("OCR Invoice MCP server v3.2 started")
     for line in sys.stdin:
         line = line.strip()
         if not line:
