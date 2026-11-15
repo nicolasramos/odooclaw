@@ -29,6 +29,7 @@ type OdooChannel struct {
 	pendingTokens     sync.Map // replyChatID -> replyToken (string), single-use
 	workspace         string   // agent workspace for MODULES.md (system webhook)
 	allowlistResetter func(ctx context.Context) error
+	multica           *multicaCable // client-request cable → Multica issue (nil = off)
 }
 
 // SetAllowlistCacheResetter wires a callback that invalidates the MCP
@@ -381,6 +382,10 @@ func (c *OdooChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	c.pendingTokens.Store(replyChatID, payload.ReplyToken)
 	slog.Info("Registered Odoo reply token", "chatID", replyChatID, "message_id", payload.MessageID)
+
+	// File the request in the client's Multica project (off the request
+	// path — never blocks or breaks the conversation).
+	c.dispatchMultica(payload)
 
 	c.HandleMessage(r.Context(), peer, strconv.Itoa(payload.MessageID), senderID, replyChatID, content, mediaPaths, metadata, sender)
 
