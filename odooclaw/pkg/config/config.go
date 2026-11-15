@@ -61,6 +61,19 @@ type Config struct {
 	Devices    DevicesConfig    `json:"devices"`
 	Multimodel MultimodelConfig `json:"multimodel,omitempty"`
 	Voice      VoiceConfig      `json:"voice,omitempty"`
+	Multica    MulticaConfig    `json:"multica,omitempty"`
+}
+
+// MulticaConfig wires the client-request cable: when a client writes in their
+// own Odoo Discuss, the engine files that message as an issue in the client's
+// Multica project. Registration is per instance and by environment only —
+// there is no per-client code. The cable stays off unless every field needed
+// to reach the API is present, so a half-configured instance changes nothing.
+type MulticaConfig struct {
+	Enabled   bool   `json:"enabled"    env:"ODOOCLAW_MULTICA_ENABLED"`
+	BaseURL   string `json:"base_url"   env:"ODOOCLAW_MULTICA_BASE_URL"`
+	Token     string `json:"token"      env:"ODOOCLAW_MULTICA_TOKEN"`
+	ProjectID string `json:"project_id" env:"ODOOCLAW_MULTICA_PROJECT_ID"`
 }
 
 // VoiceConfig configures speech input and output. Both sides are
