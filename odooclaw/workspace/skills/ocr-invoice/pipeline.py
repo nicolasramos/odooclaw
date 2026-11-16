@@ -778,6 +778,178 @@ def layer4_validate(header, fiscal):
 
 
 # --------------------------------------------------------------------------
+# Document type classification (T5 · NRA-5525)
+#
+# Decide what a document is (invoice / expense ticket / business card /
+# unknown) BEFORE extracting amounts, so the right extractor can be chosen.
+# Pre-classification is DETERMINISTIC; the layer-3 LLM is only consulted when
+# the signals conflict — that is the whole point of the gate (cost + latency).
+#
+# Gating principle: a document that carries monetary amounts is either an
+# invoice or a receipt; a document without amounts is either a card or
+# nothing. That cleanly separates the two families before the finer
+# invoice/ticket distinction (VAT presence).
+# --------------------------------------------------------------------------
+
+_CARD_EMAIL_RE = re.compile(
+    r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", re.IGNORECASE
+)
+_CARD_PHONE_RE = re.compile(r"[+]?\d[\d .\-]{6,}\d")
+_CARD_DATE_RE = re.compile(r"\b\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\b")
+
+
+class DocumentClassification:
+    """The result of classifying a document's type."""
+
+    __slots__ = ("type", "confidence", "source", "reason")
+
+    def __init__(self, type, confidence, source, reason=""):
+        self.type = type
+        self.confidence = confidence
+        self.source = source
+        self.reason = reason
+
+    def as_dict(self):
+        return {
+            "type": self.type,
+            "confidence": self.confidence,
+            "source": self.source,
+            "reason": self.reason,
+        }
+
+
+def _has_phone_number(text):
+    """A phone-like run of 7-15 digits that is not a date (DD/MM/YYYY).
+
+    Dates are excluded on purpose: a document can carry a date and a total
+    without being a card, and "03/11/2026" would otherwise look like a phone.
+    """
+    for match in _CARD_PHONE_RE.finditer(text):
+        digits = re.sub(r"\D", "", match.group())
+        if 7 <= len(digits) <= 15 and not _CARD_DATE_RE.search(match.group()):
+            return True
+    return False
+
+
+def _classify_deterministic(text, fiscal):
+    """Decide a clear-cut type, or return None when the document is ambiguous.
+
+    The ambiguous branch is deliberately small: an invoice whose VAT was not
+    read (it still carries an invoice reference) and a receipt that also
+    carries contact info both defer to the model, rather than being
+    mislabelled as the wrong document.
+    """
+    has_vat = bool(_VAT_LABEL.search(text) or _VAT_BARE.search(text))
+    has_amounts = bool(
+        fiscal.get("amount_subtotal")
+        or fiscal.get("amount_total")
+        or fiscal.get("amount_tax")
+        or re.search(r"\b\d[\d .]\d{2}[,\.]\d{2}\b", text)
+    )
+
+    # No amounts -> a card or nothing.
+    if not has_amounts:
+        if _CARD_EMAIL_RE.search(text):
+            return DocumentClassification(
+                "contact", 0.9, "deterministic", "email, no amounts"
+            )
+        if _has_phone_number(text) and _parse_partner_name(text):
+            return DocumentClassification(
+                "contact", 0.8, "deterministic", "phone + name, no amounts"
+            )
+        return None
+
+    # Amounts present -> invoice or receipt.
+    if has_vat:
+        # A supplier VAT is a strong invoice signal; a receipt does not carry one.
+        return DocumentClassification(
+            "invoice", 0.85, "deterministic", "VAT present with amounts"
+        )
+    if fiscal.get("invoice_number"):
+        # Amounts but no VAT, yet an invoice reference is present: an invoice
+        # whose CIF was not read. Defer rather than book it as an expense.
+        return None
+    return DocumentClassification(
+        "expense", 0.8, "deterministic", "amounts, no supplier VAT"
+    )
+
+
+def _fallback_best_effort(text, fiscal):
+    """Used when the model is unavailable for an ambiguous document."""
+    if fiscal.get("invoice_number") or _VAT_LABEL.search(text) or _VAT_BARE.search(text):
+        return DocumentClassification(
+            "invoice", 0.0, "model-unavailable",
+            "model unavailable; invoice reference, no VAT",
+        )
+    if any(fiscal.get(k) for k in ("amount_subtotal", "amount_total", "amount_tax")):
+        return DocumentClassification(
+            "expense", 0.0, "model-unavailable",
+            "model unavailable; amounts, no VAT fallback",
+        )
+    return DocumentClassification(
+        "unknown", 0.0, "model-unavailable", "model unavailable; no signal"
+    )
+
+
+def _classify_document_type_llm(cfg: OCRConfig, text):
+    """Layer-3 LLM fallback: text -> a document type string, or None."""
+    if cfg is None:
+        cfg = OCRConfig()
+    prompt = (
+        "You are a document intake classifier. Decide the type of the document "
+        "from its OCR text and reply with ONLY a JSON object: "
+        '{"type": "invoice" | "expense" | "contact" | "unknown"}.\n\n'
+        "Definitions: invoice = a purchase bill with supplier + amounts; "
+        "expense = a receipt/ticket; contact = a business card with "
+        "name/email/phone; unknown = none of the above.\n\n"
+        f"OCR text:\n{text[:3000]}"
+    )
+    raw = _chat(
+        cfg.llm_base_url, cfg.llm_model, cfg.llm_api_key,
+        [{"role": "user", "content": prompt}],
+        max_tokens=50, timeout=cfg.llm_timeout, disable_thinking=cfg.disable_thinking,
+    )
+    parsed = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not parsed:
+        return None
+    try:
+        data = json.loads(parsed.group(0))
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data.get("type")
+
+
+def classify_document_type(text, fiscal=None, cfg: OCRConfig = None):
+    """Classify a document's type BEFORE extracting amounts.
+
+    Deterministic pre-classification; the layer-3 LLM only runs on ambiguous
+    documents. If the model is unavailable for an ambiguous document, the
+    result degrades to a deterministic best effort rather than losing it.
+    """
+    text = (text or "").strip()
+    if not text:
+        return DocumentClassification("unknown", 0.0, "deterministic", "empty document")
+
+    if fiscal is None:
+        fiscal = layer2_fiscal(text)
+
+    decision = _classify_deterministic(text, fiscal)
+    if decision is not None:
+        return decision
+
+    try:
+        mtype = _classify_document_type_llm(cfg, text)
+    except Exception:  # noqa: BLE001 — a dead model must not lose the document
+        return _fallback_best_effort(text, fiscal)
+
+    if mtype in ("invoice", "expense", "contact", "unknown"):
+        return DocumentClassification(mtype, 0.6, "model", "layer-3 LLM disambiguated")
+    return _fallback_best_effort(text, fiscal)
+
+
+# --------------------------------------------------------------------------
 # Orchestrator — the 4-layer pipeline. Agnostic end to end.
 # --------------------------------------------------------------------------
 def run_pipeline_from_text(text, cfg: OCRConfig = None):
@@ -802,6 +974,11 @@ def run_pipeline_from_text(text, cfg: OCRConfig = None):
     merged["_issues"] = issues
     merged["_raw_text"] = text[:2000]
     merged["_source"] = "client-ocr"
+    # Document type: decided before extraction, deterministic when clear.
+    classification = classify_document_type(text, fiscal=fiscal, cfg=cfg)
+    merged["document_type"] = classification.type
+    merged["classification_source"] = classification.source
+    merged["classification_reason"] = classification.reason
     return merged
 
 
@@ -851,4 +1028,9 @@ def run_pipeline(pdf_path, cfg: OCRConfig = None):
     merged["_issues"] = issues
     merged["_raw_text"] = (fiscal_text + "\n---HEADER---\n" + header_text)[:2000]
     merged["_source"] = source
+    # Document type: decided before extraction, deterministic when clear.
+    classification = classify_document_type(fiscal_text, fiscal=fiscal, cfg=cfg)
+    merged["document_type"] = classification.type
+    merged["classification_source"] = classification.source
+    merged["classification_reason"] = classification.reason
     return merged
