@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -100,6 +101,72 @@ type OdooWebhookPayload struct {
 	AllowedCompanyIDs []int            `json:"allowed_company_ids"`
 	ReplyToken        string           `json:"reply_token,omitempty"`
 	ChatterContext    []ChatterMessage `json:"chatter_context,omitempty"`
+	// Structured attachment arrays sent by mail_bot_odooclaw since the
+	// document-intake change (NRA-4504). Modules installed before it omit
+	// these fields; attachmentRefs then falls back to the id embedded in the
+	// body text marker, so both payload shapes keep working.
+	InvoiceAttachments []OdooAttachment `json:"invoice_attachments,omitempty"`
+	VoiceAttachments   []OdooAttachment `json:"voice_attachments,omitempty"`
+	Attachments        []OdooAttachment `json:"attachments,omitempty"`
+}
+
+// OdooAttachment is one entry of the structured attachment arrays the Odoo
+// addon sends with the webhook: the ir.attachment id plus display metadata.
+// The file bytes stay in Odoo — the channel has no authenticated Odoo client —
+// so the id is the handle the vision pipeline (ocr-* tools) uses to fetch it.
+type OdooAttachment struct {
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	Mimetype string `json:"mimetype"`
+}
+
+// odooAttachmentRefScheme namespaces Odoo ir.attachment handles inside the
+// media list. The ref is a handle for the vision pipeline (the ocr-* tools
+// fetch the file from Odoo by id), not a media-store pointer: the agent's
+// resolveMediaRefs cannot resolve it and drops it before the provider call,
+// so LLM fallback behaviour stays identical to a payload without media.
+const odooAttachmentRefScheme = "media://odoo-attachment/"
+
+func odooAttachmentRef(id int) string {
+	return odooAttachmentRefScheme + strconv.Itoa(id)
+}
+
+// attachmentMarkerRe matches the attachment markers mail_bot_odooclaw
+// appends to the body of older-module payloads:
+//
+//	🧾 [Factura/Documento: factura.pdf (ID: 876)]
+//	🎤 [Nota de voz: nota.mp3 (ID: 877)]
+//	[Adjunto: ticket.jpg (ID: 878)]
+var attachmentMarkerRe = regexp.MustCompile(`(?:🧾 \[Factura/Documento:|🎤 \[Nota de voz:|\[Adjunto:)\s*[^\]]*?\(ID:\s*(\d+)\)`)
+
+// attachmentRefs returns the media references for the attachments carried by
+// the payload. New payloads use the structured arrays; payloads from modules
+// installed before the change only embed the id in the body text marker, so
+// when no array is present the ids are parsed from the markers. Both payload
+// shapes yield the same reference for the same attachment id (NRA-5522).
+func attachmentRefs(payload OdooWebhookPayload) []string {
+	var refs []string
+	seen := make(map[int]bool)
+	add := func(id int) {
+		if id <= 0 || seen[id] {
+			return
+		}
+		seen[id] = true
+		refs = append(refs, odooAttachmentRef(id))
+	}
+	for _, group := range [][]OdooAttachment{payload.InvoiceAttachments, payload.VoiceAttachments, payload.Attachments} {
+		for _, att := range group {
+			add(att.ID)
+		}
+	}
+	if len(refs) == 0 {
+		for _, m := range attachmentMarkerRe.FindAllStringSubmatch(payload.Body, -1) {
+			if id, err := strconv.Atoi(m[1]); err == nil {
+				add(id)
+			}
+		}
+	}
+	return refs
 }
 
 type OdooReplyPayload struct {
@@ -357,7 +424,9 @@ func (c *OdooChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Odoo filters mentions server-side before sending to the webhook.
-	var mediaPaths []string
+	// The attachment refs travel as media so the vision pipeline receives the
+	// attachment as a medium, not as a text string (NRA-5522).
+	mediaPaths := attachmentRefs(payload)
 	metadata := map[string]string{
 		"model":        payload.Model,
 		"res_id":       strconv.Itoa(payload.ResID),
