@@ -84,6 +84,8 @@ cfg = OCRConfig(
 result = run_pipeline("invoice.pdf", cfg)
 # result: partner_name, vat, ref, invoice_date, amount_total, amount_tax,
 #         invoice_line_ids (one per tax rate), _ok, _issues, _source
+#         _field_confidence {vat, amount_total} = {value, confidence, provenance}
+# Fields the document never stated are ABSENT from the result (not "" / null).
 ```
 
 ## MCP integration (server.py)

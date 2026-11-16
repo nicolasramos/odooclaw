@@ -187,7 +187,7 @@ Also works with OpenAI-compatible endpoints (OVH, Groq, vLLM, etc.) that expose 
 ```json
 {
   "partner_name": "Proveedor SL",
-  "partner_vat": "B12345678",
+  "partner_vat": "B12345674",
   "invoice_date": "2026-03-09",
   "invoice_date_due": "2026-04-09",
   "ref": "FRA-2026-001",

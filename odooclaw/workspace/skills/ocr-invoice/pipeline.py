@@ -161,6 +161,60 @@ def _detect_reverse_charge(text):
     return False
 
 
+# --------------------------------------------------------------------------
+# Layer 0 — Deterministic fiscal-id validator (NIF / CIF / NIE).
+#
+# Model-independent: a fiscal id is valid only when its control digit/letter
+# matches. A vision/LLM model therefore cannot manufacture a valid NIF out of
+# a malformed one — the control digit is the gate, not the model's confidence.
+# --------------------------------------------------------------------------
+_NIF_LETTER_TABLE = "TRWAGMYFPDXBNJZRVYSHKCLP"  # 23 letters, index = number % 23
+_CIF_CONTROL_LETTERS = "JKLXYZ"                # reserved letters, only for letter controls
+
+
+def _cif_control_digit(data7):
+    """Expected control char for a 7-digit CIF data block.
+
+    Odd positions (1st, 3rd, 5th, 7th) are multiplied by 2 and their digits
+    summed; even positions are added as-is; control = (10 - sum % 10) % 10.
+    """
+    total = 0
+    for i, ch in enumerate(data7):
+        digit = ord(ch) - 48
+        if i % 2 == 0:  # 1st, 3rd, 5th, 7th (1-indexed) -> x2
+            digit *= 2
+            digit = (digit // 10) + (digit % 10)
+        total += digit
+    control = (10 - (total % 10)) % 10
+    return str(control) if control < 10 else _CIF_CONTROL_LETTERS[control - 10]
+
+
+def validate_nif(nif):
+    """Return True only when a Spanish fiscal id's control matches.
+
+    Malformed ids (wrong length, non-alphanumeric, unknown shape) return False,
+    so an invalid NIF always fails closed to review regardless of model output.
+    """
+    if not nif:
+        return False
+    s = re.sub(r"\s+", "", nif).upper()
+    # NIF (person): 8 digits + control letter.
+    m = re.fullmatch(r"(\d{8})([A-Z])", s)
+    if m:
+        return m.group(2) == _NIF_LETTER_TABLE[int(m.group(1)) % 23]
+    # NIE / passport: letter + 7 digits + control letter.
+    m = re.fullmatch(r"([XYZ])(\d{7})([A-Z])", s)
+    if m:
+        prefix = {"X": 0, "Y": 1, "Z": 2}[m.group(1)]
+        number = prefix * 10_000_000 + int(m.group(2))
+        return m.group(3) == _NIF_LETTER_TABLE[number % 23]
+    # CIF (company): leading letter + 7 data digits + control digit/letter.
+    m = re.fullmatch(r"([ABCDEFHJNPQRSUVW])(\d{7})([\dA-Z])", s)
+    if m:
+        return m.group(3) == _cif_control_digit(m.group(2))
+    return False
+
+
 def _parse_fiscal(text):
     """Extract (base, rate) pairs from tax summary lines.
 
@@ -639,8 +693,17 @@ def layer3_header(cfg: OCRConfig, text):
 # Layer 4 — Validation + Odoo mapping rules (model-free).
 # --------------------------------------------------------------------------
 def layer4_validate(header, fiscal):
-    """Arithmetic sanity checks. Returns (ok, issues, merged)."""
+    """Arithmetic sanity checks + hard validators. Returns (ok, issues, merged).
+
+    Two things are now model-independent, so they override the header model's
+    confidence: the NIF control digit (``validate_nif``) and the presence of a
+    bookable total. A hard failure forces review even when the model reports
+    0.99. Per-field ``{value, confidence, provenance}`` is attached so the UI
+    can say "read" vs "calculated"; unread fields are not recorded at all.
+    """
     issues = []
+    hard_failures = []
+    field_confidence = {}
     merged = dict(header)
     merged.update({
         "invoice_line_ids": fiscal["fiscal_lines"],
@@ -663,6 +726,19 @@ def layer4_validate(header, fiscal):
 
     if total is None:
         issues.append("amount_total missing: invoice flagged for human review")
+    elif fiscal.get("fiscal_found"):
+        field_confidence["amount_total"] = {
+            "value": total, "confidence": 0.95, "provenance": "fiscal_summary",
+        }
+    elif lines:
+        field_confidence["amount_total"] = {
+            "value": total, "confidence": 0.8, "provenance": "item_lines",
+        }
+    else:
+        field_confidence["amount_total"] = {
+            "value": total, "confidence": 0.5, "provenance": "document_text",
+        }
+
     if tax is None and not reverse_charge:
         issues.append("amount_tax missing (may be reverse charge / exempt)")
 
@@ -675,7 +751,29 @@ def layer4_validate(header, fiscal):
                 f"arithmetic mismatch: bases={bases_sum} + tax={tax} != total={total}"
             )
 
-    ok = total is not None and not any("mismatch" in i or "missing" in i for i in issues)
+    # Hard validator: NIF control digit. Model-independent — it caps the
+    # field confidence at 0 and forces review, so the model cannot vouch for
+    # a fiscal id it could not have read correctly.
+    vat = merged.get("vat") or ""
+    if vat:
+        if validate_nif(vat):
+            field_confidence["vat"] = {
+                "value": vat, "confidence": 1.0, "provenance": "deterministic",
+            }
+        else:
+            hard_failures.append("vat")
+            issues.append(f"vat: NIF/CIF with invalid control digit ({vat})")
+            field_confidence["vat"] = {
+                "value": vat, "confidence": 0.0,
+                "provenance": "deterministic", "valid": False,
+            }
+
+    ok = (
+        total is not None
+        and not hard_failures
+        and not any("mismatch" in i or "missing" in i for i in issues)
+    )
+    merged["_field_confidence"] = field_confidence
     return ok, issues, merged
 
 

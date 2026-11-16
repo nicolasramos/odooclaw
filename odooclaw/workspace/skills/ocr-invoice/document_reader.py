@@ -239,6 +239,10 @@ def build_invoice_block(pipeline_output):
     contract callers rely on is ``partner_name``, ``invoice_number``,
     ``amount_total`` and ``lines``. The deterministic values the pipeline put
     in ``invoice_number`` win over the model's ``ref`` guess.
+
+    A field the document never stated is ABSENT from the result, not an empty
+    string or ``null``: that is how the intake tells "read but blank" from
+    "not read at all" and can list it in ``missing_fields``.
     """
     data = pipeline_output or {}
 
@@ -250,7 +254,7 @@ def build_invoice_block(pipeline_output):
     invoice_number = str(invoice_number).strip()
     partner_name = str(data.get("partner_name") or "").strip()
 
-    return {
+    block = {
         "partner_name": partner_name,
         "vat": str(data.get("vat") or "").strip(),
         "invoice_number": invoice_number,
@@ -267,6 +271,9 @@ def build_invoice_block(pipeline_output):
         "fiscal_found": bool(data.get("fiscal_found")),
         "is_reverse_charge": bool(data.get("is_reverse_charge")),
     }
+    # Drop fields that carry no value: an unread field must not survive as an
+    # empty string or null. Structural/validation keys are always truthy here.
+    return {k: v for k, v in block.items() if v not in (None, "")}
 
 
 def _ocr_page(ocr_image, image_bytes, mimetype):

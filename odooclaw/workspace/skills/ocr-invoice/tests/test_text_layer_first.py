@@ -27,7 +27,7 @@ PDF_BYTES = b"%PDF-1.7\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n"
 # The acceptance document: supplier, reference, one row of 2 x 100 and the
 # fiscal summary. Laid out the way ``pdftotext -layout`` prints it.
 INVOICE_TEXT = """Suministros Prueba SL
-CIF: B12345678
+CIF: B12345674
 Factura n: F-2026-0042
 Fecha: 03/11/2026
 
@@ -89,7 +89,7 @@ def text_layer(monkeypatch, tmp_path):
     )
 
     def header(cfg, text):
-        return {"partner_name": "Suministros Prueba SL", "vat": "B12345678",
+        return {"partner_name": "Suministros Prueba SL", "vat": "B12345674",
                 "ref": "HEADER-GUESS", "invoice_date": "2026-11-03", "currency": "EUR"}
 
     monkeypatch.setattr(pipeline, "layer3_header", header)
@@ -181,6 +181,27 @@ def test_extract_and_create_writes_the_bill_when_the_amounts_are_there(text_laye
     assert skill.created[0]["amount_untaxed"] == 200.0
 
 
+def test_invalid_nif_blocks_bill_creation_even_with_usable_amounts():
+    """A NIF with an invalid control digit goes to review and does NOT create a
+    bill, even though the amounts are perfectly bookable. The hard validator
+    overrides the model's confidence."""
+    skill = StubSkill(PDF_BYTES)
+    skill.extract_invoice = lambda *a, **k: {
+        "content": '{"success": true, "invoice_data": {"ref": "F-2026-0042",'
+        ' "partner_name": "Suministros Prueba SL", "vendor_vat": "B12345678",'
+        ' "amount_untaxed": 200.0, "amount_total": 242.0, "invoice_date": '
+        ' "2026-11-03", "currency": "EUR", "validation_ok": false,'
+        ' "validation_issues": ["vat: NIF/CIF with invalid control digit"],'
+        ' "invoice_line_ids": [{"name": "Servicio", "quantity": 2,'
+        ' "price_unit": 100.0, "tax_percentage": 21.0}]}}'
+    }
+
+    result = skill.extract_and_create_vendor_bill(1)
+    assert result.get("isError") is True
+    assert "validation failed" in result["content"].lower()
+    assert skill.created == [], "no bill may be created on a hard-validation failure"
+
+
 # --- The header must not depend on the model answering ---------------------
 # The M4 runs LFM3, a small model that rambles past its 300-token JSON budget
 # and got truncated mid-object, which left partner_name empty and created a
@@ -188,7 +209,7 @@ def test_extract_and_create_writes_the_bill_when_the_amounts_are_there(text_laye
 # the document is the source of truth for what it states plainly.
 
 REAL_LAYOUT = """Suministros Prueba SL
-CIF: B12345678
+CIF: B12345674
 Calle de Prueba 1, 38001 Santa Cruz de Tenerife
 
 Factura n: F-2026-0042
@@ -206,7 +227,7 @@ Total: 242,00
 def test_header_is_read_from_the_letterhead_without_a_model():
     header = pipeline.layer3_header_rules(REAL_LAYOUT)
     assert header["partner_name"] == "Suministros Prueba SL"
-    assert header["vat"] == "B12345678"
+    assert header["vat"] == "B12345674"
     assert header["ref"] == "F-2026-0042"
     assert header["invoice_date"] == "2026-11-03"
     assert header["currency"] == "EUR"
@@ -220,7 +241,7 @@ def test_a_dead_model_leaves_the_header_and_the_numbers_intact(monkeypatch):
     data = pipeline.run_pipeline_from_text(REAL_LAYOUT, pipeline.OCRConfig())
 
     assert data["partner_name"] == "Suministros Prueba SL"
-    assert data["vat"] == "B12345678"
+    assert data["vat"] == "B12345674"
     assert data["amount_total"] == 242.0
     assert data["amount_untaxed"] == 200.0
     assert data["_ok"] is True
