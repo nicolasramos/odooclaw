@@ -19,6 +19,29 @@ from pipeline import layer2_fiscal, layer4_validate  # noqa: E402
 PDF_BYTES = b"%PDF-1.7\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n"
 
 INVOICE_TEXT = """ACME SUMINISTROS SL
+CIF: B12345674
+Factura n: F-2026-0042
+Fecha: 03/11/2026
+
+Base imponible: 100,00
+IVA 21%: 21,00
+Total: 121,00
+"""
+
+# No fiscal id stated anywhere: the NIF field must come back ABSENT, not an
+# empty string. That is what lets the intake list it as a missing field.
+NO_FISCAL_ID_TEXT = """ACME SUMINISTROS SL
+Factura n: F-2026-0042
+Fecha: 03/11/2026
+
+Base imponible: 100,00
+IVA 21%: 21,00
+Total: 121,00
+"""
+
+# A plausible-looking but INVALID CIF (control digit should be 4, not 8). The
+# hard validator flags it for review even though the amounts are bookable.
+INVALID_NIF_TEXT = """ACME SUMINISTROS SL
 CIF: B12345678
 Factura n: F-2026-0042
 Fecha: 03/11/2026
@@ -159,6 +182,67 @@ def test_digital_pdf_returns_text_and_parser_numbers(stub_pdftotext, tmp_path):
     assert payload["lines"][0]["price_subtotal"] == 100.0
     assert payload["validation_ok"] is True
     assert list(work.iterdir()) == [], "the scratch file must not outlive the call"
+
+
+def test_unread_field_is_absent_not_empty(monkeypatch, tmp_path):
+    """A field the document does not state (no fiscal id) is ABSENT from the
+    JSON: not null, not an empty string. A read field (the total) stays."""
+    work = tmp_path / "work"
+    work.mkdir()
+    _stub_pdftotext(
+        tmp_path, monkeypatch,
+        "#!/bin/sh\ncat <<'PDFTEXT'\n" + NO_FISCAL_ID_TEXT + "\nPDFTEXT\n",
+    )
+    payload = dr.read_document_bytes(
+        PDF_BYTES,
+        filename="factura.pdf",
+        mimetype="application/pdf",
+        attachment_id=42,
+        pipeline_runner=pipeline_over_real_parser,
+        workdir=str(work),
+        ocr_image=None,
+        timeout=30,
+        clock=lambda: 0,
+    )
+
+    assert "vat" not in payload, "an unread field must be absent, not ''"
+    assert payload["amount_total"] == 121.0, "a read field stays present"
+
+
+def test_invalid_nif_triggers_review_even_with_usable_amounts(monkeypatch, tmp_path):
+    """A NIF with an invalid control digit goes to review and is not trusted,
+    even though the model/parser read a perfectly bookable total."""
+    import pipeline
+
+    work = tmp_path / "work"
+    work.mkdir()
+    _stub_pdftotext(
+        tmp_path, monkeypatch,
+        "#!/bin/sh\ncat <<'PDFTEXT'\n" + INVALID_NIF_TEXT + "\nPDFTEXT\n",
+    )
+    # The header model is dead: the deterministic header (with the bad CIF) wins.
+    monkeypatch.setattr(
+        pipeline, "_layer3_header_llm",
+        lambda cfg, text: (_ for _ in ()).throw(RuntimeError("model down")),
+    )
+
+    payload = dr.read_document_bytes(
+        PDF_BYTES,
+        filename="factura.pdf",
+        mimetype="application/pdf",
+        attachment_id=42,
+        pipeline_runner=lambda text: pipeline.run_pipeline_from_text(
+            text, pipeline.OCRConfig()
+        ),
+        workdir=str(work),
+        ocr_image=None,
+        timeout=30,
+        clock=lambda: 0,
+    )
+
+    assert payload["validation_ok"] is False
+    assert payload["review_required"] is True
+    assert payload["amount_total"] == 121.0, "the amounts are still read correctly"
 
 
 def test_scan_without_a_text_layer_is_ocred_and_cleaned(

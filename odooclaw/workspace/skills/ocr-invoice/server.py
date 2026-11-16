@@ -663,7 +663,7 @@ class OdooOCRSkill:
                 {"name": "Item", "quantity": 1, "price_unit": 0, "tax_percentage": 0}
             ]
 
-        return {
+        result = {
             "partner_name": str(
                 data.get("partner_name") or data.get("vendor_name") or ""
             ).strip(),
@@ -691,7 +691,12 @@ class OdooOCRSkill:
             ),
             "notes": str(data.get("notes") or "").strip(),
             "invoice_line_ids": normalized_lines,
+            "validation_ok": bool(data.get("validation_ok", False)),
+            "validation_issues": data.get("validation_issues") or [],
         }
+        # An unread field is absent, not an empty string: keep the same contract
+        # as the read_document block so every tool agrees on "not read".
+        return {k: v for k, v in result.items() if v not in (None, "")}
 
     def _find_currency_id(self, currency_name):
         if not currency_name:
@@ -1661,6 +1666,21 @@ class OdooOCRSkill:
                     f"partner={invoice_data.get('partner_name') or ''!r}, "
                     f"attachment={attachment_id}). Nothing was created. Send a PDF with a "
                     "text layer and retry, or configure an OCR engine for scans."
+                ),
+            }
+
+        # Hard validators (NIF control digit, bookable total) decide, not the
+        # model: a field the pipeline flagged fails review and the bill is not
+        # created, so a model's 0.99 confidence cannot book a bad fiscal id.
+        if not invoice_data.get("validation_ok"):
+            issues = invoice_data.get("validation_issues") or []
+            return {
+                "isError": True,
+                "content": (
+                    "Refusing to create the vendor bill: validation failed "
+                    f"({', '.join(str(i) for i in issues) or 'declared for review'}). "
+                    f"The document is sent to human review instead of being booked. "
+                    f"attachment={attachment_id}."
                 ),
             }
 
