@@ -896,6 +896,72 @@ class OdooOCRSkill:
             "attachment_linked": not attach_res.get("isError"),
         }
 
+    def _report_intake_outcome(
+        self,
+        attachment_id,
+        *,
+        created_model=None,
+        created_res_id=None,
+        reason=None,
+    ):
+        """Record where the document went in the document-intake queue (T6).
+
+        The intake model (``odooclaw.document.intake``, T3) declares each
+        arriving document and exposes a write-back door (``mark_created`` /
+        ``mark_review``). Reporting here is what makes criterion 2 true end to
+        end: a refused document waits in the review queue with the reason, and a
+        created bill points at the ``account.move``. Without it the queue stays
+        empty and the document's fate is only ever the chat reply.
+
+        It runs as admin (the queue is infrastructure, not a user action) and
+        never fails the operation: if the intake row is absent (the addon not
+        installed, or the document was never declared) the outcome is already
+        delivered to the user, so a silent no-op is the right behaviour.
+        """
+        saved_sender = self.runtime_sender_id
+        saved_context = self.runtime_rpc_context
+        self.runtime_sender_id = None
+        self.runtime_rpc_context = None
+        try:
+            res = self._odoo_call(
+                "odooclaw.document.intake",
+                "search_read",
+                [[["attachment_id", "=", int(attachment_id)]]],
+                {},
+            )
+            if res.get("isError"):
+                return
+            records = res.get("result") or []
+            if not records:
+                return
+            # Respect the gate (D7): a document the customer switched off never
+            # enters the pipeline, so it must not be reported as created.
+            if records[0].get("state") == "disabled":
+                return
+            intake_id = records[0].get("id")
+            if created_model:
+                self._odoo_call(
+                    "odooclaw.document.intake",
+                    "mark_created",
+                    [intake_id],
+                    {
+                        "created_model": created_model,
+                        "created_res_id": int(created_res_id),
+                    },
+                )
+            elif reason:
+                self._odoo_call(
+                    "odooclaw.document.intake",
+                    "mark_review",
+                    [intake_id],
+                    {"reason": reason},
+                )
+        except Exception:  # noqa: BLE001 — the outcome is already delivered
+            pass
+        finally:
+            self.runtime_sender_id = saved_sender
+            self.runtime_rpc_context = saved_context
+
     def _call_vision_expense(self, attachment):
         prompt = (
             "You are an OCR extractor for employee expense receipts. "
@@ -1658,6 +1724,10 @@ class OdooOCRSkill:
         # to it. When every engine failed to read a number, say so and create
         # nothing instead of writing a 0.00 draft.
         if not self._has_usable_amounts(invoice_data):
+            self._report_intake_outcome(
+                attachment_id,
+                reason="No total or priced line could be read from the document",
+            )
             return {
                 "isError": True,
                 "content": (
@@ -1674,6 +1744,10 @@ class OdooOCRSkill:
         # created, so a model's 0.99 confidence cannot book a bad fiscal id.
         if not invoice_data.get("validation_ok"):
             issues = invoice_data.get("validation_issues") or []
+            self._report_intake_outcome(
+                attachment_id,
+                reason=", ".join(str(i) for i in issues) or "Declared for human review",
+            )
             return {
                 "isError": True,
                 "content": (
@@ -1687,6 +1761,14 @@ class OdooOCRSkill:
         create_res = self._create_vendor_bill(invoice_data, attachment)
         if create_res.get("isError"):
             return create_res
+
+        # Record the destination in the intake queue so the review queue stays
+        # truthful: this document became an account.move (criterion 1).
+        self._report_intake_outcome(
+            attachment_id,
+            created_model="account.move",
+            created_res_id=create_res["move_id"],
+        )
 
         return {
             "content": json.dumps(
