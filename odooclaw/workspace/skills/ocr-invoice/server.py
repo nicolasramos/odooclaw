@@ -1697,6 +1697,12 @@ class OdooOCRSkill:
 
         attachment = self._download_attachment(attachment_id)
         if attachment.get("isError"):
+            # A document that never arrived still has a known fate: it waits in
+            # review with the reason instead of vanishing from the queue.
+            self._report_intake_outcome(
+                attachment_id,
+                reason=f"Original file could not be downloaded: {attachment.get('content')}",
+            )
             return attachment
 
         ext_res = self.extract_invoice(
@@ -1706,6 +1712,14 @@ class OdooOCRSkill:
             allowed_company_ids=allowed_company_ids,
         )
         if ext_res.get("isError"):
+            # Criterion (b): an illegible document (no text layer, OCR/vision
+            # failed) creates nothing and waits in review with the reason.
+            # Without this write-back the queue stays empty and the refusal is
+            # only ever a chat message.
+            self._report_intake_outcome(
+                attachment_id,
+                reason=f"Document could not be read: {ext_res.get('content')}",
+            )
             return ext_res
 
         payload = json.loads(str(ext_res.get("content", "{}")))
@@ -1758,8 +1772,56 @@ class OdooOCRSkill:
                 ),
             }
 
+        # Hard field gate at the creation boundary: NIF and total. The pipeline
+        # already refuses an invalid control digit, but an ABSENT NIF passes its
+        # validation (there is nothing to invalidate) — and a booked supplier
+        # invoice without a fiscal id is exactly what the gate exists to stop.
+        # Re-checking validity here keeps the boundary self-contained: whatever
+        # engine produced invoice_data, no bill is written without a NIF that
+        # passes the deterministic control-digit check.
+        partner_vat = str(invoice_data.get("partner_vat") or "").strip()
+        if not partner_vat:
+            self._report_intake_outcome(
+                attachment_id,
+                reason="NIF could not be read from the document: hard field gate",
+            )
+            return {
+                "isError": True,
+                "content": (
+                    "Refusing to create the vendor bill: no NIF was read from the "
+                    "document. NIF and total are the hard fields — without them "
+                    "there is no bill. The document is sent to human review. "
+                    f"attachment={attachment_id}."
+                ),
+            }
+        try:
+            from pipeline import validate_nif
+
+            if not validate_nif(partner_vat):
+                self._report_intake_outcome(
+                    attachment_id,
+                    reason=f"vat: NIF/CIF with invalid control digit ({partner_vat})",
+                )
+                return {
+                    "isError": True,
+                    "content": (
+                        f"Refusing to create the vendor bill: the NIF {partner_vat} "
+                        "fails the control-digit check. The document is sent to "
+                        f"human review. attachment={attachment_id}."
+                    ),
+                }
+        except ImportError:  # pragma: no cover — pipeline sits next to server.py
+            pass
+
         create_res = self._create_vendor_bill(invoice_data, attachment)
         if create_res.get("isError"):
+            # The document passed every gate but the write failed (permissions,
+            # accounting config). It must not vanish from the queue: review
+            # holds it with the reason until a human can retry.
+            self._report_intake_outcome(
+                attachment_id,
+                reason=f"Bill creation failed: {create_res.get('content')}",
+            )
             return create_res
 
         # Record the destination in the intake queue so the review queue stays

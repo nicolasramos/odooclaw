@@ -19,10 +19,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from server import OdooOCRSkill  # noqa: E402
 
-# B12345678 is a well-formed Spanish CIF: control digit verified by validate_nif.
+# B12345674 is a real Spanish CIF whose control digit passes validate_nif (T4);
+# B12345670 below fails the same check. Both verified against the validator.
 CLEAN_INVOICE = {
     "partner_name": "Papelería Ejemplo SL",
-    "partner_vat": "B12345678",
+    "partner_vat": "B12345674",
     "invoice_date": "2026-11-01",
     "ref": "FAC-2026-001",
     "currency": "EUR",
