@@ -42,9 +42,67 @@ _EXPENSE_CATEGORY_HINTS = (
     (
         ("telefon", "teléfono", "movil", "mobile", "internet", "wifi", "cloud",
          "datos"),
-        "Telefonía",
+         "Telefonía",
     ),
 )
+
+
+# Business card fields (T8 · NRA-5529). A card is matched against existing
+# contacts read-only (D6) on exactly these keys, so the dedupe never reaches for
+# a field the card did not give.
+_CONTACT_LOOKUP_FIELDS = (
+    "id",
+    "name",
+    "email",
+    "phone",
+    "mobile",
+    "website",
+    "street",
+    "vat",
+    "company_type",
+)
+
+# Deterministic extractors for the fields that have a stable shape. The vision
+# layer is the primary reader; these only backfill a field the model left out, so
+# they run against the raw OCR text and never invent a value the card did not show.
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_PHONE_RE = re.compile(r"(?<!\d)[\d][\d()\-./\s+]{5,}\d(?!\d)")
+_WEB_RE = re.compile(r"(?:https?://)?\b(?:www\.)?[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?::\d+)?")
+
+
+def _clean_phone(value):
+    if not value or not re.search(r"\d", str(value)):
+        return None
+    return str(value).strip()
+
+
+def _find_phone(text, excluded=None):
+    """Best-effort landline backfill from raw OCR text. Prefer a number with a
+    phone-like length; skip anything that overlaps the email."""
+    for match in _PHONE_RE.finditer(text):
+        candidate = match.group(0).strip()
+        if excluded and excluded in candidate:
+            continue
+        digits = re.sub(r"\D", "", candidate)
+        if 7 <= len(digits) <= 15:
+            return candidate
+    return None
+
+
+def _find_web(text, excluded=None):
+    """Best-effort website backfill from raw OCR text, skipping emails and anything
+    that is really a date or version number."""
+    for match in _WEB_RE.finditer(text):
+        candidate = match.group(0)
+        start = match.start()
+        if start > 0 and text[start - 1] == "@":
+            continue
+        if excluded and excluded in candidate:
+            continue
+        if "http" not in candidate and ":" not in candidate:
+            candidate = "https://" + candidate
+        return candidate
+    return None
 
 
 class OdooOCRSkill:
@@ -991,6 +1049,313 @@ class OdooOCRSkill:
         finally:
             self.runtime_sender_id = saved_sender
             self.runtime_rpc_context = saved_context
+
+    # ------------------------------------------------------------------ #
+    # Business card -> contact proposal (T8 · NRA-5529)
+    #
+    # D4: a card never creates or overwrites a contact. The tool extracts the
+    # fields really read, matches them read-only against existing contacts, and
+    # returns a PROPOSAL (create new, or enrich the matched one). The intake
+    # queue is still told where the document went (review, awaiting confirmation).
+    # ------------------------------------------------------------------ #
+
+    def _call_vision_contact(self, attachment):
+        """Vision extractor for a business card (image or PDF). Same small-model
+        discipline as ``_call_vision``: image first, prompt last, temp 0, a few
+        retries. The prompt lists the field names only — the normalizer maps the
+        model's wording, so the model never has to emit a JSON schema inline."""
+        prompt = (
+            "You are a strict business card extractor. Return ONLY valid JSON, no "
+            "markdown, no explanations. Extract only the fields actually present on "
+            "the card: name, company, position, email, phone, mobile, web, address, "
+            "vat. Omit any field you cannot read."
+        )
+
+        content: list[dict[str, Any]] = []
+        mime = attachment["mimetype"]
+        if "pdf" in mime or attachment["name"].lower().endswith(".pdf"):
+            pages = self._pdf_to_images(attachment["data"])
+            if pages.get("isError"):
+                return pages
+            for image_bytes, image_mime in pages["images"]:
+                content.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": self._to_data_url(image_bytes, image_mime)
+                        },
+                    }
+                )
+        else:
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": self._to_data_url(attachment["data"], mime)},
+                }
+            )
+
+        # Image first, instructions last (N100 finding: text-first regurgitates).
+        content.append({"type": "text", "text": prompt})
+
+        payload = {
+            "model": self.vision_model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a strict OCR extractor. Return only valid JSON.",
+                },
+                {"role": "user", "content": content},
+            ],
+            "temperature": 0,
+            "max_tokens": 300,
+        }
+
+        headers = {"Content-Type": "application/json"}
+        if self.openai_api_key:
+            headers["Authorization"] = f"Bearer {self.openai_api_key}"
+
+        last_exc = None
+        for _attempt in range(3):
+            try:
+                r = requests.post(
+                    f"{self.vision_api_base}/chat/completions",
+                    json=payload,
+                    headers=headers,
+                    timeout=self.ocr_timeout,
+                )
+                r.raise_for_status()
+                body = r.json()
+                text = body.get("choices", [{}])[0].get("message", {}).get("content", "")
+                parsed = self._extract_first_json(text)
+                if parsed is not None:
+                    return {"parsed": parsed, "raw_text": text}
+                last_exc = ValueError("No valid JSON found in model response")
+            except Exception as exc:
+                last_exc = exc
+        return {"isError": True, "content": f"Card extraction failed: {last_exc}"}
+
+    def _normalize_contact(self, raw, raw_text=None):
+        """Raw model output -> the fields actually read, cleaned and validated.
+
+        Follows the same 'an unread field is absent, not empty' contract as
+        ``_normalize_invoice`` (T4): a field the card did not give never appears,
+        so every tool agrees on what was and was not read. Email/phone/web are
+        backfilled from the raw OCR text when the model left them out, then
+        validated so a stray token is never mistaken for a real value.
+        """
+        text = raw_text or ""
+        fields: dict[str, str] = {}
+
+        def pick(*keys):
+            for key in keys:
+                value = raw.get(key)
+                if value and str(value).strip():
+                    return str(value).strip()
+            return None
+
+        name = pick("name", "full_name", "contact_name", "person", "fullname")
+        if name:
+            fields["name"] = name
+        company = pick("company", "company_name", "organization", "business", "department")
+        if company:
+            fields["company"] = company
+        position = pick("position", "title", "role", "job_title", "job")
+        if position:
+            fields["position"] = position
+
+        email = (pick("email") or "").strip().lower()
+        if not email and _EMAIL_RE.search(text):
+            email = _EMAIL_RE.search(text).group(0).lower()
+        if email and _EMAIL_RE.fullmatch(email):
+            fields["email"] = email
+
+        phone = _clean_phone(pick("phone", "telephone", "fixed", "office"))
+        if not phone and text:
+            phone = _find_phone(text, excluded=email)
+        if phone:
+            fields["phone"] = phone
+
+        mobile = _clean_phone(pick("mobile", "cell", "movil", "cellphone", "cell_phone"))
+        if mobile:
+            fields["mobile"] = mobile
+
+        web = pick("web", "website", "url", "homepage")
+        if not web and text:
+            web = _find_web(text, excluded=email)
+        if web:
+            fields["web"] = web
+
+        address = pick("address", "addr", "address1", "address_line", "city")
+        if address:
+            fields["address"] = address
+
+        vat = pick("vat", "nif", "cif", "tax_id")
+        if vat:
+            fields["vat"] = re.sub(r"\s+", "", vat).upper()
+
+        return fields
+
+    def _dedupe_contact(self, normalized):
+        """Match a parsed card against existing contacts, read-only (D6), in the
+        mandated order: NIF, then email, then name + company. Returns the matching
+        partner record, or None. Never creates anything."""
+        domain_fields = {"fields": list(_CONTACT_LOOKUP_FIELDS), "limit": 1}
+
+        vat = normalized.get("vat")
+        if vat:
+            res = self._odoo_call(
+                "res.partner",
+                "search_read",
+                [[["vat", "=", vat]]],
+                domain_fields,
+            )
+            if not res.get("isError") and res.get("result"):
+                return res["result"][0]
+
+        email = normalized.get("email")
+        if email:
+            res = self._odoo_call(
+                "res.partner",
+                "search_read",
+                [[["email", "=", email]]],
+                domain_fields,
+            )
+            if not res.get("isError") and res.get("result"):
+                return res["result"][0]
+
+        name = normalized.get("name")
+        company = normalized.get("company")
+        if name and company:
+            res = self._odoo_call(
+                "res.partner",
+                "search_read",
+                [[["name", "ilike", name], "and", ["company", "ilike", company]]],
+                domain_fields,
+            )
+            if not res.get("isError") and res.get("result"):
+                return res["result"][0]
+        elif name:
+            res = self._odoo_call(
+                "res.partner",
+                "search_read",
+                [[["name", "ilike", name]]],
+                domain_fields,
+            )
+            if not res.get("isError") and res.get("result"):
+                return res["result"][0]
+
+        return None
+
+    def _fields_missing_on(self, normalized, match):
+        """Of the fields the card read, which does the existing contact lack? A
+        hint for the human, not a write."""
+        mapping = {
+            "name": "name",
+            "company": "name",
+            "position": "job",
+            "email": "email",
+            "phone": "phone",
+            "mobile": "mobile",
+            "web": "website",
+            "address": "street",
+            "vat": "vat",
+        }
+        missing: dict[str, str] = {}
+        for field, partner_field in mapping.items():
+            if field in normalized and not match.get(partner_field):
+                missing[field] = normalized[field]
+        return missing
+
+    def _build_contact_proposal(self, normalized, match):
+        """Shape the outcome the chat can show: create a new contact, or enrich the
+        one that already matches. Nothing is written either way (D4)."""
+        if match:
+            fields_to_add = self._fields_missing_on(normalized, match)
+            added = ", ".join(sorted(fields_to_add)) if fields_to_add else "no new field"
+            message = (
+                f"Business card for '{normalized.get('name') or 'unknown'}' matches an "
+                f"existing contact (partner {match.get('id')}: '{match.get('name')}'). "
+                f"Per D4 no duplicate is created. Proposal to ENRICH that contact with "
+                f"{added}."
+            )
+            return {
+                "status": "enrich_existing",
+                "existing_partner_id": match.get("id"),
+                "existing_name": match.get("name"),
+                "fields_to_add": fields_to_add,
+                "contact": normalized,
+                "message": message,
+            }
+
+        read_fields = ", ".join(sorted(normalized)) or "none"
+        message = (
+            f"No existing contact matched the card for "
+            f"'{normalized.get('name') or 'unknown'}'. Per D4 nothing is created. "
+            f"Proposal to CREATE a new contact with these fields: {read_fields}."
+        )
+        return {
+            "status": "create_new",
+            "existing_partner_id": None,
+            "existing_name": None,
+            "fields_to_add": None,
+            "contact": normalized,
+            "message": message,
+        }
+
+    def extract_and_propose_contact(self, attachment_id: int, dry_run: bool = False):
+        """Extract a business card and return a proposal (T8).
+
+        The only thing this tool touches in Odoo is a read-only dedupe against
+        existing contacts (D6) and the intake write-back. It never creates or
+        writes a contact: a matched card proposes to enrich, an unmatched card
+        proposes to create, and an unreadable card waits in review with the reason
+        (the same fail-closed gate T6/T7 apply to the other documents).
+        """
+        attachment = self._download_attachment(attachment_id)
+        if attachment.get("isError"):
+            # A document that never arrived still has a known fate: it waits in
+            # review with the reason instead of vanishing from the queue.
+            self._report_intake_outcome(
+                attachment_id,
+                reason=f"Original file could not be downloaded: {attachment.get('content')}",
+            )
+            return attachment
+
+        vision_res = self._call_vision_contact(attachment)
+        if vision_res.get("isError"):
+            self._report_intake_outcome(
+                attachment_id,
+                reason=f"Business card could not be read: {vision_res.get('content')}",
+            )
+            return vision_res
+
+        raw = vision_res.get("parsed") or {}
+        contact = self._normalize_contact(raw, vision_res.get("raw_text") or "")
+
+        # Hard gate: a card with nothing readable is not a contact we can propose.
+        if not contact:
+            self._report_intake_outcome(
+                attachment_id,
+                reason="No readable fields could be extracted from the business card",
+            )
+            return {
+                "isError": True,
+                "content": (
+                    "The business card gave no readable fields (name, email, phone, ...). "
+                    f"Nothing was proposed (ref={attachment_id}). Send a clearer photo and retry."
+                ),
+            }
+
+        match = self._dedupe_contact(contact)
+        proposal = self._build_contact_proposal(contact, match)
+        proposal = {"success": True, "dry_run": dry_run, **proposal}
+
+        if not dry_run:
+            # The document became a proposal awaiting human confirmation (D4): it
+            # waits in the review queue, truthful, instead of a fabricated create.
+            self._report_intake_outcome(attachment_id, reason=proposal["message"])
+
+        return {"content": json.dumps(proposal, ensure_ascii=False)}
 
     def _normalize_expense(self, data):
         return {
@@ -2216,6 +2581,24 @@ def build_tools():
                 "required": ["attachment_id"],
             },
         },
+        {
+            "name": "ocr-contact-proposal",
+            "description": "Extract a business card from an attachment and return a PROPOSAL to create or enrich a contact (res.partner). Never creates or modifies a contact (D4): returns only the fields actually read and, when the email/NIF already exists, a proposal to enrich the existing contact instead of duplicating it.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "attachment_id": {
+                        "type": "integer",
+                        "description": "ir.attachment ID of the business card image/PDF",
+                    },
+                    "dry_run": {
+                        "type": "boolean",
+                        "description": "If true, only return the proposal without reporting it to the intake queue",
+                    },
+                },
+                "required": ["attachment_id"],
+            },
+        },
     ]
 
 
@@ -2346,6 +2729,12 @@ def handle_request(request):
             allowed_company_ids=allowed_company_ids,
             employee_id=employee_id,
             product_id=product_id,
+        )
+    elif name == "ocr-contact-proposal":
+        dry_run = bool(arguments.get("dry_run", False))
+        res = ocr.extract_and_propose_contact(
+            attachment_id,
+            dry_run=dry_run,
         )
     else:
         return {
