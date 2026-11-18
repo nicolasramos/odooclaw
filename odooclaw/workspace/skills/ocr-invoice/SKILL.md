@@ -214,3 +214,9 @@ Also works with OpenAI-compatible endpoints (OVH, Groq, vLLM, etc.) that expose 
   - assigns a default expense account when possible;
   - maps taxes by percentage (`account.tax`, `purchase` type);
   - attaches the original PDF/image to the created bill.
+- Hard field gate: a bill is only created when a total and a NIF that passes
+  the deterministic control-digit check were both read. Anything else — an
+  unreadable document, a missing or invalid NIF, a failed write — creates
+  nothing and reports the document to the `odooclaw.document.intake` review
+  queue with the reason (`mark_review`); a created bill is recorded with
+  `mark_created`. The bill is always left in draft: posting stays human.
