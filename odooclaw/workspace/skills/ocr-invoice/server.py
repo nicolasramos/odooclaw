@@ -17,6 +17,36 @@ def log(msg: str) -> None:
     sys.stderr.flush()
 
 
+# Expense category proposal (T7 · NRA-5528). A merchant is mapped to a
+# suggested ``hr.expense.category`` by keyword; the suggestion is then looked
+# up read-only and only applied when the category actually exists in Odoo, so
+# the category is never invented. This is a small, editable hint table — the
+# client can extend it to match their own categories.
+_EXPENSE_CATEGORY_HINTS = (
+    (
+        ("taxi", "uber", "cabify", "metro", "bus", "autobus", "autobús", "tren",
+         "aerea", "aérea", "gasolina", "gasoleo", "gasoleo", "fuel", "parking",
+         "aparcamiento", "peaje", "parking"),
+        "Transporte",
+    ),
+    (
+        ("restaurant", "pizzeria", "pizarra", "comida", "comer", "cena",
+         "desayuno", "cafe", "café", "bar", "burger", "pizza", "tapa", "menu",
+         "menú", "coffee"),
+        "Alimentación",
+    ),
+    (
+        ("hotel", "hostal", "noche", "room", "hospedaje", "alojamiento", "motel"),
+        "Hospedaje",
+    ),
+    (
+        ("telefon", "teléfono", "movil", "mobile", "internet", "wifi", "cloud",
+         "datos"),
+        "Telefonía",
+    ),
+)
+
+
 class OdooOCRSkill:
     def __init__(self):
         self.odoo_url = os.environ.get("ODOO_URL", "").rstrip("/")
@@ -962,84 +992,6 @@ class OdooOCRSkill:
             self.runtime_sender_id = saved_sender
             self.runtime_rpc_context = saved_context
 
-    def _call_vision_expense(self, attachment):
-        prompt = (
-            "You are an OCR extractor for employee expense receipts. "
-            "Return ONLY valid JSON, no markdown, no explanations.\n\n"
-            "JSON schema:\n"
-            "{\n"
-            '  "merchant": "",\n'
-            '  "description": "",\n'
-            '  "expense_date": "",\n'
-            '  "total_amount": 0,\n'
-            '  "currency": "EUR",\n'
-            '  "notes": ""\n'
-            "}\n\n"
-            "Rules: expense_date must be YYYY-MM-DD and total_amount must be numeric."
-        )
-
-        content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
-        mime = attachment["mimetype"]
-        if "pdf" in mime or attachment["name"].lower().endswith(".pdf"):
-            pages = self._pdf_to_images(attachment["data"])
-            if pages.get("isError"):
-                return pages
-            for image_bytes, image_mime in pages["images"]:
-                content.append(
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": self._to_data_url(image_bytes, image_mime)
-                        },
-                    }
-                )
-        else:
-            content.append(
-                {
-                    "type": "image_url",
-                    "image_url": {"url": self._to_data_url(attachment["data"], mime)},
-                }
-            )
-
-        # IMPORTANTE: la imagen SIEMPRE primero; el texto de instrucciones al final.
-        # Verificado en N100 (2026-08-07): con texto primero el 450M regurgita basura.
-        content.append({"type": "text", "text": prompt})
-
-        payload = {
-            "model": self.vision_model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are a strict OCR extractor. Return only valid JSON.",
-                },
-                {"role": "user", "content": content},
-            ],
-            "temperature": 0,
-            "max_tokens": 150,
-        }
-
-        headers = {"Content-Type": "application/json"}
-        if self.openai_api_key:
-            headers["Authorization"] = f"Bearer {self.openai_api_key}"
-
-        try:
-            r = requests.post(
-                f"{self.vision_api_base}/chat/completions",
-                json=payload,
-                headers=headers,
-                timeout=self.ocr_timeout,
-            )
-            r.raise_for_status()
-            body = r.json()
-            text = body.get("choices", [{}])[0].get("message", {}).get("content", "")
-            parsed = self._extract_first_json(text)
-            return {"parsed": parsed, "raw_text": text}
-        except Exception as exc:
-            return {
-                "isError": True,
-                "content": f"Vision extraction for expense failed: {str(exc)}",
-            }
-
     def _normalize_expense(self, data):
         return {
             "merchant": str(data.get("merchant") or "").strip(),
@@ -1049,6 +1001,51 @@ class OdooOCRSkill:
             "currency": str(data.get("currency") or "EUR").strip() or "EUR",
             "notes": str(data.get("notes") or "").strip(),
         }
+
+    def _expense_data_from_intake(self, invoice_data):
+        """Project the pipeline's invoice-oriented intake output onto the fields
+        an expense actually needs: merchant, date, total and currency."""
+        return {
+            "merchant": str(invoice_data.get("partner_name") or "").strip(),
+            "description": str(invoice_data.get("notes") or "").strip(),
+            "expense_date": str(invoice_data.get("invoice_date") or "").strip(),
+            "total_amount": self._num(invoice_data.get("amount_total"), 0),
+            "currency": str(invoice_data.get("currency") or "EUR").strip() or "EUR",
+            "notes": str(invoice_data.get("notes") or "").strip(),
+        }
+
+    def _propose_category_name(self, merchant):
+        """Map a merchant to a suggested expense category by keyword."""
+        merchant = (merchant or "").lower()
+        for keywords, category in _EXPENSE_CATEGORY_HINTS:
+            if any(keyword in merchant for keyword in keywords):
+                return category
+        return None
+
+    def _resolve_proposed_category(self, merchant):
+        """Propose an ``hr.expense.category`` from the merchant and resolve it
+        read-only (D6).
+
+        Returns the category id when a keyword of the merchant maps to a
+        category that actually exists in Odoo, otherwise None. The category is
+        never invented: if the merchant was not read, no keyword matches, or the
+        mapped category does not exist, the field is left empty for a human to
+        assign. A document the total gate already accepted is legible, so a
+        keyword match on its merchant is a trustworthy proposal.
+        """
+        proposed = self._propose_category_name(merchant or "")
+        if not proposed:
+            return None
+        res = self._odoo_call(
+            "hr.expense.category",
+            "search_read",
+            [[["name", "=", proposed]]],
+            {"fields": ["id"], "limit": 1},
+        )
+        if res.get("isError"):
+            return None
+        rows = res.get("result") or []
+        return rows[0].get("id") if rows else None
 
     def _resolve_employee_for_expense(self, sender_id, explicit_employee_id=None):
         if explicit_employee_id:
@@ -1094,6 +1091,7 @@ class OdooOCRSkill:
         quantity=None,
         unit_amount=None,
         name_override=None,
+        category_id=None,
     ):
         fields_res = self._odoo_call("hr.expense", "fields_get", [], {})
         if fields_res.get("isError"):
@@ -1165,6 +1163,12 @@ class OdooOCRSkill:
         if currency_id and "currency_id" in fields:
             vals["currency_id"] = currency_id
 
+        # The category is a proposal, not an invention: it is only set when the
+        # caller resolved an existing ``hr.expense.category`` read-only (D6). A
+        # missing category_id leaves the field to Odoo's default (or a human).
+        if category_id and "category_id" in fields:
+            vals["category_id"] = category_id
+
         create_res = self._odoo_call("hr.expense", "create", [vals], {})
         if create_res.get("isError"):
             return create_res
@@ -1184,6 +1188,7 @@ class OdooOCRSkill:
             "expense_id": expense_id,
             "employee_id": resolved_employee_id,
             "product_id": resolved_product_id,
+            "category_id": category_id,
             "attachment_linked": not attach_res.get("isError"),
         }
 
@@ -1862,21 +1867,72 @@ class OdooOCRSkill:
 
         attachment = self._download_attachment(attachment_id)
         if attachment.get("isError"):
+            # A document that never arrived still has a known fate: it waits in
+            # review with the reason instead of vanishing from the queue.
+            self._report_intake_outcome(
+                attachment_id,
+                reason=f"Original file could not be downloaded: {attachment.get('content')}",
+            )
             return attachment
 
-        vision_res = self._call_vision_expense(attachment)
-        if vision_res.get("isError"):
-            return vision_res
+        ext_res = self.extract_invoice(
+            attachment_id,
+            sender_id=sender_id,
+            company_id=company_id,
+            allowed_company_ids=allowed_company_ids,
+        )
+        if ext_res.get("isError"):
+            # Criterion (b): an illegible document (no text layer, OCR/vision
+            # failed) creates nothing and waits in review with the reason.
+            # Without this write-back the queue stays empty and the refusal is
+            # only ever a chat message.
+            self._report_intake_outcome(
+                attachment_id,
+                reason=f"Document could not be read: {ext_res.get('content')}",
+            )
+            return ext_res
 
-        expense_data = self._normalize_expense(vision_res.get("parsed") or {})
+        payload = json.loads(str(ext_res.get("content", "{}")))
+        invoice_data = payload.get("invoice_data", {})
 
         if dry_run:
             return {
                 "content": json.dumps(
-                    {"success": True, "dry_run": True, "expense_data": expense_data},
+                    {"success": True, "dry_run": True, "expense_data": invoice_data},
                     ensure_ascii=False,
                 )
             }
+
+        # Hard gate at the creation boundary: a receipt with no total is worse
+        # than no expense — it looks booked but carries no number a human could
+        # book. When every engine failed to read a number, say so and create
+        # nothing instead of writing a 0.00 draft (the same gate T6 applies to
+        # the invoice total).
+        if not self._has_usable_amounts(invoice_data):
+            self._report_intake_outcome(
+                attachment_id,
+                reason="No total could be read from the document",
+            )
+            return {
+                "isError": True,
+                "content": (
+                    "Refusing to create the expense with no total: the document gave "
+                    f"no total (ref={invoice_data.get('ref') or ''!r}, "
+                    f"merchant={invoice_data.get('partner_name') or ''!r}, "
+                    f"attachment={attachment_id}). Nothing was created. Send a legible "
+                    "ticket and retry."
+                ),
+            }
+
+        # The category is a proposal, not an invention: look an existing
+        # hr.expense.category up read-only (D6) from the merchant. When nothing
+        # matches (or the merchant was not read) the field stays empty so a human
+        # can assign it.
+        category_id = self._resolve_proposed_category(
+            invoice_data.get("partner_name")
+        )
+
+        expense_data = self._expense_data_from_intake(invoice_data)
 
         create_res = self._create_employee_expense(
             expense_data,
@@ -1884,9 +1940,25 @@ class OdooOCRSkill:
             sender_id=self.runtime_sender_id,
             employee_id=self._to_int(employee_id),
             product_id=self._to_int(product_id),
+            category_id=category_id,
         )
         if create_res.get("isError"):
+            # The document passed every gate but the write failed (permissions,
+            # expense config). It must not vanish from the queue: review holds
+            # it with the reason until a human can retry.
+            self._report_intake_outcome(
+                attachment_id,
+                reason=f"Expense creation failed: {create_res.get('content')}",
+            )
             return create_res
+
+        # Record the destination in the intake queue so the review queue stays
+        # truthful: this document became an hr.expense (criterion 1).
+        self._report_intake_outcome(
+            attachment_id,
+            created_model="hr.expense",
+            created_res_id=create_res["expense_id"],
+        )
 
         return {
             "content": json.dumps(
@@ -1895,6 +1967,7 @@ class OdooOCRSkill:
                     "expense_id": create_res["expense_id"],
                     "employee_id": create_res["employee_id"],
                     "product_id": create_res["product_id"],
+                    "category_id": create_res.get("category_id"),
                     "attachment_linked": create_res["attachment_linked"],
                     "expense_data": expense_data,
                 },
