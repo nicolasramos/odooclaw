@@ -168,7 +168,7 @@ def _detect_reverse_charge(text):
 # matches. A vision/LLM model therefore cannot manufacture a valid NIF out of
 # a malformed one — the control digit is the gate, not the model's confidence.
 # --------------------------------------------------------------------------
-_NIF_LETTER_TABLE = "TRWAGMYFPDXBNJZRVYSHKCLP"  # 23 letters, index = number % 23
+_NIF_LETTER_TABLE = "TRWAGMYFPDXBNJZSQVHLCKE"  # 23 letters, index = number % 23
 _CIF_CONTROL_LETTERS = "JKLXYZ"                # reserved letters, only for letter controls
 
 

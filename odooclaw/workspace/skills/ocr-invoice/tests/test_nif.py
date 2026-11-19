@@ -38,7 +38,10 @@ def test_cif_with_invalid_control_digit_is_rejected():
 
 
 def test_nie_valid_and_invalid():
-    table = "TRWAGMYFPDXBNJZRVYSHKCLP"
+    # Ground-truth table (official REA table, verified against python-stdnum),
+    # NOT the code's own _NIF_LETTER_TABLE — otherwise the test would be
+    # circular and could never catch a wrong table.
+    table = "TRWAGMYFPDXBNJZSQVHLCKE"
     # X + 1234567 -> (0*10_000_000 + 1234567) % 23 -> table letter
     assert validate_nif("X1234567" + table[1234567 % 23]) is True
     assert validate_nif("X1234567A") is False
@@ -118,3 +121,73 @@ def test_unread_vat_leaves_no_field_confidence_entry():
     header = {"partner_name": "Proueba SL", "vat": ""}
     _ok, _issues, merged = layer4_validate(header, _fiscal())
     assert "vat" not in merged["_field_confidence"]
+
+
+# --- NIF letter table: the rests 15-22 range the old table got wrong -------
+#
+# The historic table "TRWAGMYFPDXBNJZRVYSHKCLP" had 24 characters (an 'R'
+# duplicated at index 15), so every NIF whose 8 digits land on remainder
+# 15..22 mod 23 (~35% of real DNI numbers) were rejected, and symmetrically
+# a wrong letter in that range was accepted. Both directions are exercised
+# here. The expected letters below were derived independently from
+# python-stdnum (the library Odoo itself uses to validate VAT), so this test
+# is NOT circular: it does not read _NIF_LETTER_TABLE to compute the answer.
+
+# 8-digit number whose value % 23 == rest, with the stdnum-correct letter.
+_NIF_RESTS_15_TO_22 = {
+    15: ("10000001", "S"),
+    16: ("10000002", "Q"),
+    17: ("10000003", "V"),
+    18: ("10000004", "H"),
+    19: ("10000005", "L"),
+    20: ("10000006", "C"),
+    21: ("10000007", "K"),
+    22: ("10000008", "E"),
+}
+
+
+def test_regression_rest_15_valid_was_rejected_invalid_was_accepted():
+    # Exact vectors from the T14 rejection verdict (12345679 % 23 == 15).
+    # On the old table this test went red both ways:
+    #   validate_nif("12345679S") -> False  (valid, wrongly rejected)
+    #   validate_nif("12345679R") -> True   (invalid, wrongly accepted)
+    assert validate_nif("12345679S") is True
+    assert validate_nif("12345679R") is False
+
+
+def test_valid_nif_rests_15_to_22_are_accepted():
+    for rest, (digits, letter) in _NIF_RESTS_15_TO_22.items():
+        assert validate_nif(digits + letter) is True, f"rest {rest}"
+
+
+def test_nif_rests_15_to_22_reject_every_other_letter():
+    for rest, (digits, correct) in _NIF_RESTS_15_TO_22.items():
+        for wrong in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+            if wrong == correct:
+                continue
+            assert validate_nif(digits + wrong) is False, f"rest {rest} accepted {wrong}"
+
+
+def test_nif_table_matches_python_stdnum_across_all_remainders():
+    # python-stdnum is an independent implementation of the NIF algorithm. If
+    # _NIF_LETTER_TABLE drifts from it again, this fails — including for the
+    # previously-broken rests 15..22. Skip gracefully if the oracle is absent.
+    try:
+        import stdnum.es.nif as stdnum_nif  # external oracle
+    except ImportError:
+        import unittest
+
+        raise unittest.SkipTest("python-stdnum not installed (external oracle)")
+
+    letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    for rest in range(23):
+        number = 10_000_000
+        while number % 23 != rest:
+            number += 1
+        valid = [ch for ch in letters if stdnum_nif.is_valid(f"{number}{ch}")]
+        assert len(valid) == 1, f"rest {rest}: stdnum accepted {valid}"
+        expected = valid[0]
+        assert validate_nif(f"{number}{expected}") is True
+        for wrong in letters:
+            if wrong != expected:
+                assert validate_nif(f"{number}{wrong}") is False, f"rest {rest}"
