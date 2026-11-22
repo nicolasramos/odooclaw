@@ -174,20 +174,11 @@ func (c *OdooChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		Message: utils.RemoveReasoning(msg.Content),
 	}
 
-	// Include reply token if one was registered for this chatID (single-use)
+	// Include reply token if one was registered for this chatID (single-use).
+	// Modules that authenticate the reply endpoint with a token send it; the
+	// public /odooclaw/reply endpoint accepts a reply without one.
 	if token, ok := c.pendingTokens.LoadAndDelete(msg.ChatID); ok {
 		reply.ReplyToken = token.(string)
-	} else {
-		// No token — Odoo would reject this reply anyway, skip LLM cost
-		pending := make([]string, 0, 4)
-		c.pendingTokens.Range(func(key, _ any) bool {
-			if s, ok := key.(string); ok {
-				pending = append(pending, s)
-			}
-			return true
-		})
-		slog.Warn("No reply token for chatID, skipping send", "chatID", msg.ChatID, "pending", pending)
-		return nil
 	}
 
 	jsonData, err := json.Marshal(reply)
@@ -373,14 +364,13 @@ func (c *OdooChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Reject webhook if no reply token — Odoo did not generate one
-	if payload.ReplyToken == "" {
-		slog.Warn("Rejected Odoo webhook: missing reply_token", "model", payload.Model, "res_id", payload.ResID)
-		http.Error(w, "Missing reply_token", http.StatusBadRequest)
-		return
+	// Store the single-use reply token when the Odoo module generates one.
+	// Older modules expose a public /odooclaw/reply endpoint and send no
+	// token; those replies are still delivered.
+	if payload.ReplyToken != "" {
+		c.pendingTokens.Store(replyChatID, payload.ReplyToken)
+		slog.Info("Registered Odoo reply token", "chatID", replyChatID, "message_id", payload.MessageID)
 	}
-	c.pendingTokens.Store(replyChatID, payload.ReplyToken)
-	slog.Info("Registered Odoo reply token", "chatID", replyChatID, "message_id", payload.MessageID)
 
 	c.HandleMessage(r.Context(), peer, strconv.Itoa(payload.MessageID), senderID, replyChatID, content, mediaPaths, metadata, sender)
 
