@@ -111,6 +111,22 @@ func NewAgentInstance(
 	// user. Register knowledge_add as a core tool and attach the retrieval
 	// engine to the registry so tool selection can use KB-driven relevance.
 	toolsRegistry.Register(tools.NewKnowledgeAddTool(contextBuilder.Knowledge()))
+	// OdooClaw Live: dev_* tools act on the Odoo instance bound to this channel.
+	// The Odoo module owns validation, permissions and the change ledger.
+	if cfg != nil && cfg.Channels.Odoo.Enabled {
+		odooURL := os.Getenv("ODOO_URL")
+		if odooURL == "" {
+			odooURL = "http://odoo:8069"
+		}
+		devClient := tools.NewDevClient(odooURL, cfg.Channels.Odoo.WebhookToken)
+		toolsRegistry.Register(tools.NewDevGetContextTool(devClient))
+		toolsRegistry.Register(tools.NewDevGetFieldsTool(devClient))
+		toolsRegistry.Register(tools.NewDevInspectViewTool(devClient))
+		toolsRegistry.Register(tools.NewDevProposeChangeTool(devClient))
+		toolsRegistry.Register(tools.NewDevApplyChangeTool(devClient))
+		toolsRegistry.Register(tools.NewDevDiffTool(devClient))
+		toolsRegistry.Register(tools.NewDevRollbackTool(devClient))
+	}
 	if engine, err := tools.NewRetrievalEngine(tools.NewSynonymRewriter()); err == nil {
 		if err := engine.IndexTools(toolsRegistry); err != nil {
 			logger.WarnCF("agent", "Failed to index tools for retrieval", map[string]any{"error": err.Error()})
@@ -232,26 +248,26 @@ func NewAgentInstance(
 	}
 
 	return &AgentInstance{
-		ID:             agentID,
-		Name:           agentName,
-		Model:          model,
-		Fallbacks:      fallbacks,
-		Workspace:      workspace,
-		MaxIterations:  maxIter,
-		MaxTokens:      maxTokens,
-		Temperature:    temperature,
-		ContextWindow:  maxTokens,
-		Provider:       provider,
-		Sessions:       sessionsManager,
-		ContextBuilder: contextBuilder,
-		Tools:          toolsRegistry,
-		Subagents:      subagents,
-		SkillsFilter:   skillsFilter,
-		Candidates:     candidates,
-		PromptToolsInText: promptToolsInText,
+		ID:                    agentID,
+		Name:                  agentName,
+		Model:                 model,
+		Fallbacks:             fallbacks,
+		Workspace:             workspace,
+		MaxIterations:         maxIter,
+		MaxTokens:             maxTokens,
+		Temperature:           temperature,
+		ContextWindow:         maxTokens,
+		Provider:              provider,
+		Sessions:              sessionsManager,
+		ContextBuilder:        contextBuilder,
+		Tools:                 toolsRegistry,
+		Subagents:             subagents,
+		SkillsFilter:          skillsFilter,
+		Candidates:            candidates,
+		PromptToolsInText:     promptToolsInText,
 		MaxCloudToolsInPrompt: maxCloudToolsInPrompt,
-		MaxTools: maxTools,
-		ToolMode: toolMode,
+		MaxTools:              maxTools,
+		ToolMode:              toolMode,
 	}
 }
 
