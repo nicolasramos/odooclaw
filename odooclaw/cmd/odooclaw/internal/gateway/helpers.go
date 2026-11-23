@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/nicolasramos/odooclaw/cmd/odooclaw/internal"
@@ -199,10 +200,22 @@ func gatewayCmd(debug bool) error {
 		if cfg.Channels.Odoo.Pipeline.TimeoutSeconds > 0 {
 			timeout = time.Duration(cfg.Channels.Odoo.Pipeline.TimeoutSeconds) * time.Second
 		}
-		// The processor is the agent, wired by the caller once the agent loop
-		// exists; with a nil processor the queue accepts and records arrivals
-		// without acting, which is honest but not useful, so say so.
-		queue := pipeline.NewQueue(nil, pipeline.Options{Timeout: timeout})
+		finishURL := cfg.Channels.Odoo.Pipeline.FinishURL
+		if finishURL == "" {
+			if base := os.Getenv("ODOO_URL"); base != "" {
+				finishURL = strings.TrimRight(base, "/") + "/odooclaw/pipeline/finish"
+			}
+		}
+		var processor pipeline.Processor
+		if finishURL != "" {
+			// The same agent that answers in the chat, so there is one brain and
+			// not a second one with its own prompts.
+			processor = pipeline.NewAgentProcessor(agentLoop, &pipeline.HTTPFinisher{
+				URL:   finishURL,
+				Token: cfg.Channels.Odoo.WebhookToken,
+			})
+		}
+		queue := pipeline.NewQueue(processor, pipeline.Options{Timeout: timeout})
 		jobHandler := pipeline.NewHandler(queue, cfg.Channels.Odoo.WebhookToken)
 		var mounted http.Handler = jobHandler
 		if proactiveHandler != nil {

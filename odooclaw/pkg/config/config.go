@@ -276,6 +276,9 @@ type PipelineConfig struct {
 	Enabled bool `json:"enabled" env:"ODOOCLAW_ODOO_PIPELINE_ENABLED"`
 	// TimeoutSeconds bounds one job. 0 uses the queue default (2 minutes).
 	TimeoutSeconds int `json:"timeout_seconds" env:"ODOOCLAW_ODOO_PIPELINE_TIMEOUT_SECONDS"`
+	// FinishURL is the Odoo endpoint that applies a run's outcome. Empty derives
+	// it from ODOO_URL.
+	FinishURL string `json:"finish_url" env:"ODOOCLAW_ODOO_PIPELINE_FINISH_URL"`
 }
 
 // ProactiveConfig configures the proactive assistance engine.

@@ -1,0 +1,182 @@
+package pipeline
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+type fakeAgent struct {
+	reply       string
+	err         error
+	lastPrompt  string
+	lastSession string
+}
+
+func (f *fakeAgent) ProcessDirect(ctx context.Context, content, sessionKey string) (string, error) {
+	f.lastPrompt = content
+	f.lastSession = sessionKey
+	return f.reply, f.err
+}
+
+type fakeFinisher struct {
+	results []Result
+}
+
+func (f *fakeFinisher) Finish(ctx context.Context, result Result) error {
+	f.results = append(f.results, result)
+	return nil
+}
+
+func docJob(mode string) Job {
+	return Job{
+		RunID:       7,
+		Model:       "helpdesk.ticket",
+		ResID:       3,
+		ResName:     "Printer does not turn on",
+		MessageID:   42,
+		MessageBody: "Hello, the printer you sold me does not turn on.",
+		AuthorName:  "Ana",
+		StageName:   "In Progress",
+		Mode:        mode,
+	}
+}
+
+func runProcessor(t *testing.T, mode, agentReply string, agentErr error) (fakeFinisher, fakeAgent) {
+	t.Helper()
+	agent := fakeAgent{reply: agentReply, err: agentErr}
+	finisher := fakeFinisher{}
+	processor := NewAgentProcessor(&agent, &finisher)
+	job := docJob(mode)
+	if err := processor.Process(context.Background(), job); agentErr == nil {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	if len(finisher.results) != 1 {
+		t.Fatalf("expected exactly one result, got %d", len(finisher.results))
+	}
+	if finisher.results[0].RunID != job.RunID {
+		t.Fatalf("result must carry the run id, got %+v", finisher.results[0])
+	}
+	return finisher, agent
+}
+
+func TestDraftModeProducesADraft(t *testing.T) {
+	finisher, agent := runProcessor(t, "draft",
+		`{"action":"reply","body":"Please send us the serial number.","reason":"Missing data."}`, nil)
+	if finisher.results[0].State != "drafted" {
+		t.Fatalf("expected drafted, got %s", finisher.results[0].State)
+	}
+	if !strings.Contains(finisher.results[0].Body, "serial number") {
+		t.Fatalf("body lost: %+v", finisher.results[0])
+	}
+	if !strings.Contains(agent.lastSession, "pipeline:") {
+		t.Fatalf("pipeline runs must not share the chat session, got %q", agent.lastSession)
+	}
+}
+
+func TestObserveModeNeverSends(t *testing.T) {
+	finisher, _ := runProcessor(t, "observe",
+		`{"action":"reply","body":"A reply nobody asked to send.","reason":"Worth logging."}`, nil)
+	if finisher.results[0].State != "observed" {
+		t.Fatalf("expected observed, got %s", finisher.results[0].State)
+	}
+}
+
+func TestAutoModeSends(t *testing.T) {
+	finisher, _ := runProcessor(t, "auto",
+		`{"action":"reply","body":"It ships tomorrow.","reason":"Answered."}`, nil)
+	if finisher.results[0].State != "sent" {
+		t.Fatalf("expected sent, got %s", finisher.results[0].State)
+	}
+}
+
+func TestEscalateWinsOverTheMode(t *testing.T) {
+	finisher, _ := runProcessor(t, "auto",
+		`{"action":"escalate","reason":"The customer asks for a refund."}`, nil)
+	if finisher.results[0].State != "escalated" {
+		t.Fatalf("expected escalated, got %s", finisher.results[0].State)
+	}
+	if !finisher.results[0].Escalate {
+		t.Fatal("escalate flag must be set")
+	}
+}
+
+func TestSkipIsObserved(t *testing.T) {
+	finisher, _ := runProcessor(t, "auto",
+		`{"action":"skip","reason":"Nothing useful to add."}`, nil)
+	if finisher.results[0].State != "observed" {
+		t.Fatalf("expected observed, got %s", finisher.results[0].State)
+	}
+}
+
+func TestParseDecisionToleratesFences(t *testing.T) {
+	raw := "```json\n{\"action\":\"reply\",\"body\":\"Hola\"}\n```"
+	d, err := ParseDecision(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if d.Action != "reply" || d.Body != "Hola" {
+		t.Fatalf("unexpected decision: %+v", d)
+	}
+}
+
+func TestUnparseableAnswerIsAFailedRun(t *testing.T) {
+	finisher, _ := runProcessor(t, "draft", "I think you should call the customer.", nil)
+	if finisher.results[0].State != "failed" {
+		t.Fatalf("expected failed, got %s", finisher.results[0].State)
+	}
+	if !strings.Contains(finisher.results[0].Error, "unparseable") {
+		t.Fatalf("error must explain the unparseable answer, got %q", finisher.results[0].Error)
+	}
+}
+
+func TestAgentErrorIsAFailedRun(t *testing.T) {
+	agent := fakeAgent{err: context.DeadlineExceeded}
+	finisher := fakeFinisher{}
+	processor := NewAgentProcessor(&agent, &finisher)
+	err := processor.Process(context.Background(), docJob("draft"))
+	if err == nil {
+		t.Fatal("the error must be returned so the queue can retry")
+	}
+	if finisher.results[0].State != "failed" {
+		t.Fatalf("expected failed, got %s", finisher.results[0].State)
+	}
+}
+
+func TestPromptCarriesTheCustomerMessage(t *testing.T) {
+	_, agent := runProcessor(t, "draft", `{"action":"skip"}`, nil)
+	for _, want := range []string{"Printer does not turn on", "Ana", "draft", "helpdesk.ticket"} {
+		if !strings.Contains(agent.lastPrompt, want) {
+			t.Fatalf("prompt is missing %q:\n%s", want, agent.lastPrompt)
+		}
+	}
+}
+
+func TestHTTPFinisherPostsTheResult(t *testing.T) {
+	var got Result
+	var token string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token = r.Header.Get("X-OdooClaw-Token")
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	finisher := &HTTPFinisher{URL: server.URL, Token: "secret"}
+	err := finisher.Finish(context.Background(), Result{
+		RunID: 9, State: "drafted", Body: "Hola", Decision: "Answered.",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if token != "secret" {
+		t.Fatalf("token not sent, got %q", token)
+	}
+	if got.RunID != 9 || got.State != "drafted" || got.Body != "Hola" {
+		t.Fatalf("payload mangled: %+v", got)
+	}
+}
