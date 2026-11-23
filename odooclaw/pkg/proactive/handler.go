@@ -15,6 +15,13 @@ import (
 // as a constant rather than being spelled out in two places.
 const SignalPath = "/odooclaw/signal"
 
+// AckPath is where Odoo confirms the message was actually posted. The signal
+// route only decides; this one persists the invitation or the cooldown.
+const AckPath = "/odooclaw/ack"
+
+// OptInPath is where Odoo reports the user's acceptance of the invitation.
+const OptInPath = "/odooclaw/optin"
+
 // Handler exposes the engine over HTTP so Odoo can ask "the user just opened
 // this screen; would you say something?".
 //
@@ -86,6 +93,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The three paths are mounted together at /odooclaw/ so the gateway has one
+	// handler to wire. Deciding, recording and consenting are deliberately
+	// different requests: the decision must not persist anything (the host may
+	// fail to deliver), and consent arrives long after the invitation.
+	switch r.URL.Path {
+	case SignalPath:
+		h.handleSignal(w, r)
+	case AckPath:
+		h.handleAck(w, r)
+	case OptInPath:
+		h.handleOptIn(w, r)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func (h *Handler) handleSignal(w http.ResponseWriter, r *http.Request) {
 	if !h.enabled {
 		writeJSON(w, http.StatusOK, SignalResponse{
 			Reason: "la proactividad está desactivada en este despliegue",
@@ -151,6 +175,83 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// AckRequest is what Odoo sends after posting the message. It closes the loop:
+// the engine only persists the invitation or the area cooldown once the message
+// exists, so a failed post does not burn the user's single invitation.
+type AckRequest struct {
+	UserID     int    `json:"user_id"`
+	Area       string `json:"area"`
+	PlaybookID string `json:"playbook_id"`
+	Invitation bool   `json:"invitation"`
+}
+
+func (h *Handler) handleAck(w http.ResponseWriter, r *http.Request) {
+	var req AckRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, SignalResponse{Reason: "JSON ilegible"})
+		return
+	}
+	defer r.Body.Close()
+	if req.UserID == 0 {
+		writeJSON(w, http.StatusBadRequest, SignalResponse{Reason: "falta user_id"})
+		return
+	}
+	if h.service == nil {
+		writeJSON(w, http.StatusOK, SignalResponse{Reason: "el motor de proactividad no está configurado"})
+		return
+	}
+	sig := Signal{UserID: req.UserID, Area: strings.ToLower(strings.TrimSpace(req.Area))}
+	dec := Decision{Invitation: req.Invitation, PlaybookID: req.PlaybookID}
+	if err := h.service.Record(sig, dec); err != nil {
+		logger.WarnCF("proactive", "Failed to record delivery", map[string]any{
+			"user_id": req.UserID,
+			"area":    sig.Area,
+			"error":   err.Error(),
+		})
+		writeJSON(w, http.StatusInternalServerError, SignalResponse{Reason: "no se pudo registrar la entrega"})
+		return
+	}
+	logger.InfoCF("proactive", "Delivery recorded", map[string]any{
+		"user_id":    req.UserID,
+		"area":       sig.Area,
+		"playbook":   req.PlaybookID,
+		"invitation": req.Invitation,
+	})
+	writeJSON(w, http.StatusOK, SignalResponse{
+		Reason:     "entrega registrada",
+		PlaybookID: req.PlaybookID,
+		Area:       sig.Area,
+	})
+}
+
+// OptInRequest is the user's acceptance of the invitation, sent from Odoo when
+// the user answers the invitation in the bot's private chat.
+type OptInRequest struct {
+	UserID int `json:"user_id"`
+}
+
+func (h *Handler) handleOptIn(w http.ResponseWriter, r *http.Request) {
+	var req OptInRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, SignalResponse{Reason: "JSON ilegible"})
+		return
+	}
+	defer r.Body.Close()
+	if req.UserID == 0 {
+		writeJSON(w, http.StatusBadRequest, SignalResponse{Reason: "falta user_id"})
+		return
+	}
+	if h.service == nil {
+		writeJSON(w, http.StatusOK, SignalResponse{Reason: "el motor de proactividad no está configurado"})
+		return
+	}
+	h.service.EnableOptIn(req.UserID)
+	logger.InfoCF("proactive", "User opted in to suggestions", map[string]any{
+		"user_id": req.UserID,
+	})
+	writeJSON(w, http.StatusOK, SignalResponse{Reason: "sugerencias activadas"})
 }
 
 // itoa renders the view id the way the Signal expects it: an empty string for

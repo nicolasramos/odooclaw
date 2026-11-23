@@ -181,7 +181,10 @@ func gatewayCmd(debug bool) error {
 				cfg.Channels.Odoo.WebhookToken,
 				true,
 			)
-			channelManager.SetProactiveHandler(proactive.SignalPath, handler)
+			// Mount the whole /odooclaw/ subtree: signal, ack and optin are
+			// served by the same handler, and deciding, recording and
+			// consenting are separate requests on purpose.
+			channelManager.SetProactiveHandler("/odooclaw/", handler)
 			logger.InfoCF("proactive", "Proactive engine enabled", map[string]any{
 				"path":      proactive.SignalPath,
 				"playbooks": len(engine.Playbooks()),
