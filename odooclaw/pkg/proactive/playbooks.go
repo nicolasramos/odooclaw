@@ -148,6 +148,42 @@ func DefaultPlaybooks() []Playbook {
 				"pasó y siguen sin ganar. ¿Las repasamos y actualizamos la fecha?",
 		},
 		{
+			// Helpdesk is its own area: the model is helpdesk.ticket, which no
+			// other area resolves from. The counters are the ones
+			// mail_bot_odooclaw_helpdesk ships as data.
+			ID:        "helpdesk.new_tickets",
+			Area:      "helpdesk",
+			Title:     "Tickets nuevos sin atender",
+			SignalKey: "new_tickets",
+			MinCount:  1,
+			Priority:  10,
+			Risk:      knowledge.RiskLow,
+			Template: "Tienes {n} ticket(s) nuevos sin atender. " +
+				"¿Quieres que veamos cuáles necesitan respuesta primero?",
+		},
+		{
+			ID:        "helpdesk.high_priority_tickets",
+			Area:      "helpdesk",
+			Title:     "Tickets de prioridad alta abiertos",
+			SignalKey: "high_priority_tickets",
+			MinCount:  2,
+			Priority:  20,
+			Risk:      knowledge.RiskLow,
+			Template: "Hay {n} ticket(s) de prioridad alta o muy alta abiertos. " +
+				"¿Los repasamos y vemos cuáles corren más prisa?",
+		},
+		{
+			ID:        "helpdesk.stale_tickets",
+			Area:      "helpdesk",
+			Title:     "Tickets abiertos sin actividad",
+			SignalKey: "tickets_without_activity",
+			MinCount:  3,
+			Priority:  30,
+			Risk:      knowledge.RiskLow,
+			Template: "Tienes {n} ticket(s) abiertos sin ninguna actividad " +
+				"programada. ¿Quieres que revisemos cuáles llevan más tiempo esperando?",
+		},
+		{
 			ID:        "gastos.draft_expenses",
 			Area:      "expenses",
 			Title:     "Gastos sin enviar",
