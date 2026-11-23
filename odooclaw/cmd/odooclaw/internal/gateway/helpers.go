@@ -347,6 +347,11 @@ func setupCronTool(
 
 	agentLoop.RegisterTool(cronTool)
 
+	// Artifacts: the assistant can keep what it made. The endpoint lives in
+	// Odoo; with no ODOO_URL the tool answers with a clear error instead of
+	// pretending it saved anything.
+	agentLoop.RegisterTool(tools.NewArtifactCreateTool(os.Getenv("ODOO_URL"), cfg.Channels.Odoo.WebhookToken))
+
 	// Set the onJob handler
 	cronService.SetOnJob(func(job *cron.CronJob) (string, error) {
 		result := cronTool.ExecuteJob(context.Background(), job)
