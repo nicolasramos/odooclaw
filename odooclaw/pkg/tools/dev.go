@@ -380,12 +380,12 @@ func (t *DevProposeChangeTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"name":         map[string]any{"type": "string", "description": "Short title for the change."},
 			"request_text": map[string]any{"type": "string", "description": "The user's request, verbatim."},
-			"kind":         map[string]any{"type": "string", "enum": []string{"field", "view", "action", "menu"}},
+			"kind":         map[string]any{"type": "string", "enum": []string{"field", "view", "action", "menu", "module"}},
 			"level":        map[string]any{"type": "string", "enum": []string{"n0", "n1", "n2", "n3"}, "description": "N0 data, N1 metadata, N2 new module, N3 existing module. Default n1."},
 			"target_model": map[string]any{"type": "string", "description": "Optional model; defaults to payload.model."},
 			"payload": map[string]any{
 				"type":        "object",
-				"description": "field: {model,name,ttype,field_description}; view: {model,inherit_xmlid,arch}; action: {model,code}; menu: {name,parent_xmlid,action_xmlid}.",
+				"description": "field: {model,name,ttype,field_description,selection,insert_after}; view: {model,inherit_xmlid,arch}; action: {model,code}; menu: {name,parent_xmlid,action_xmlid}; module: {module:'oc_slug', files:{path:content}}.",
 			},
 		},
 		"required": []string{"kind", "payload"},
