@@ -383,6 +383,7 @@ func (t *DevProposeChangeTool) Parameters() map[string]any {
 			"kind":         map[string]any{"type": "string", "enum": []string{"field", "view", "action", "menu", "module"}},
 			"level":        map[string]any{"type": "string", "enum": []string{"n0", "n1", "n2", "n3"}, "description": "N0 data, N1 metadata, N2 new module, N3 existing module. Default n1."},
 			"target_model": map[string]any{"type": "string", "description": "Optional model; defaults to payload.model."},
+			"target_module": map[string]any{"type": "string", "description": "N3 only: installed module whose behaviour is changed."},
 			"payload": map[string]any{
 				"type":        "object",
 				"description": "field: {model,name,ttype,field_description,selection,insert_after}; view: {model,inherit_xmlid,arch}; action: {model,code}; menu: {name,parent_xmlid,action_xmlid}; module: {module:'oc_slug', files:{path:content}}.",
@@ -421,13 +422,14 @@ func (t *DevProposeChangeTool) Execute(ctx context.Context, args map[string]any)
 		target, _ = payload["model"].(string)
 	}
 	result, err := t.client.Call(ctx, "/odooclaw_evolution/api/change", map[string]any{
-		"action":       "propose",
-		"name":         name,
-		"request_text": devStringArg(args, "request_text"),
-		"kind":         kind,
-		"level":        level,
-		"target_model": target,
-		"payload":      payload,
+		"action":        "propose",
+		"name":          name,
+		"request_text":  devStringArg(args, "request_text"),
+		"kind":          kind,
+		"level":         level,
+		"target_model":  target,
+		"target_module": devStringArg(args, "target_module"),
+		"payload":       payload,
 	})
 	if err != nil {
 		return ErrorResult(err.Error())
