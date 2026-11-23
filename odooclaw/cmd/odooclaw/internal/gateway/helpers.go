@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -34,6 +35,7 @@ import (
 	"github.com/nicolasramos/odooclaw/pkg/heartbeat"
 	"github.com/nicolasramos/odooclaw/pkg/logger"
 	"github.com/nicolasramos/odooclaw/pkg/media"
+	"github.com/nicolasramos/odooclaw/pkg/pipeline"
 	"github.com/nicolasramos/odooclaw/pkg/proactive"
 	"github.com/nicolasramos/odooclaw/pkg/providers"
 	"github.com/nicolasramos/odooclaw/pkg/state"
@@ -152,6 +154,7 @@ func gatewayCmd(debug bool) error {
 	// holds no LLM: it counts (Odoo does the counting) and applies the policy.
 	// Delivery is NOT done here — Odoo posts the message itself, inside the
 	// request scope of the user who triggered it (see pkg/proactive.Handler).
+	var proactiveHandler http.Handler
 	if cfg.Channels.Odoo.Proactive.Enabled {
 		// Resolve the store path here rather than in config: the default depends
 		// on the workspace, which is only known once the config is loaded. A
@@ -176,20 +179,43 @@ func gatewayCmd(debug bool) error {
 				proactive.DefaultPolicy(),
 				proactiveStore,
 			)
-			handler := proactive.NewHandler(
+			proactiveHandler = proactive.NewHandler(
 				proactive.NewService(engine, nil, nil),
 				cfg.Channels.Odoo.WebhookToken,
 				true,
 			)
-			// Mount the whole /odooclaw/ subtree: signal, ack and optin are
-			// served by the same handler, and deciding, recording and
-			// consenting are separate requests on purpose.
-			channelManager.SetProactiveHandler("/odooclaw/", handler)
 			logger.InfoCF("proactive", "Proactive engine enabled", map[string]any{
 				"path":      proactive.SignalPath,
 				"playbooks": len(engine.Playbooks()),
 			})
 		}
+	}
+
+	// Wire the operational pipeline: a customer comment becomes a job. The
+	// queue runs one job at a time, highest priority first, and its handler is
+	// mounted under the same /odooclaw/ subtree as the proactive routes.
+	if cfg.Channels.Odoo.Pipeline.Enabled {
+		timeout := 2 * time.Minute
+		if cfg.Channels.Odoo.Pipeline.TimeoutSeconds > 0 {
+			timeout = time.Duration(cfg.Channels.Odoo.Pipeline.TimeoutSeconds) * time.Second
+		}
+		// The processor is the agent, wired by the caller once the agent loop
+		// exists; with a nil processor the queue accepts and records arrivals
+		// without acting, which is honest but not useful, so say so.
+		queue := pipeline.NewQueue(nil, pipeline.Options{Timeout: timeout})
+		jobHandler := pipeline.NewHandler(queue, cfg.Channels.Odoo.WebhookToken)
+		var mounted http.Handler = jobHandler
+		if proactiveHandler != nil {
+			mounted = pipeline.Router(proactiveHandler, jobHandler)
+		}
+		channelManager.SetProactiveHandler("/odooclaw/", mounted)
+		logger.InfoCF("pipeline", "Pipeline queue enabled", map[string]any{
+			"path":    "/odooclaw/job",
+			"timeout": timeout.String(),
+		})
+	} else if proactiveHandler != nil {
+		// Proactive only: the whole subtree is the proactive handler.
+		channelManager.SetProactiveHandler("/odooclaw/", proactiveHandler)
 	}
 
 	// Inject channel manager and media store into agent loop

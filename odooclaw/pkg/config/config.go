@@ -264,6 +264,18 @@ type OdooConfig struct {
 	// assistant that starts talking before anyone asked for it should be an
 	// explicit decision, not something a deploy switches on by accident.
 	Proactive ProactiveConfig `json:"proactive"`
+	// Pipeline configures the operational queue: a customer writes on a record
+	// and the bot observes, drafts or answers according to the Odoo pipeline.
+	// Off by default, like proactivity.
+	Pipeline PipelineConfig `json:"pipeline"`
+}
+
+// PipelineConfig configures the operational pipeline queue.
+type PipelineConfig struct {
+	// Enabled mounts POST /odooclaw/job and starts the queue.
+	Enabled bool `json:"enabled" env:"ODOOCLAW_ODOO_PIPELINE_ENABLED"`
+	// TimeoutSeconds bounds one job. 0 uses the queue default (2 minutes).
+	TimeoutSeconds int `json:"timeout_seconds" env:"ODOOCLAW_ODOO_PIPELINE_TIMEOUT_SECONDS"`
 }
 
 // ProactiveConfig configures the proactive assistance engine.
