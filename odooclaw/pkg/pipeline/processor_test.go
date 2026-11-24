@@ -211,3 +211,10 @@ func TestPromptForbidsKnowledgeWhenDisabled(t *testing.T) {
 		t.Fatalf("prompt must not invite knowledge_search when disabled")
 	}
 }
+
+func TestPromptForbidsInternalNotesInTheBody(t *testing.T) {
+	prompt := BuildPrompt(docJob("auto"))
+	if !strings.Contains(prompt, "texto exacto que vera el cliente") {
+		t.Fatalf("prompt must forbid internal notes in the body")
+	}
+}

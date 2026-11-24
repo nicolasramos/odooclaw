@@ -78,6 +78,7 @@ Reglas:
 - No inventes pedidos, plazos, importes ni estados que no aparezcan en el mensaje. Si falta un dato, pidelo.
 - Si el cliente pide algo que no puedes resolver o exige una persona, usa "escalate".
 - Si no hay nada util que decir, usa "skip" y deja body vacio.
+- El campo "body" es el texto exacto que vera el cliente: nada de notas internas, ni explicaciones de tu proceso, ni la palabra "Nota interna". El motivo va solo en "reason".
 - Responde en el mismo idioma del cliente.`
 
 // BuildPrompt is exported for tests and for operators who want to see exactly
