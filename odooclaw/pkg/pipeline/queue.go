@@ -18,24 +18,28 @@ import (
 
 // Job is one customer message handed over by Odoo.
 type Job struct {
-	RunID          int    `json:"run_id"`
-	PipelineID     int    `json:"pipeline_id"`
-	Area           string `json:"area"`
-	Model          string `json:"model"`
-	ResID          int    `json:"res_id"`
-	ResName        string `json:"res_name"`
-	MessageID      int    `json:"message_id"`
-	MessageBody    string `json:"message_body"`
-	AuthorID       int    `json:"author_id"`
-	AuthorName     string `json:"author_name"`
-	StageID        int    `json:"stage_id"`
-	StageName      string `json:"stage_name"`
-	Mode           string `json:"mode"`
-	Escalate       bool   `json:"escalate"`
-	EscalateUserID int    `json:"escalate_user_id"`
-	EscalateAfter  int    `json:"escalate_after"`
-	TemplateID     int    `json:"template_id"`
-	BotUserID      int    `json:"bot_user_id"`
+	RunID             int    `json:"run_id"`
+	PipelineID        int    `json:"pipeline_id"`
+	Area              string `json:"area"`
+	Model             string `json:"model"`
+	ResID             int    `json:"res_id"`
+	ResName           string `json:"res_name"`
+	MessageID         int    `json:"message_id"`
+	MessageBody       string `json:"message_body"`
+	AuthorID          int    `json:"author_id"`
+	AuthorName        string `json:"author_name"`
+	StageID           int    `json:"stage_id"`
+	StageName         string `json:"stage_name"`
+	Mode              string `json:"mode"`
+	Escalate          bool   `json:"escalate"`
+	EscalateUserID    int    `json:"escalate_user_id"`
+	EscalateAfter     int    `json:"escalate_after"`
+	TemplateID        int    `json:"template_id"`
+	TemplateBody      string `json:"template_body"`
+	Instructions      string `json:"instructions"`
+	StageInstructions string `json:"stage_instructions"`
+	UseKnowledge      bool   `json:"use_knowledge"`
+	BotUserID         int    `json:"bot_user_id"`
 }
 
 // Validate rejects jobs that cannot be processed. The run id is mandatory:

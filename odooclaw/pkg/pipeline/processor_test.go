@@ -180,3 +180,34 @@ func TestHTTPFinisherPostsTheResult(t *testing.T) {
 		t.Fatalf("payload mangled: %+v", got)
 	}
 }
+
+func TestPromptInjectsAreaAndStageInstructions(t *testing.T) {
+	job := docJob("draft")
+	job.Instructions = "Never quote prices or delivery dates."
+	job.StageInstructions = "Ask for the order number first."
+	job.UseKnowledge = true
+	job.TemplateBody = "Dear customer, regarding your order..."
+	prompt := BuildPrompt(job)
+	for _, want := range []string{
+		"Never quote prices or delivery dates.",
+		"Ask for the order number first.",
+		"knowledge_search",
+		"Dear customer, regarding your order...",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt is missing %q: %s", want, prompt)
+		}
+	}
+}
+
+func TestPromptForbidsKnowledgeWhenDisabled(t *testing.T) {
+	job := docJob("draft")
+	job.UseKnowledge = false
+	prompt := BuildPrompt(job)
+	if !strings.Contains(prompt, "No consultes la base de conocimiento") {
+		t.Fatalf("prompt must forbid the knowledge base when disabled: %s", prompt)
+	}
+	if strings.Contains(prompt, "knowledge_search y cita") {
+		t.Fatalf("prompt must not invite knowledge_search when disabled")
+	}
+}

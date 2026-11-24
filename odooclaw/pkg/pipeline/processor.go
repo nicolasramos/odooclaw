@@ -51,9 +51,20 @@ func NewAgentProcessor(agent Agent, finisher Finisher) *AgentProcessor {
 
 const promptTemplate = `Eres OdooClaw, el asistente de un ERP. Trabajas sobre un registro de %s llamado "%s", en la etapa "%s".
 Modo de trabajo: %s.
-- observe: no escribas al cliente. Decide si hay algo útil que decir y redáctalo solo para el registro interno.
-- draft: redacta la respuesta; quedará como nota interna para que una persona la revise antes de enviarla.
-- auto: redacta la respuesta que se publicará al cliente.
+- observe: no escribas al cliente. Decide si hay algo util que decir y redactalo solo para el registro interno.
+- draft: redacta la respuesta; quedara como nota interna para que una persona la revise antes de enviarla.
+- auto: redacta la respuesta que se publicara al cliente.
+
+Instrucciones del area (son la norma; cumplirlas manda sobre las reglas generales):
+%s
+
+Instrucciones adicionales para esta etapa:
+%s
+
+Base de conocimiento: %s
+
+Plantilla de referencia (estructura, no copiar literalmente):
+%s
 
 Mensaje recibido de %s:
 """
@@ -61,23 +72,43 @@ Mensaje recibido de %s:
 """
 
 Responde SOLO con un objeto JSON, sin texto alrededor:
-{"action": "reply" | "escalate" | "skip", "body": "texto de la respuesta", "reason": "por qué"}
+{"action": "reply" | "escalate" | "skip", "body": "texto de la respuesta", "reason": "por que"}
 
 Reglas:
-- No inventes pedidos, plazos, importes ni estados que no aparezcan en el mensaje. Si falta un dato, pídelo.
+- No inventes pedidos, plazos, importes ni estados que no aparezcan en el mensaje. Si falta un dato, pidelo.
 - Si el cliente pide algo que no puedes resolver o exige una persona, usa "escalate".
-- Si no hay nada útil que decir, usa "skip" y deja body vacío.
+- Si no hay nada util que decir, usa "skip" y deja body vacio.
 - Responde en el mismo idioma del cliente.`
 
 // BuildPrompt is exported for tests and for operators who want to see exactly
 // what the model receives.
 func BuildPrompt(job Job) string {
+	area := strings.TrimSpace(job.Instructions)
+	if area == "" {
+		area = "Sin instrucciones especificas para esta area."
+	}
+	stage := strings.TrimSpace(job.StageInstructions)
+	if stage == "" {
+		stage = "Ninguna."
+	}
+	knowledge := "No consultes la base de conocimiento en esta area; responde con lo que hay en el mensaje y en el registro."
+	if job.UseKnowledge {
+		knowledge = "Antes de responder, busca en la base de conocimiento con knowledge_search y cita la pagina que uses. Si no encuentras nada, dilo y no improvises."
+	}
+	template := strings.TrimSpace(job.TemplateBody)
+	if template == "" {
+		template = "Sin plantilla."
+	}
 	return fmt.Sprintf(
 		promptTemplate,
 		job.Model,
 		job.ResName,
 		job.StageName,
 		job.Mode,
+		area,
+		stage,
+		knowledge,
+		template,
 		job.AuthorName,
 		job.MessageBody,
 	)
