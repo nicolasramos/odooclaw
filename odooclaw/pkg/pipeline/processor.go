@@ -94,7 +94,13 @@ func BuildPrompt(job Job) string {
 	}
 	knowledge := "No consultes la base de conocimiento en esta area; responde con lo que hay en el mensaje y en el registro."
 	if job.UseKnowledge {
-		knowledge = "Antes de responder, busca en la base de conocimiento con knowledge_search y cita la pagina que uses. Si no encuentras nada, dilo y no improvises."
+		if job.Mode == "auto" {
+			// The customer reads this one: page name, never an internal link.
+			knowledge = "Antes de responder, busca en la base de conocimiento con knowledge_search y menciona la pagina que uses por su nombre, sin enlaces internos. Si no encuentras nada, dilo y no improvises."
+		} else {
+			// A person reviews this one: the link is what makes it checkable.
+			knowledge = "Antes de responder, busca en la base de conocimiento con knowledge_search y cita la pagina que uses, con su nombre y su enlace, para que una persona pueda comprobarla. Si no encuentras nada, dilo y no improvises."
+		}
 	}
 	template := strings.TrimSpace(job.TemplateBody)
 	if template == "" {

@@ -218,3 +218,16 @@ func TestPromptForbidsInternalNotesInTheBody(t *testing.T) {
 		t.Fatalf("prompt must forbid internal notes in the body")
 	}
 }
+
+func TestPromptCitationDependsOnTheMode(t *testing.T) {
+	draft := docJob("draft")
+	draft.UseKnowledge = true
+	if !strings.Contains(BuildPrompt(draft), "con su nombre y su enlace") {
+		t.Fatalf("draft prompts must ask for a checkable link")
+	}
+	auto := docJob("auto")
+	auto.UseKnowledge = true
+	if !strings.Contains(BuildPrompt(auto), "sin enlaces internos") {
+		t.Fatalf("auto prompts must not give the customer an internal link")
+	}
+}
