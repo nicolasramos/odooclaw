@@ -16,30 +16,45 @@ import (
 	"time"
 )
 
+// Attachment is a picture or a voice note the customer attached to the
+// message. Data is base64 on purpose: the engine has no access to the Odoo
+// filestore, and the Odoo side already holds the only copy.
+type Attachment struct {
+	Name     string `json:"name"`
+	MimeType string `json:"mimetype"`
+	Data     string `json:"data"`
+}
+
 // Job is one customer message handed over by Odoo.
 type Job struct {
-	RunID             int    `json:"run_id"`
-	PipelineID        int    `json:"pipeline_id"`
-	Area              string `json:"area"`
-	Model             string `json:"model"`
-	ResID             int    `json:"res_id"`
-	ResName           string `json:"res_name"`
-	MessageID         int    `json:"message_id"`
-	MessageBody       string `json:"message_body"`
-	AuthorID          int    `json:"author_id"`
-	AuthorName        string `json:"author_name"`
-	StageID           int    `json:"stage_id"`
-	StageName         string `json:"stage_name"`
-	Mode              string `json:"mode"`
-	Escalate          bool   `json:"escalate"`
-	EscalateUserID    int    `json:"escalate_user_id"`
-	EscalateAfter     int    `json:"escalate_after"`
-	TemplateID        int    `json:"template_id"`
-	TemplateBody      string `json:"template_body"`
-	Instructions      string `json:"instructions"`
-	StageInstructions string `json:"stage_instructions"`
-	UseKnowledge      bool   `json:"use_knowledge"`
-	BotUserID         int    `json:"bot_user_id"`
+	RunID             int          `json:"run_id"`
+	PipelineID        int          `json:"pipeline_id"`
+	Area              string       `json:"area"`
+	Model             string       `json:"model"`
+	ResID             int          `json:"res_id"`
+	ResName           string       `json:"res_name"`
+	MessageID         int          `json:"message_id"`
+	MessageBody       string       `json:"message_body"`
+	AuthorID          int          `json:"author_id"`
+	AuthorName        string       `json:"author_name"`
+	StageID           int          `json:"stage_id"`
+	StageName         string       `json:"stage_name"`
+	Mode              string       `json:"mode"`
+	Escalate          bool         `json:"escalate"`
+	EscalateUserID    int          `json:"escalate_user_id"`
+	EscalateAfter     int          `json:"escalate_after"`
+	TemplateID        int          `json:"template_id"`
+	TemplateBody      string       `json:"template_body"`
+	Instructions      string       `json:"instructions"`
+	StageInstructions string       `json:"stage_instructions"`
+	UseKnowledge      bool         `json:"use_knowledge"`
+	BotUserID         int          `json:"bot_user_id"`
+	Attachments       []Attachment `json:"attachments"`
+
+	// AttachmentText is what the multimodal model read from the attachments.
+	// It travels with the job instead of the database: it is text the agent
+	// needs now, not a fact worth keeping.
+	AttachmentText string `json:"-"`
 }
 
 // Validate rejects jobs that cannot be processed. The run id is mandatory:
@@ -61,6 +76,17 @@ func (j Job) Validate() error {
 	case "observe", "draft", "auto":
 	default:
 		return fmt.Errorf("unknown mode %q", j.Mode)
+	}
+	if len(j.Attachments) > 3 {
+		return fmt.Errorf("too many attachments")
+	}
+	for _, a := range j.Attachments {
+		if strings.TrimSpace(a.Data) == "" {
+			return fmt.Errorf("attachment %q has no data", a.Name)
+		}
+		if !strings.HasPrefix(a.MimeType, "image/") && !strings.HasPrefix(a.MimeType, "audio/") {
+			return fmt.Errorf("attachment %q is not an image or an audio", a.Name)
+		}
 	}
 	return nil
 }

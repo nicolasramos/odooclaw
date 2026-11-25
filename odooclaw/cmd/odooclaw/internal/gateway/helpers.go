@@ -210,10 +210,18 @@ func gatewayCmd(debug bool) error {
 		if finishURL != "" {
 			// The same agent that answers in the chat, so there is one brain and
 			// not a second one with its own prompts.
-			processor = pipeline.NewAgentProcessor(agentLoop, &pipeline.HTTPFinisher{
+			agentProcessor := pipeline.NewAgentProcessor(agentLoop, &pipeline.HTTPFinisher{
 				URL:   finishURL,
 				Token: cfg.Channels.Odoo.WebhookToken,
 			})
+			if mm := cfg.Channels.Odoo.Pipeline.Multimodal; mm.Enabled && mm.APIBase != "" && mm.Model != "" {
+				mmTimeout := 60 * time.Second
+				if mm.TimeoutSeconds > 0 {
+					mmTimeout = time.Duration(mm.TimeoutSeconds) * time.Second
+				}
+				agentProcessor.WithAttachments(pipeline.NewOmniClient(mm.APIBase, mm.APIKey, mm.Model, mmTimeout))
+			}
+			processor = agentProcessor
 		}
 		queue := pipeline.NewQueue(processor, pipeline.Options{Timeout: timeout})
 		jobHandler := pipeline.NewHandler(queue, cfg.Channels.Odoo.WebhookToken)

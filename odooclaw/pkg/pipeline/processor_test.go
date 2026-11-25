@@ -231,3 +231,18 @@ func TestPromptCitationDependsOnTheMode(t *testing.T) {
 		t.Fatalf("auto prompts must not give the customer an internal link")
 	}
 }
+
+func TestPromptCarriesWhatTheAttachmentsSaid(t *testing.T) {
+	job := docJob("draft")
+	job.AttachmentText = "- voz.ogg (audio/ogg): El cliente pide el estado de su pedido."
+	prompt := BuildPrompt(job)
+	if !strings.Contains(prompt, "Adjuntos del cliente") || !strings.Contains(prompt, "estado de su pedido") {
+		t.Fatalf("prompt lost the attachment text")
+	}
+}
+
+func TestPromptWithoutAttachmentsSaysSo(t *testing.T) {
+	if !strings.Contains(BuildPrompt(docJob("draft")), "Adjuntos del cliente") {
+		t.Fatal("the section must be present even when empty")
+	}
+}

@@ -279,6 +279,19 @@ type PipelineConfig struct {
 	// FinishURL is the Odoo endpoint that applies a run's outcome. Empty derives
 	// it from ODOO_URL.
 	FinishURL string `json:"finish_url" env:"ODOOCLAW_ODOO_PIPELINE_FINISH_URL"`
+	// Multimodal reads pictures and voice notes before the agent answers.
+	// Off by default: without a model, the job runs with the text it has.
+	Multimodal MultimodalConfig `json:"multimodal"`
+}
+
+// MultimodalConfig points at an OpenAI-compatible model that accepts images
+// and audio (the LFM3 Omni family does both through the same endpoint).
+type MultimodalConfig struct {
+	Enabled        bool   `json:"enabled" env:"ODOOCLAW_ODOO_PIPELINE_MULTIMODAL_ENABLED"`
+	APIBase        string `json:"api_base" env:"ODOOCLAW_ODOO_PIPELINE_MULTIMODAL_API_BASE"`
+	APIKey         string `json:"api_key" env:"ODOOCLAW_ODOO_PIPELINE_MULTIMODAL_API_KEY"`
+	Model          string `json:"model" env:"ODOOCLAW_ODOO_PIPELINE_MULTIMODAL_MODEL"`
+	TimeoutSeconds int    `json:"timeout_seconds" env:"ODOOCLAW_ODOO_PIPELINE_MULTIMODAL_TIMEOUT_SECONDS"`
 }
 
 // ProactiveConfig configures the proactive assistance engine.

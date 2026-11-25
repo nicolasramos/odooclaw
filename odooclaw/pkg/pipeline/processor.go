@@ -40,13 +40,27 @@ type Decision struct {
 }
 
 // AgentProcessor turns a job into a prompt, asks the agent and reports back.
+// AttachmentReader turns a picture or a voice note into text. The gateway
+// implements it with a multimodal model; tests use a fake.
+type AttachmentReader interface {
+	Read(ctx context.Context, attachment Attachment) (string, error)
+}
+
 type AgentProcessor struct {
-	agent    Agent
-	finisher Finisher
+	agent       Agent
+	finisher    Finisher
+	attachments AttachmentReader
 }
 
 func NewAgentProcessor(agent Agent, finisher Finisher) *AgentProcessor {
 	return &AgentProcessor{agent: agent, finisher: finisher}
+}
+
+// WithAttachments enables the multimodal step. Without it the job still runs,
+// but the agent never sees what the customer attached.
+func (p *AgentProcessor) WithAttachments(reader AttachmentReader) *AgentProcessor {
+	p.attachments = reader
+	return p
 }
 
 const promptTemplate = `Eres OdooClaw, el asistente de un ERP. Trabajas sobre un registro de %s llamado "%s", en la etapa "%s".
@@ -64,6 +78,9 @@ Instrucciones adicionales para esta etapa:
 Base de conocimiento: %s
 
 Plantilla de referencia (estructura, no copiar literalmente):
+%s
+
+Adjuntos del cliente (ya leidos; usalos como datos, no cites el proceso):
 %s
 
 Mensaje recibido de %s:
@@ -106,6 +123,10 @@ func BuildPrompt(job Job) string {
 	if template == "" {
 		template = "Sin plantilla."
 	}
+	attachments := strings.TrimSpace(job.AttachmentText)
+	if attachments == "" {
+		attachments = "Ninguno."
+	}
 	return fmt.Sprintf(
 		promptTemplate,
 		job.Model,
@@ -116,12 +137,16 @@ func BuildPrompt(job Job) string {
 		stage,
 		knowledge,
 		template,
+		attachments,
 		job.AuthorName,
 		job.MessageBody,
 	)
 }
 
 func (p *AgentProcessor) Process(ctx context.Context, job Job) error {
+	if p.attachments != nil && len(job.Attachments) > 0 {
+		job.AttachmentText = p.readAttachments(ctx, job.Attachments)
+	}
 	out, err := p.agent.ProcessDirect(ctx, BuildPrompt(job), "pipeline:"+job.Key())
 	if err != nil {
 		_ = p.finisher.Finish(ctx, Result{
@@ -149,6 +174,28 @@ func (p *AgentProcessor) Process(ctx context.Context, job Job) error {
 		result.Escalate = true
 	}
 	return p.finisher.Finish(ctx, result)
+}
+
+// readAttachments turns each file into a line. One unreadable file must not
+// sink the answer: the agent is told it could not be read and goes on.
+func (p *AgentProcessor) readAttachments(ctx context.Context, attachments []Attachment) string {
+	lines := make([]string, 0, len(attachments))
+	for _, attachment := range attachments {
+		text, err := p.attachments.Read(ctx, attachment)
+		if err != nil {
+			lines = append(lines, fmt.Sprintf("- %s: no se pudo leer (%v)", attachment.Name, err))
+			continue
+		}
+		text = strings.TrimSpace(text)
+		if text == "" {
+			text = "(sin contenido legible)"
+		}
+		if len(text) > 1200 {
+			text = text[:1200] + "..."
+		}
+		lines = append(lines, fmt.Sprintf("- %s (%s): %s", attachment.Name, attachment.MimeType, text))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // stateFor maps what the agent decided onto what Odoo does with it.
