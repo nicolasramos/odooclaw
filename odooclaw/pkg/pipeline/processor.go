@@ -25,6 +25,9 @@ type Result struct {
 	Decision string `json:"decision"`
 	Error    string `json:"error"`
 	Escalate bool   `json:"escalate"`
+	// AttachmentText is what the multimodal model read. It travels back to the
+	// run so a person can check the reading, not only the answer.
+	AttachmentText string `json:"attachment_text,omitempty"`
 }
 
 // Finisher applies a result in Odoo.
@@ -158,7 +161,7 @@ func (p *AgentProcessor) Process(ctx context.Context, job Job) error {
 		return err
 	}
 	decision, perr := ParseDecision(out)
-	result := Result{RunID: job.RunID, Escalate: job.Escalate}
+	result := Result{RunID: job.RunID, Escalate: job.Escalate, AttachmentText: job.AttachmentText}
 	if perr != nil {
 		// The model answered something that is not the contract. Keep the raw
 		// text: it is what a person needs to see when tuning the prompt.

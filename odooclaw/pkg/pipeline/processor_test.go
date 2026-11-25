@@ -246,3 +246,21 @@ func TestPromptWithoutAttachmentsSaysSo(t *testing.T) {
 		t.Fatal("the section must be present even when empty")
 	}
 }
+
+func TestProcessorReportsWhatTheAttachmentsSaid(t *testing.T) {
+	agent := fakeAgent{reply: `{"action":"reply","body":"Gracias por la factura.","reason":"leida"}`}
+	finisher := fakeFinisher{}
+	reader := fakeReader{texts: map[string]string{"factura.png": "Factura de Acme, total 121,00"}}
+	processor := NewAgentProcessor(&agent, &finisher).WithAttachments(reader)
+	job := docJob("draft")
+	job.Attachments = []Attachment{{Name: "factura.png", MimeType: "image/png", Data: "eA=="}}
+	if err := processor.Process(context.Background(), job); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	if len(finisher.results) != 1 {
+		t.Fatalf("expected one result, got %d", len(finisher.results))
+	}
+	if !strings.Contains(finisher.results[0].AttachmentText, "121,00") {
+		t.Fatalf("the result lost what the model read: %q", finisher.results[0].AttachmentText)
+	}
+}
