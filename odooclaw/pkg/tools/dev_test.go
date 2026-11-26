@@ -355,3 +355,28 @@ func TestDevAddFieldToViewRefusesAMissingAnchor(t *testing.T) {
 		t.Fatalf("a missing anchor must be an error: %s", res.ForLLM)
 	}
 }
+
+func TestDevSetViewFieldVisibilityHidesTheField(t *testing.T) {
+	_, client := newDevTestServer(t)
+	res := NewDevSetViewFieldVisibilityTool(client).Execute(context.Background(), map[string]any{
+		"model": "sale.order", "view_type": "form", "field": "tax_totals",
+	})
+	if res.IsError {
+		t.Fatalf("unexpected error: %s", res.ForLLM)
+	}
+	for _, want := range []string{"EVO-0007", `"applied": true`, "tax_totals", "invisible"} {
+		if !strings.Contains(res.ForLLM, want) {
+			t.Fatalf("result missing %q: %s", want, res.ForLLM)
+		}
+	}
+}
+
+func TestDevSetViewFieldVisibilityRefusesAMissingField(t *testing.T) {
+	_, client := newDevTestServer(t)
+	res := NewDevSetViewFieldVisibilityTool(client).Execute(context.Background(), map[string]any{
+		"model": "sale.order", "view_type": "form", "field": "no_such_field",
+	})
+	if !res.IsError || !strings.Contains(res.ForLLM, "is not in the form view") {
+		t.Fatalf("a missing field must be an error: %s", res.ForLLM)
+	}
+}
