@@ -81,15 +81,17 @@ func (t *DevAddFieldToViewTool) Execute(ctx context.Context, args map[string]any
 		return ErrorResult(fmt.Sprintf("anchor field %q is not in the %s view; read it with dev_get_context and pick a field that exists", anchor, viewType))
 	}
 
-	element := fmt.Sprintf(`<div class="text-muted"><field name=%q/></div>`, field)
+	element := fmt.Sprintf(`<div class="text-muted"><field name="%s"/></div>`, field)
+	// The xpath attribute is single quoted and the xpath itself uses double
+	// quotes: backslash-escaping quotes inside an XML attribute is not XML.
 	var expr string
 	switch viewType {
 	case "kanban":
-		expr = fmt.Sprintf("//t[@t-name='card']//field[@name=%q]", anchor)
+		expr = fmt.Sprintf(`//t[@t-name="card"]//field[@name="%s"]`, anchor)
 	default:
-		expr = fmt.Sprintf("//field[@name=%q]", anchor)
+		expr = fmt.Sprintf(`//field[@name="%s"]`, anchor)
 	}
-	inherited := fmt.Sprintf(`<data><xpath expr=%q position="after">%s</xpath></data>`, expr, element)
+	inherited := fmt.Sprintf(`<data><xpath expr='%s' position="after">%s</xpath></data>`, expr, element)
 
 	proposal, err := t.client.Call(ctx, "/odooclaw_evolution/api/change", map[string]any{
 		"action":        "propose",
