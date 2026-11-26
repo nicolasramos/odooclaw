@@ -122,6 +122,7 @@ func NewAgentInstance(
 		toolsRegistry.Register(tools.NewDevGetContextTool(devClient))
 		toolsRegistry.Register(tools.NewDevGetFieldsTool(devClient))
 		toolsRegistry.Register(tools.NewDevInspectViewTool(devClient))
+		toolsRegistry.Register(tools.NewDevAddFieldToViewTool(devClient))
 		toolsRegistry.Register(tools.NewDevProposeChangeTool(devClient))
 		toolsRegistry.Register(tools.NewDevApplyChangeTool(devClient))
 		toolsRegistry.Register(tools.NewDevDiffTool(devClient))

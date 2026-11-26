@@ -32,10 +32,11 @@ func newDevTestServer(t *testing.T) (*httptest.Server, *DevClient) {
 		case "/odooclaw_evolution/api/context":
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"result": map[string]any{
-					"model":     req.Params["model"],
-					"view_type": "form",
-					"view_id":   978,
-					"arch":      `<form><sheet><group name="sale_total"><field name="tax_totals"/></group><field name="x_margin_preview"/></sheet></form>`,
+					"model":      req.Params["model"],
+					"view_type":  "form",
+					"view_id":    978,
+					"view_xmlid": "sale.view_order_form",
+					"arch":       `<form><sheet><group name="sale_total"><field name="tax_totals"/></group><field name="x_margin_preview"/></sheet></form>`,
 					"fields": map[string]any{
 						"x_margin_preview": map[string]any{"type": "float", "string": "Margen (preview)"},
 						"tax_totals":       map[string]any{"type": "json", "string": "Tax Totals", "readonly": true},
@@ -325,5 +326,32 @@ func TestDevProposeAcceptsAValidViewPayload(t *testing.T) {
 	}
 	if !strings.Contains(res.ForLLM, "EVO-0007") {
 		t.Fatalf("unexpected result: %s", res.ForLLM)
+	}
+}
+
+func TestDevAddFieldToViewBuildsTheArchAndApplies(t *testing.T) {
+	_, client := newDevTestServer(t)
+	res := NewDevAddFieldToViewTool(client).Execute(context.Background(), map[string]any{
+		"model": "sale.order", "view_type": "form",
+		"anchor": "tax_totals", "field": "x_test_field",
+	})
+	if res.IsError {
+		t.Fatalf("unexpected error: %s", res.ForLLM)
+	}
+	for _, want := range []string{"EVO-0007", `"applied": true`, `//field[@name=\"tax_totals\"]`, `x_test_field`} {
+		if !strings.Contains(res.ForLLM, want) {
+			t.Fatalf("result missing %q: %s", want, res.ForLLM)
+		}
+	}
+}
+
+func TestDevAddFieldToViewRefusesAMissingAnchor(t *testing.T) {
+	_, client := newDevTestServer(t)
+	res := NewDevAddFieldToViewTool(client).Execute(context.Background(), map[string]any{
+		"model": "sale.order", "view_type": "form",
+		"anchor": "no_such_field", "field": "x_test_field",
+	})
+	if !res.IsError || !strings.Contains(res.ForLLM, "not in the form view") {
+		t.Fatalf("a missing anchor must be an error: %s", res.ForLLM)
 	}
 }
