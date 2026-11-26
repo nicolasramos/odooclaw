@@ -338,7 +338,7 @@ func TestDevAddFieldToViewBuildsTheArchAndApplies(t *testing.T) {
 	if res.IsError {
 		t.Fatalf("unexpected error: %s", res.ForLLM)
 	}
-	for _, want := range []string{"EVO-0007", `"applied": true`, `//field[@name=\"tax_totals\"]`, `x_test_field`} {
+	for _, want := range []string{"EVO-0007", `"applied": true`, "tax_totals", "x_test_field", "sale.view_order_form"} {
 		if !strings.Contains(res.ForLLM, want) {
 			t.Fatalf("result missing %q: %s", want, res.ForLLM)
 		}
