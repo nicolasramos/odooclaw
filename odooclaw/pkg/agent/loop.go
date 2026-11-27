@@ -332,6 +332,18 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					}
 				}
 			}
+			if serverName := odooMCPServerName(mcpManager); serverName != "" {
+				// The generic odoo_write is too free-form for a small model:
+				// give it the common business operations with the search and
+				// the write already built.
+				for _, agentID := range agentIDs {
+					agent, ok := al.registry.GetAgent(agentID)
+					if !ok {
+						continue
+					}
+					agent.Tools.Register(tools.NewOdooSetLineQuantityTool(mcpManager, serverName))
+				}
+			}
 			logger.InfoCF("agent", "MCP tools registered successfully",
 				map[string]any{
 					"server_count":        len(servers),
