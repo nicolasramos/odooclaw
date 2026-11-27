@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-30
+
+### Added
+- Business verbs in the Odoo MCP: `odoo_update_by`, `odoo_create_sale_order`, `odoo_create_record`, `odoo_run_action`, `odoo_set_line_quantity`.
+- Deterministic dev tools: `dev_add_field_to_view` and `dev_set_view_field_visibility` build the inherited view themselves.
+- Proactive quiet hours configurable with `ODOOCLAW_PROACTIVE_QUIET_FROM` and `ODOOCLAW_PROACTIVE_QUIET_TO`.
+
+### Changed
+- `tools.mcp` is enabled by default; `odoo_manager` is wired from `ODOO_URL` and `ODOO_DB` when no server is declared.
+- Every pipeline prompt carries the business tools rule.
+
+### Fixed
+- A prose answer, or an unknown action name, becomes the draft body instead of a failed run.
+- A run that hits the job deadline reports its failure instead of staying queued.
+- The reply token survives several answers to one conversation.
+- The proactive opt-in is persisted and reloaded, so a restart does not ask again.
+
+
 ---
 
 ## [1.1.0] - 2026-09-23
