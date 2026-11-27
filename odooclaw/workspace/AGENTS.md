@@ -78,3 +78,13 @@ The Odoo MCP server is registered as `odoo_manager`, so its tools appear as
 name, `mcp_odoo_manager_odoo_read` to read it, `mcp_odoo_manager_odoo_write` to change a field
 and `mcp_odoo_manager_odoo_create` to create a record. A value goes into its field, never into a
 new field: `dev_*` changes structure (views, fields, modules), not business data.
+
+## Changing a sale order line (quantity, price, discount)
+
+A quantity lives on the order line, not on the order. First find the line:
+odoo_search_read(model="sale.order.line", domain=[["order_id", "=", ORDER_ID]],
+fields=["product_id", "product_uom_qty"]). Then write it with
+odoo_write(model="sale.order.line", ids=[LINE_ID], values={"product_uom_qty": 20}).
+Never write the one2many field `lines` on sale.order: Odoo rejects it, and the
+quantity never changes. If there are several lines, say which product you are
+changing or change the only one.
