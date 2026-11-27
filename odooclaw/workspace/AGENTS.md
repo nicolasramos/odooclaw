@@ -103,3 +103,11 @@ The tool resolves a name to its id (many2one), a label to its key (selection) an
 sent as text to a number, and it refuses a lookup that matches several records instead of
 writing the wrong one. Never write a one2many field on the parent: edit the child model
 (sale.order.line) with the parent in the lookup.
+
+## Which price, which field
+
+"El precio del producto" is product.template.list_price. It is the catalogue price, and it is
+not the unit price of a line in a sale order. Write price_unit on sale.order.line only when the
+user says "en este pedido", "en esta línea" or names a concrete order. A product's category is
+product.template.categ_id, written with the category name. The quantity of an order line is
+sale.order.line.product_uom_qty with lookup {"order_id": "S00021", "product_id": "<product>"}.
