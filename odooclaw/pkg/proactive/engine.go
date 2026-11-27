@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nicolasramos/odooclaw/pkg/knowledge"
@@ -111,7 +112,11 @@ type Decision struct {
 type Engine struct {
 	playbooks []Playbook
 	policy    Policy
-	store     Store
+	// mu guards the mutable part of the policy (OptIn / RiskOptIn). The opt-in
+	// arrives in its own HTTP request, so without it a signal evaluation racing
+	// an acceptance would read the map concurrently with a write.
+	mu    sync.Mutex
+	store Store
 	// now is injectable so tests and the demo can control the clock.
 	now func() time.Time
 }
@@ -123,6 +128,12 @@ func NewEngine(playbooks []Playbook, policy Policy, store Store) *Engine {
 	if store == nil {
 		store = NewMemoryStore()
 	}
+	// Whoever accepted in a previous life accepted for good.
+	if users, err := store.OptedIn(); err == nil {
+		for _, id := range users {
+			policy.EnableOptIn(id)
+		}
+	}
 	return &Engine{
 		playbooks: playbooks,
 		policy:    policy,
@@ -133,6 +144,20 @@ func NewEngine(playbooks []Playbook, policy Policy, store Store) *Engine {
 
 // SetClock overrides the engine clock. Intended for tests.
 func (e *Engine) SetClock(now func() time.Time) { e.now = now }
+
+// EnableOptIn records the user's acceptance of the invitation.
+//
+// It is the only runtime mutation of the policy: the acceptance arrives in its
+// own request (the user answered the invitation in the chat), not in the
+// settings file, so it cannot be part of the constructor configuration.
+func (e *Engine) EnableOptIn(userID int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.policy.EnableOptIn(userID)
+	// Persist it too: the acceptance is a promise to the person, not a
+	// property of this process.
+	_ = e.store.EnableOptIn(userID)
+}
 
 // Evaluate decides whether to intervene for the given signal.
 //
@@ -150,6 +175,11 @@ func (e *Engine) Evaluate(sig Signal) Decision {
 	if at.IsZero() {
 		at = e.now()
 	}
+
+	// Serialise with EnableOptIn: the policy is read all over this function and
+	// the opt-in map is written from another request.
+	e.mu.Lock()
+	defer e.mu.Unlock()
 
 	area := strings.ToLower(strings.TrimSpace(sig.Area))
 	if area == "" {

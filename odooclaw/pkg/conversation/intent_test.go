@@ -21,8 +21,8 @@ func TestClassifyByRules_ToolCall(t *testing.T) {
 	classifier := NewIntentClassifier(nil, "")
 
 	tests := []struct {
-		message      string
-		expectedMod  string
+		message     string
+		expectedMod string
 	}{
 		{"buscar oportunidades en CRM", "crm"},
 		{"crear un pedido de venta", "sale"},

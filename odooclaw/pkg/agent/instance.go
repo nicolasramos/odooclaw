@@ -122,6 +122,8 @@ func NewAgentInstance(
 		toolsRegistry.Register(tools.NewDevGetContextTool(devClient))
 		toolsRegistry.Register(tools.NewDevGetFieldsTool(devClient))
 		toolsRegistry.Register(tools.NewDevInspectViewTool(devClient))
+		toolsRegistry.Register(tools.NewDevAddFieldToViewTool(devClient))
+		toolsRegistry.Register(tools.NewDevSetViewFieldVisibilityTool(devClient))
 		toolsRegistry.Register(tools.NewDevProposeChangeTool(devClient))
 		toolsRegistry.Register(tools.NewDevApplyChangeTool(devClient))
 		toolsRegistry.Register(tools.NewDevDiffTool(devClient))
@@ -150,7 +152,7 @@ func NewAgentInstance(
 
 	maxIter := defaults.MaxToolIterations
 	if maxIter == 0 {
-		maxIter = 20
+		maxIter = 120
 	}
 
 	maxTokens := defaults.MaxTokens

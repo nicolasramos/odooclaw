@@ -20,13 +20,13 @@ import (
 )
 
 type ContextBuilder struct {
-	workspace    string
-	skillsLoader *skills.SkillsLoader
-	memory       *MemoryStore
-	knowledge    *KnowledgeStore
-	browser      browserContextResolver
-	contextWindowTokens int // max estimated tokens to keep from history (0 = unlimited)
-	toolResultMaxChars  int // max chars per tool result content (0 = unlimited)
+	workspace           string
+	skillsLoader        *skills.SkillsLoader
+	memory              *MemoryStore
+	knowledge           *KnowledgeStore
+	browser             browserContextResolver
+	contextWindowTokens int    // max estimated tokens to keep from history (0 = unlimited)
+	toolResultMaxChars  int    // max chars per tool result content (0 = unlimited)
 	model               string // agent model name, used to gate a minimal system prompt for local small models
 	toolMode            string // "native" | "text" | "" — pins the decision above the name heuristic
 

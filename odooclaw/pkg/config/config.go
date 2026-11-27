@@ -264,6 +264,34 @@ type OdooConfig struct {
 	// assistant that starts talking before anyone asked for it should be an
 	// explicit decision, not something a deploy switches on by accident.
 	Proactive ProactiveConfig `json:"proactive"`
+	// Pipeline configures the operational queue: a customer writes on a record
+	// and the bot observes, drafts or answers according to the Odoo pipeline.
+	// Off by default, like proactivity.
+	Pipeline PipelineConfig `json:"pipeline"`
+}
+
+// PipelineConfig configures the operational pipeline queue.
+type PipelineConfig struct {
+	// Enabled mounts POST /odooclaw/job and starts the queue.
+	Enabled bool `json:"enabled" env:"ODOOCLAW_ODOO_PIPELINE_ENABLED"`
+	// TimeoutSeconds bounds one job. 0 uses the queue default (2 minutes).
+	TimeoutSeconds int `json:"timeout_seconds" env:"ODOOCLAW_ODOO_PIPELINE_TIMEOUT_SECONDS"`
+	// FinishURL is the Odoo endpoint that applies a run's outcome. Empty derives
+	// it from ODOO_URL.
+	FinishURL string `json:"finish_url" env:"ODOOCLAW_ODOO_PIPELINE_FINISH_URL"`
+	// Multimodal reads pictures and voice notes before the agent answers.
+	// Off by default: without a model, the job runs with the text it has.
+	Multimodal MultimodalConfig `json:"multimodal"`
+}
+
+// MultimodalConfig points at an OpenAI-compatible model that accepts images
+// and audio (the LFM3 Omni family does both through the same endpoint).
+type MultimodalConfig struct {
+	Enabled        bool   `json:"enabled" env:"ODOOCLAW_ODOO_PIPELINE_MULTIMODAL_ENABLED"`
+	APIBase        string `json:"api_base" env:"ODOOCLAW_ODOO_PIPELINE_MULTIMODAL_API_BASE"`
+	APIKey         string `json:"api_key" env:"ODOOCLAW_ODOO_PIPELINE_MULTIMODAL_API_KEY"`
+	Model          string `json:"model" env:"ODOOCLAW_ODOO_PIPELINE_MULTIMODAL_MODEL"`
+	TimeoutSeconds int    `json:"timeout_seconds" env:"ODOOCLAW_ODOO_PIPELINE_MULTIMODAL_TIMEOUT_SECONDS"`
 }
 
 // ProactiveConfig configures the proactive assistance engine.
@@ -819,6 +847,7 @@ func LoadConfig(path string) (*Config, error) {
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
 	}
+	cfg.ensureDefaultMCPServers()
 
 	// Migrate legacy channel config fields to new unified structures
 	cfg.migrateChannelConfigs()

@@ -316,6 +316,78 @@ def odoo_create(
 
 
 @mcp.tool()
+def odoo_create_record(
+    model: str,
+    values: dict,
+    sender_id: int | None = None,
+) -> dict:
+    """Create a record of any model with human values.
+
+    values maps field names to what a person says: {"name": "Acme, S.L.",
+    "is_company": true, "phone": "+34 ..."}. A many2one value can be the related
+    record's name and a selection can be its label; the tool resolves them
+    against the instance schema. Use it for a customer, a CRM lead, a product, a
+    task or a ticket.
+    """
+    with measure_time("odoo_create_record"):
+        client = get_odoo_client()
+        return records.odoo_create_record(
+            client,
+            sender_id or client.odoo_session.get_uid(),
+            model,
+            values,
+        )
+
+
+@mcp.tool()
+def odoo_run_action(
+    model: str,
+    lookup: dict,
+    method: str,
+    sender_id: int | None = None,
+) -> dict:
+    """Run a workflow action on exactly one record found by its name.
+
+    method must be an action_* or button_* method: action_confirm to confirm a
+    sale order, action_post to post an invoice, button_validate to validate a
+    delivery, action_set_won to win a lead. Anything else is refused.
+    """
+    with measure_time("odoo_run_action"):
+        client = get_odoo_client()
+        return records.odoo_run_action(
+            client,
+            sender_id or client.odoo_session.get_uid(),
+            model,
+            lookup,
+            method,
+        )
+
+
+@mcp.tool()
+def odoo_update_by(
+    model: str,
+    lookup: dict,
+    values: dict,
+    sender_id: int | None = None,
+) -> dict:
+    """Change fields of exactly one record found by simple field/value pairs.
+
+    lookup maps a field to the value a person would say (a name, a label); values
+    holds the fields to write. Example: model "res.partner", lookup {"name": "Acme"},
+    values {"phone": "+34 600 000 000"}. It refuses an ambiguous lookup.
+    """
+    with measure_time("odoo_update_by"):
+        client = get_odoo_client()
+        return records.odoo_update_by(
+            client,
+            sender_id or client.odoo_session.get_uid(),
+            model,
+            lookup,
+            values,
+        )
+
+
+@mcp.tool()
 def odoo_write(
     model: str,
     ids: list[int],
@@ -670,6 +742,33 @@ def odoo_get_sale_order_summary(
         client = get_odoo_client()
         return sales.odoo_get_sale_order_summary(
             client, sender_id or client.odoo_session.get_uid(), order_id
+        )
+
+
+@mcp.tool()
+def odoo_create_sale_order(
+    partner_id: int | None = None,
+    partner_name: str | None = None,
+    lines: list | None = None,
+    note: str | None = None,
+    sender_id: int | None = None,
+) -> dict:
+    """Create a quotation / presupuesto (sale order) from scratch.
+
+    Use this when the user asks to create a quotation or a sale order. Give the
+    customer by partner_name (a person's wording) or partner_id, and the lines as
+    [{"product_id": <id or name>, "product_uom_qty": 2}] with an optional price_unit.
+    It builds the order_line one2many for you.
+    """
+    with measure_time("odoo_create_sale_order"):
+        client = get_odoo_client()
+        return sales.odoo_create_sale_order(
+            client,
+            sender_id or client.odoo_session.get_uid(),
+            partner_id,
+            lines or [],
+            partner_name,
+            note,
         )
 
 

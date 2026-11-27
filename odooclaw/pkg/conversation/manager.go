@@ -38,10 +38,10 @@ type ManagerConfig struct {
 //	User → Conversation Manager → Intent Classifier → Tool Retrieval
 //	       → Qwen 1.5B (llama.cpp N100) → MCP Odoo → Response → User
 type Manager struct {
-	config    ManagerConfig
-	sessions  map[string]*sessionState
-	mu        sync.RWMutex
-	pipeline  *Pipeline
+	config   ManagerConfig
+	sessions map[string]*sessionState
+	mu       sync.RWMutex
+	pipeline *Pipeline
 }
 
 type sessionState struct {
@@ -220,9 +220,9 @@ func (m *Manager) transition(sessionKey string, newState State) {
 	if !ss.state.CanTransitionTo(newState) {
 		logger.WarnCF("conversation", "Invalid state transition",
 			map[string]any{
-				"session":   sessionKey,
-				"from":      ss.state.String(),
-				"to":        newState.String(),
+				"session": sessionKey,
+				"from":    ss.state.String(),
+				"to":      newState.String(),
 			})
 		return
 	}

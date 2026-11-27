@@ -53,10 +53,10 @@ func (i Intent) String() string {
 
 // IntentResult contains the classification result for a user message.
 type IntentResult struct {
-	Intent    Intent   `json:"intent"`
-	Confidence float64 `json:"confidence"`
-	Tools     []string `json:"tools,omitempty"` // Suggested tool names if IntentToolCall
-	Module    string   `json:"module,omitempty"` // Odoo module domain (crm, sale, stock, etc.)
+	Intent     Intent   `json:"intent"`
+	Confidence float64  `json:"confidence"`
+	Tools      []string `json:"tools,omitempty"`  // Suggested tool names if IntentToolCall
+	Module     string   `json:"module,omitempty"` // Odoo module domain (crm, sale, stock, etc.)
 }
 
 // IntentClassifier determines what the user wants to do with their message.
@@ -121,7 +121,7 @@ func (ic *IntentClassifier) classifyByRules(message string) *IntentResult {
 	// We iterate in explicit order (not map order) to ensure deterministic
 	// matching: more specific modules first to avoid false positives.
 	type moduleKeywords struct {
-		module  string
+		module   string
 		keywords []string
 	}
 	modules := []moduleKeywords{

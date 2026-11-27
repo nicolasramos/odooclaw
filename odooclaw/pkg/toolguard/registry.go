@@ -19,11 +19,12 @@ import (
 // `serverName` is recorded in Schema.Source for debug.
 //
 // Parameters are expected in the JSON-schema shape used by MCP:
-//   {
-//     "type": "object",
-//     "properties": { "name": {"type": "string"}, ... },
-//     "required": ["name", ...]
-//   }
+//
+//	{
+//	  "type": "object",
+//	  "properties": { "name": {"type": "string"}, ... },
+//	  "required": ["name", ...]
+//	}
 func SchemaFromMCPTool(tool *mcp.Tool, serverName string) (ToolSchema, error) {
 	if tool == nil {
 		return ToolSchema{}, fmt.Errorf("nil tool")
@@ -59,9 +60,9 @@ func SchemaFromMCPTool(tool *mcp.Tool, serverName string) (ToolSchema, error) {
 		return schema, fmt.Errorf("marshal input schema: %w", err)
 	}
 	var input struct {
-		Type       string                          `json:"type"`
-		Properties map[string]json.RawMessage      `json:"properties"`
-		Required   []string                        `json:"required"`
+		Type       string                     `json:"type"`
+		Properties map[string]json.RawMessage `json:"properties"`
+		Required   []string                   `json:"required"`
 	}
 	if err := json.Unmarshal(raw, &input); err != nil {
 		return schema, fmt.Errorf("unmarshal input schema: %w", err)

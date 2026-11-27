@@ -26,10 +26,10 @@ type LLMClassifier struct {
 
 // ClassifierConfig configures the LLM-based intent classifier.
 type ClassifierConfig struct {
-	Endpoint string        `json:"endpoint"`   // e.g. "http://n100:8080/v1"
-	APIKey   string        `json:"api_key"`    // Often empty for local llama.cpp
-	Model    string        `json:"model"`      // e.g. "local-model"
-	Timeout  time.Duration `json:"timeout"`    // Classification timeout
+	Endpoint string        `json:"endpoint"` // e.g. "http://n100:8080/v1"
+	APIKey   string        `json:"api_key"`  // Often empty for local llama.cpp
+	Model    string        `json:"model"`    // e.g. "local-model"
+	Timeout  time.Duration `json:"timeout"`  // Classification timeout
 }
 
 // NewLLMClassifier creates a new classifier using an LLM endpoint.

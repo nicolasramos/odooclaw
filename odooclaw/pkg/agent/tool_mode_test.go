@@ -6,10 +6,10 @@ func TestResolveTextInjection(t *testing.T) {
 	yes := true
 	no := false
 	cases := []struct {
-		name     string
-		agent    *AgentInstance
+		name      string
+		agent     *AgentInstance
 		heuristic bool
-		want     bool
+		want      bool
 	}{
 		{"tool_mode native beats heuristic", &AgentInstance{ToolMode: "native"}, true, false},
 		{"tool_mode text beats heuristic", &AgentInstance{ToolMode: "text"}, false, true},

@@ -312,7 +312,7 @@ func TestBuildClassificationMessages(t *testing.T) {
 
 	t.Run("message with tools", func(t *testing.T) {
 		req := ClassificationRequest{
-			Message:       "Busca clientes",
+			Message:        "Busca clientes",
 			AvailableTools: []string{"odoo_search", "odoo_create"},
 		}
 		msgs := buildClassificationMessages(req)

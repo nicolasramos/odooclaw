@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/nicolasramos/odooclaw/cmd/odooclaw/internal"
@@ -34,6 +37,7 @@ import (
 	"github.com/nicolasramos/odooclaw/pkg/heartbeat"
 	"github.com/nicolasramos/odooclaw/pkg/logger"
 	"github.com/nicolasramos/odooclaw/pkg/media"
+	"github.com/nicolasramos/odooclaw/pkg/pipeline"
 	"github.com/nicolasramos/odooclaw/pkg/proactive"
 	"github.com/nicolasramos/odooclaw/pkg/providers"
 	"github.com/nicolasramos/odooclaw/pkg/state"
@@ -152,6 +156,7 @@ func gatewayCmd(debug bool) error {
 	// holds no LLM: it counts (Odoo does the counting) and applies the policy.
 	// Delivery is NOT done here — Odoo posts the message itself, inside the
 	// request scope of the user who triggered it (see pkg/proactive.Handler).
+	var proactiveHandler http.Handler
 	if cfg.Channels.Odoo.Proactive.Enabled {
 		// Resolve the store path here rather than in config: the default depends
 		// on the workspace, which is only known once the config is loaded. A
@@ -171,22 +176,81 @@ func gatewayCmd(debug bool) error {
 				"path":  storePath,
 			})
 		} else {
+			// Quiet hours are policy, not a constant: an operator in another
+			// timezone, or a test at 22:00, must be able to move them.
+			policy := proactive.DefaultPolicy()
+			if raw := strings.TrimSpace(os.Getenv("ODOOCLAW_PROACTIVE_QUIET_FROM")); raw != "" {
+				if hour, convErr := strconv.Atoi(raw); convErr == nil && hour >= 0 && hour <= 23 {
+					policy.QuietFromHour = hour
+				}
+			}
+			if raw := strings.TrimSpace(os.Getenv("ODOOCLAW_PROACTIVE_QUIET_TO")); raw != "" {
+				if hour, convErr := strconv.Atoi(raw); convErr == nil && hour >= 0 && hour <= 23 {
+					policy.QuietToHour = hour
+				}
+			}
 			engine := proactive.NewEngine(
 				proactive.DefaultPlaybooks(),
-				proactive.DefaultPolicy(),
+				policy,
 				proactiveStore,
 			)
-			handler := proactive.NewHandler(
+			proactiveHandler = proactive.NewHandler(
 				proactive.NewService(engine, nil, nil),
 				cfg.Channels.Odoo.WebhookToken,
 				true,
 			)
-			channelManager.SetProactiveHandler(proactive.SignalPath, handler)
 			logger.InfoCF("proactive", "Proactive engine enabled", map[string]any{
 				"path":      proactive.SignalPath,
 				"playbooks": len(engine.Playbooks()),
 			})
 		}
+	}
+
+	// Wire the operational pipeline: a customer comment becomes a job. The
+	// queue runs one job at a time, highest priority first, and its handler is
+	// mounted under the same /odooclaw/ subtree as the proactive routes.
+	if cfg.Channels.Odoo.Pipeline.Enabled {
+		timeout := 2 * time.Minute
+		if cfg.Channels.Odoo.Pipeline.TimeoutSeconds > 0 {
+			timeout = time.Duration(cfg.Channels.Odoo.Pipeline.TimeoutSeconds) * time.Second
+		}
+		finishURL := cfg.Channels.Odoo.Pipeline.FinishURL
+		if finishURL == "" {
+			if base := os.Getenv("ODOO_URL"); base != "" {
+				finishURL = strings.TrimRight(base, "/") + "/odooclaw/pipeline/finish"
+			}
+		}
+		var processor pipeline.Processor
+		if finishURL != "" {
+			// The same agent that answers in the chat, so there is one brain and
+			// not a second one with its own prompts.
+			agentProcessor := pipeline.NewAgentProcessor(agentLoop, &pipeline.HTTPFinisher{
+				URL:   finishURL,
+				Token: cfg.Channels.Odoo.WebhookToken,
+			})
+			if mm := cfg.Channels.Odoo.Pipeline.Multimodal; mm.Enabled && mm.APIBase != "" && mm.Model != "" {
+				mmTimeout := 60 * time.Second
+				if mm.TimeoutSeconds > 0 {
+					mmTimeout = time.Duration(mm.TimeoutSeconds) * time.Second
+				}
+				agentProcessor.WithAttachments(pipeline.NewOmniClient(mm.APIBase, mm.APIKey, mm.Model, mmTimeout))
+			}
+			processor = agentProcessor
+		}
+		queue := pipeline.NewQueue(processor, pipeline.Options{Timeout: timeout})
+		jobHandler := pipeline.NewHandler(queue, cfg.Channels.Odoo.WebhookToken)
+		var mounted http.Handler = jobHandler
+		if proactiveHandler != nil {
+			mounted = pipeline.Router(proactiveHandler, jobHandler)
+		}
+		channelManager.SetProactiveHandler("/odooclaw/", mounted)
+		logger.InfoCF("pipeline", "Pipeline queue enabled", map[string]any{
+			"path":    "/odooclaw/job",
+			"timeout": timeout.String(),
+		})
+	} else if proactiveHandler != nil {
+		// Proactive only: the whole subtree is the proactive handler.
+		channelManager.SetProactiveHandler("/odooclaw/", proactiveHandler)
 	}
 
 	// Inject channel manager and media store into agent loop
@@ -304,6 +368,13 @@ func setupCronTool(
 	}
 
 	agentLoop.RegisterTool(cronTool)
+
+	// Artifacts: the assistant can keep what it made. The endpoint lives in
+	// Odoo; with no ODOO_URL the tool answers with a clear error instead of
+	// pretending it saved anything.
+	agentLoop.RegisterTool(tools.NewArtifactCreateTool(os.Getenv("ODOO_URL"), cfg.Channels.Odoo.WebhookToken))
+	// Knowledge: answer from the OCA document pages and cite them.
+	agentLoop.RegisterTool(tools.NewKnowledgeSearchTool(os.Getenv("ODOO_URL"), cfg.Channels.Odoo.WebhookToken))
 
 	// Set the onJob handler
 	cronService.SetOnJob(func(job *cron.CronJob) (string, error) {

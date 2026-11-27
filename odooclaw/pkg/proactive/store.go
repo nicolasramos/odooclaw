@@ -36,6 +36,11 @@ type Store interface {
 	MarkInvited(userID int, at time.Time) error
 	// InvitedAt returns when the user was invited, and whether they ever were.
 	InvitedAt(userID int) (time.Time, bool, error)
+	// EnableOptIn persists the user's acceptance: a restart must not turn the
+	// assistant back into something that keeps asking permission.
+	EnableOptIn(userID int) error
+	// OptedIn lists the users who accepted, so the engine can start with them.
+	OptedIn() ([]int, error)
 	// Close releases the underlying handle.
 	Close() error
 }
@@ -55,6 +60,11 @@ CREATE INDEX IF NOT EXISTS idx_proactive_spoken_at ON proactive_intervention(spo
 CREATE TABLE IF NOT EXISTS proactive_invitation (
 	user_id     INTEGER PRIMARY KEY,
 	invited_at  TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS proactive_optin (
+	user_id      INTEGER PRIMARY KEY,
+	opted_in_at  TEXT    NOT NULL
 );
 `
 
@@ -193,6 +203,63 @@ func (s *SQLiteStore) InvitedAt(userID int) (time.Time, bool, error) {
 	return at, true, nil
 }
 
+// EnableOptIn implements Store.
+func (s *MemoryStore) EnableOptIn(userID int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.optedIn == nil {
+		s.optedIn = map[int]time.Time{}
+	}
+	s.optedIn[userID] = time.Now()
+	return nil
+}
+
+// OptedIn implements Store.
+func (s *MemoryStore) OptedIn() ([]int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	users := make([]int, 0, len(s.optedIn))
+	for id := range s.optedIn {
+		users = append(users, id)
+	}
+	return users, nil
+}
+
+// EnableOptIn implements Store.
+func (s *SQLiteStore) EnableOptIn(userID int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(
+		`INSERT INTO proactive_optin (user_id, opted_in_at) VALUES (?, ?)
+		 ON CONFLICT(user_id) DO NOTHING`,
+		userID, time.Now().UTC().Format(time.RFC3339),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to persist opt-in: %w", err)
+	}
+	return nil
+}
+
+// OptedIn implements Store.
+func (s *SQLiteStore) OptedIn() ([]int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT user_id FROM proactive_optin`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read opt-ins: %w", err)
+	}
+	defer rows.Close()
+	users := make([]int, 0)
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		users = append(users, id)
+	}
+	return users, rows.Err()
+}
+
 // Close implements Store.
 func (s *SQLiteStore) Close() error { return s.db.Close() }
 
@@ -202,6 +269,7 @@ type MemoryStore struct {
 	mu        sync.Mutex
 	rows      []intervention
 	invitedAt map[int]time.Time
+	optedIn   map[int]time.Time
 }
 
 type intervention struct {

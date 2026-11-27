@@ -1,0 +1,81 @@
+from collections.abc import Iterable
+from typing import Any
+
+from odoo_mcp.core.client import OdooClient
+
+
+def build_unsupported_response(
+    capability: str, message: str, missing: Iterable[str] | None = None
+) -> dict:
+    return {
+        "ok": False,
+        "status": "unsupported",
+        "capability": capability,
+        "message": message,
+        "missing": list(missing or []),
+    }
+
+
+def build_success_response(capability: str, **payload: Any) -> dict:
+    response = {
+        "ok": True,
+        "status": "ok",
+        "capability": capability,
+    }
+    response.update(payload)
+    return response
+
+
+def get_capabilities(client: OdooClient, user_id: int) -> dict:
+    def probe(model: str) -> dict[str, Any]:
+        fields = client.try_get_model_fields(model, sender_id=user_id)
+        return {
+            "available": fields is not None,
+            "fields": sorted(fields.keys()) if fields else [],
+        }
+
+    helpdesk_ticket = probe("helpdesk.ticket")
+    mail_activity = probe("mail.activity")
+    contract_line = probe("contract.line")
+    contract_contract = probe("contract.contract")
+    mail_compose = probe("mail.compose.message")
+    account_move = probe("account.move")
+    account_move_line = probe("account.move.line")
+    account_payment_register = probe("account.payment.register")
+    account_bank_line = probe("account.bank.statement.line")
+    account_tax = probe("account.tax")
+
+    return {
+        "helpdesk": {
+            "available": helpdesk_ticket["available"],
+            "model": "helpdesk.ticket",
+            "required_for_create": ["name"],
+            "fields": helpdesk_ticket["fields"],
+        },
+        "activities": {
+            "available": mail_activity["available"],
+            "model": "mail.activity",
+            "required_for_create": ["res_model", "res_id", "summary"],
+            "fields": mail_activity["fields"],
+        },
+        "contracts": {
+            "available": contract_line["available"] and contract_contract["available"],
+            "models": ["contract.contract", "contract.line"],
+            "line_fields": contract_line["fields"],
+            "contract_fields": contract_contract["fields"],
+        },
+        "ticket_email_draft": {
+            "available": helpdesk_ticket["available"] and mail_compose["available"],
+            "models": ["helpdesk.ticket", "mail.compose.message"],
+            "fields": mail_compose["fields"],
+        },
+        "accounting": {
+            "available": account_move["available"] and account_move_line["available"],
+            "models": ["account.move", "account.move.line"],
+            "payment_register_available": account_payment_register["available"],
+            "bank_reconciliation_available": account_bank_line["available"],
+            "tax_summary_available": account_tax["available"],
+            "move_fields": account_move["fields"],
+            "move_line_fields": account_move_line["fields"],
+        },
+    }

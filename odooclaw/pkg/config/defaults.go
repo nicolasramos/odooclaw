@@ -32,7 +32,7 @@ func DefaultConfig() *Config {
 				Model:               "",
 				MaxTokens:           32768,
 				Temperature:         nil, // nil means use provider default
-				MaxToolIterations:   50,
+				MaxToolIterations:   120,
 			},
 		},
 		Bindings: []AgentBinding{},
@@ -379,7 +379,7 @@ func DefaultConfig() *Config {
 				},
 			},
 			MCP: MCPConfig{
-				Enabled: false,
+				Enabled: true,
 				Servers: map[string]MCPServerConfig{},
 			},
 		},

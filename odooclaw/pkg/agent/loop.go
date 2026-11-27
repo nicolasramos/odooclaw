@@ -332,6 +332,18 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					}
 				}
 			}
+			if serverName := odooMCPServerName(mcpManager); serverName != "" {
+				// The generic odoo_write is too free-form for a small model:
+				// give it the common business operations with the search and
+				// the write already built.
+				for _, agentID := range agentIDs {
+					agent, ok := al.registry.GetAgent(agentID)
+					if !ok {
+						continue
+					}
+					agent.Tools.Register(tools.NewOdooSetLineQuantityTool(mcpManager, serverName))
+				}
+			}
 			logger.InfoCF("agent", "MCP tools registered successfully",
 				map[string]any{
 					"server_count":        len(servers),
@@ -482,7 +494,7 @@ func (al *AgentLoop) wireOdooAllowlistCacheResetter(mcpManager *mcp.Manager) {
 // odooMCPServerName returns the connected MCP server name for the Odoo MCP
 // (config may key it as "odoo-mcp" or "odoo-manager"), or "" if not connected.
 func odooMCPServerName(m *mcp.Manager) string {
-	for _, name := range []string{"odoo-mcp", "odoo-manager"} {
+	for _, name := range []string{"odoo-mcp", "odoo-manager", "odoo_manager", "odoo"} {
 		if _, ok := m.GetServer(name); ok {
 			return name
 		}
@@ -1706,8 +1718,8 @@ func (al *AgentLoop) rlmAutoCapture(agent *AgentInstance, toolName, content stri
 
 	if result != nil && !result.IsError {
 		logger.DebugCF("agent", "RLM: auto-captured tool output", map[string]any{
-			"tool":    toolName,
-			"key":     key,
+			"tool":        toolName,
+			"key":         key,
 			"content_len": len(content),
 		})
 	}

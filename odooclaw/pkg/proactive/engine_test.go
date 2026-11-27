@@ -723,3 +723,28 @@ func containsSlice(xs []string, want string) bool {
 	}
 	return false
 }
+
+func TestOptInSurvivesARestart(t *testing.T) {
+	// Accepting suggestions is a promise to the person. Losing it on every
+	// deploy would ask them for permission again and again.
+	path := t.TempDir() + "/proactive.db"
+	store1, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e1 := NewEngine(DefaultPlaybooks(), DefaultPolicy(), store1)
+	e1.EnableOptIn(7)
+	if err := store1.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store2, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store2.Close()
+	e2 := NewEngine(DefaultPlaybooks(), DefaultPolicy(), store2)
+	if !e2.policy.OptedIn(7) {
+		t.Fatal("opt-in lost on restart")
+	}
+}

@@ -4,10 +4,10 @@ import "testing"
 
 func TestFindInvoiceAttachment(t *testing.T) {
 	cases := []struct {
-		name     string
-		msg      string
-		wantID   int
-		wantOK   bool
+		name   string
+		msg    string
+		wantID int
+		wantOK bool
 	}{
 		{
 			name:   "plain marker",

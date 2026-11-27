@@ -18,9 +18,9 @@ type mockTool struct {
 	domain      string
 }
 
-func (m *mockTool) Name() string                    { return m.name }
-func (m *mockTool) Description() string             { return m.description }
-func (m *mockTool) Parameters() map[string]any       { return m.params }
+func (m *mockTool) Name() string               { return m.name }
+func (m *mockTool) Description() string        { return m.description }
+func (m *mockTool) Parameters() map[string]any { return m.params }
 func (m *mockTool) Execute(_ context.Context, _ map[string]any) *ToolResult {
 	return NewToolResult("ok")
 }

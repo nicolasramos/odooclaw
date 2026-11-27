@@ -137,9 +137,9 @@ func StageEnrichContext() StageFunc {
 
 		logger.DebugCF("conversation", "Context enriched",
 			map[string]any{
-				"session":       pctx.SessionKey,
-				"history_msgs":  len(pctx.History),
-				"has_summary":   pctx.Summary != "",
+				"session":      pctx.SessionKey,
+				"history_msgs": len(pctx.History),
+				"has_summary":  pctx.Summary != "",
 			})
 		return nil
 	}

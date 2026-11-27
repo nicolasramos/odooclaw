@@ -89,3 +89,13 @@ func (s *Service) areaHint(area string) (string, error) {
 // EvaluateOnly runs the decision without delivering — used by the Odoo signal
 // endpoint to answer "would you speak?" and by tests.
 func (s *Service) EvaluateOnly(sig Signal) Decision { return s.engine.Evaluate(sig) }
+
+// Record persists a delivered decision. Odoo posts the message itself inside
+// the signal request and then calls the ack route: recording before the post
+// would burn the invitation (or the area cooldown) on a message the user never
+// saw, which is exactly the silence this engine exists to avoid.
+func (s *Service) Record(sig Signal, dec Decision) error { return s.engine.Record(sig, dec) }
+
+// EnableOptIn records the user's acceptance of the invitation. Called from the
+// opt-in route when the user answers the invitation in the bot's chat.
+func (s *Service) EnableOptIn(userID int) { s.engine.EnableOptIn(userID) }

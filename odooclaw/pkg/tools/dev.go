@@ -371,18 +371,21 @@ func NewDevProposeChangeTool(client *DevClient) *DevProposeChangeTool {
 func (t *DevProposeChangeTool) Name() string { return "dev_propose_change" }
 
 func (t *DevProposeChangeTool) Description() string {
-	return "Create an OdooClaw change in draft with a payload for a field, view, server action or menu. It does not apply the change; use dev_apply_change with the returned change_id."
+	return "Create an OdooClaw change and validate its payload at once. The payload is FLAT, never nested under its kind. " +
+		"View example: {\"model\":\"crm.lead\",\"inherit_xmlid\":\"crm.crm_case_kanban_view_leads\",\"arch\":\"<data><xpath expr=\\\"//t[@t-name='card']/field[@name='name']\\\" position=\\\"after\\\"><div class=\\\"text-muted\\\"><field name=\\\"phone\\\"/></div></xpath></data>\"}. " +
+		"inherit_xmlid is the xmlid from dev_get_context, never the numeric id. " +
+		"If the ledger rejects the payload the tool returns the validation message: fix it and propose again. It does not apply the change; use dev_apply_change with the returned change_id."
 }
 
 func (t *DevProposeChangeTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"name":         map[string]any{"type": "string", "description": "Short title for the change."},
-			"request_text": map[string]any{"type": "string", "description": "The user's request, verbatim."},
-			"kind":         map[string]any{"type": "string", "enum": []string{"field", "view", "action", "menu", "module"}},
-			"level":        map[string]any{"type": "string", "enum": []string{"n0", "n1", "n2", "n3"}, "description": "N0 data, N1 metadata, N2 new module, N3 existing module. Default n1."},
-			"target_model": map[string]any{"type": "string", "description": "Optional model; defaults to payload.model."},
+			"name":          map[string]any{"type": "string", "description": "Short title for the change."},
+			"request_text":  map[string]any{"type": "string", "description": "The user's request, verbatim."},
+			"kind":          map[string]any{"type": "string", "enum": []string{"field", "view", "action", "menu", "module"}},
+			"level":         map[string]any{"type": "string", "enum": []string{"n0", "n1", "n2", "n3"}, "description": "N0 data, N1 metadata, N2 new module, N3 existing module. Default n1."},
+			"target_model":  map[string]any{"type": "string", "description": "Optional model; defaults to payload.model."},
 			"target_module": map[string]any{"type": "string", "description": "N3 only: installed module whose behaviour is changed."},
 			"payload": map[string]any{
 				"type":        "object",
@@ -433,6 +436,13 @@ func (t *DevProposeChangeTool) Execute(ctx context.Context, args map[string]any)
 	})
 	if err != nil {
 		return ErrorResult(err.Error())
+	}
+	if reason, _ := result["validation_error"].(string); reason != "" {
+		message, _ := result["message"].(string)
+		return ErrorResult(fmt.Sprintf(
+			"the ledger rejected the payload (%s): %s. Change %v is in draft; fix the payload and propose again.",
+			reason, message, result["id"],
+		))
 	}
 	data, err := json.MarshalIndent(map[string]any{
 		"change_id": result["id"],
