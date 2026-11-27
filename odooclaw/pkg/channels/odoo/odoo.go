@@ -177,7 +177,10 @@ func (c *OdooChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	// Include reply token if one was registered for this chatID (single-use).
 	// Modules that authenticate the reply endpoint with a token send it; the
 	// public /odooclaw/reply endpoint accepts a reply without one.
-	if token, ok := c.pendingTokens.LoadAndDelete(msg.ChatID); ok {
+	// Keep the token: one inbound conversation can produce several replies
+	// (a chat answer plus a pipeline note). Deleting it here left the second
+	// reply without a token and Odoo rejected it with "Missing reply_token".
+	if token, ok := c.pendingTokens.Load(msg.ChatID); ok {
 		reply.ReplyToken = token.(string)
 	}
 
