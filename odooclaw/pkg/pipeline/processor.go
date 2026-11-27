@@ -66,6 +66,13 @@ func (p *AgentProcessor) WithAttachments(reader AttachmentReader) *AgentProcesso
 	return p
 }
 
+// businessToolsRule is shipped with every pipeline prompt: the assistant is the
+// product's main use, so the model must know the business tools exist and that
+// data goes into a field, never into a new field.
+const businessToolsRule = `Herramientas de Odoo: las de negocio estan registradas como mcp_odoo_manager_odoo_*. Para leer el registro actual usa mcp_odoo_manager_odoo_read; para encontrarlo por su nombre, mcp_odoo_manager_odoo_search_read; para cambiar un campo, mcp_odoo_manager_odoo_write; para crear un registro, mcp_odoo_manager_odoo_create. Un dato se escribe en su campo, nunca creando un campo; dev_* es solo para vistas, campos y modulos.
+
+`
+
 const promptTemplate = `Eres OdooClaw, el asistente de un ERP. Trabajas sobre un registro de %s llamado "%s", en la etapa "%s".
 Modo de trabajo: %s.
 - observe: no escribas al cliente. Decide si hay algo util que decir y redactalo solo para el registro interno.
@@ -130,7 +137,7 @@ func BuildPrompt(job Job) string {
 	if attachments == "" {
 		attachments = "Ninguno."
 	}
-	return fmt.Sprintf(
+	return businessToolsRule + fmt.Sprintf(
 		promptTemplate,
 		job.Model,
 		job.ResName,

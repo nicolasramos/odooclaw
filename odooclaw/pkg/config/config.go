@@ -847,6 +847,7 @@ func LoadConfig(path string) (*Config, error) {
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
 	}
+	cfg.ensureDefaultMCPServers()
 
 	// Migrate legacy channel config fields to new unified structures
 	cfg.migrateChannelConfigs()

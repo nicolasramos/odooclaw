@@ -264,3 +264,12 @@ func TestProcessorReportsWhatTheAttachmentsSaid(t *testing.T) {
 		t.Fatalf("the result lost what the model read: %q", finisher.results[0].AttachmentText)
 	}
 }
+
+func TestPromptAlwaysCarriesTheBusinessTools(t *testing.T) {
+	prompt := BuildPrompt(docJob("draft"))
+	for _, want := range []string{"mcp_odoo_manager_odoo_write", "mcp_odoo_manager_odoo_search_read"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("the assistant tools must be in every prompt, missing %q: %s", want, prompt)
+		}
+	}
+}

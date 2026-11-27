@@ -379,7 +379,7 @@ func DefaultConfig() *Config {
 				},
 			},
 			MCP: MCPConfig{
-				Enabled: false,
+				Enabled: true,
 				Servers: map[string]MCPServerConfig{},
 			},
 		},
