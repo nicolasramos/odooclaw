@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -175,9 +176,22 @@ func gatewayCmd(debug bool) error {
 				"path":  storePath,
 			})
 		} else {
+			// Quiet hours are policy, not a constant: an operator in another
+			// timezone, or a test at 22:00, must be able to move them.
+			policy := proactive.DefaultPolicy()
+			if raw := strings.TrimSpace(os.Getenv("ODOOCLAW_PROACTIVE_QUIET_FROM")); raw != "" {
+				if hour, convErr := strconv.Atoi(raw); convErr == nil && hour >= 0 && hour <= 23 {
+					policy.QuietFromHour = hour
+				}
+			}
+			if raw := strings.TrimSpace(os.Getenv("ODOOCLAW_PROACTIVE_QUIET_TO")); raw != "" {
+				if hour, convErr := strconv.Atoi(raw); convErr == nil && hour >= 0 && hour <= 23 {
+					policy.QuietToHour = hour
+				}
+			}
 			engine := proactive.NewEngine(
 				proactive.DefaultPlaybooks(),
-				proactive.DefaultPolicy(),
+				policy,
 				proactiveStore,
 			)
 			proactiveHandler = proactive.NewHandler(
