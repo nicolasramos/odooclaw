@@ -128,6 +128,12 @@ func NewEngine(playbooks []Playbook, policy Policy, store Store) *Engine {
 	if store == nil {
 		store = NewMemoryStore()
 	}
+	// Whoever accepted in a previous life accepted for good.
+	if users, err := store.OptedIn(); err == nil {
+		for _, id := range users {
+			policy.EnableOptIn(id)
+		}
+	}
 	return &Engine{
 		playbooks: playbooks,
 		policy:    policy,
@@ -148,6 +154,9 @@ func (e *Engine) EnableOptIn(userID int) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.policy.EnableOptIn(userID)
+	// Persist it too: the acceptance is a promise to the person, not a
+	// property of this process.
+	_ = e.store.EnableOptIn(userID)
 }
 
 // Evaluate decides whether to intervene for the given signal.
