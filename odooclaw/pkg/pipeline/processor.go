@@ -159,7 +159,12 @@ func (p *AgentProcessor) Process(ctx context.Context, job Job) error {
 	}
 	out, err := p.agent.ProcessDirect(ctx, BuildPrompt(job), "pipeline:"+job.Key())
 	if err != nil {
-		_ = p.finisher.Finish(ctx, Result{
+		// The job context dies when the queue deadline fires. Reporting the
+		// failure must not share that fate: a run left "queued" is invisible
+		// to everyone. Give the report its own short, uncancelled deadline.
+		reportCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
+		defer cancel()
+		_ = p.finisher.Finish(reportCtx, Result{
 			RunID:    job.RunID,
 			State:    "failed",
 			Error:    err.Error(),

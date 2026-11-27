@@ -24,10 +24,12 @@ func (f *fakeAgent) ProcessDirect(ctx context.Context, content, sessionKey strin
 
 type fakeFinisher struct {
 	results []Result
+	ctxErrs []error
 }
 
 func (f *fakeFinisher) Finish(ctx context.Context, result Result) error {
 	f.results = append(f.results, result)
+	f.ctxErrs = append(f.ctxErrs, ctx.Err())
 	return nil
 }
 
@@ -271,5 +273,28 @@ func TestPromptAlwaysCarriesTheBusinessTools(t *testing.T) {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("the assistant tools must be in every prompt, missing %q: %s", want, prompt)
 		}
+	}
+}
+
+func TestProcessReportsFailureAfterTheJobContextIsCancelled(t *testing.T) {
+	// A fire-and-forget start that never finishes is worse than a failure:
+	// the run stays "queued" and nobody sees it. The report must go out even
+	// when the job deadline has already cancelled the job context.
+	agent := fakeAgent{err: context.DeadlineExceeded}
+	finisher := &fakeFinisher{}
+	processor := NewAgentProcessor(&agent, finisher)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := processor.Process(ctx, docJob("draft")); err == nil {
+		t.Fatal("expected the agent error to surface")
+	}
+	if len(finisher.results) != 1 {
+		t.Fatalf("expected one report, got %d", len(finisher.results))
+	}
+	if finisher.results[0].State != "failed" {
+		t.Fatalf("state = %q, want failed", finisher.results[0].State)
+	}
+	if finisher.ctxErrs[0] != nil {
+		t.Fatalf("report used the cancelled job context: %v", finisher.ctxErrs[0])
 	}
 }
