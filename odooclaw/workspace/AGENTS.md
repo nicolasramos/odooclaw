@@ -111,3 +111,13 @@ not the unit price of a line in a sale order. Write price_unit on sale.order.lin
 user says "en este pedido", "en esta línea" or names a concrete order. A product's category is
 product.template.categ_id, written with the category name. The quantity of an order line is
 sale.order.line.product_uom_qty with lookup {"order_id": "S00021", "product_id": "<product>"}.
+
+## The common verbs have their own tool
+
+- Create a quotation / presupuesto: `mcp_odoo_manager_odoo_create_sale_order` with partner_name (or
+  partner_id) and lines [{"product_id": "<name or id>", "product_uom_qty": 2}]. Do not use the
+  purchase order tool for a sale order.
+- Create the customer invoice of a confirmed order: `mcp_odoo_manager_odoo_create_invoice_from_sale_order`.
+- Create a purchase order: `mcp_odoo_manager_odoo_create_purchase_order`.
+- Create a CRM lead: `mcp_odoo_manager_odoo_create` with model "crm.lead".
+- Edit any record: `mcp_odoo_manager_odoo_update_by`.

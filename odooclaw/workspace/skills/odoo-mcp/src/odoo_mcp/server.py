@@ -698,6 +698,33 @@ def odoo_get_sale_order_summary(
 
 
 @mcp.tool()
+def odoo_create_sale_order(
+    partner_id: int | None = None,
+    partner_name: str | None = None,
+    lines: list | None = None,
+    note: str | None = None,
+    sender_id: int | None = None,
+) -> dict:
+    """Create a quotation / presupuesto (sale order) from scratch.
+
+    Use this when the user asks to create a quotation or a sale order. Give the
+    customer by partner_name (a person's wording) or partner_id, and the lines as
+    [{"product_id": <id or name>, "product_uom_qty": 2}] with an optional price_unit.
+    It builds the order_line one2many for you.
+    """
+    with measure_time("odoo_create_sale_order"):
+        client = get_odoo_client()
+        return sales.odoo_create_sale_order(
+            client,
+            sender_id or client.odoo_session.get_uid(),
+            partner_id,
+            lines or [],
+            partner_name,
+            note,
+        )
+
+
+@mcp.tool()
 def odoo_create_invoice_from_sale_order(
     order_id: int,
     invoice_date: str | None = None,
