@@ -121,3 +121,15 @@ sale.order.line.product_uom_qty with lookup {"order_id": "S00021", "product_id":
 - Create a purchase order: `mcp_odoo_manager_odoo_create_purchase_order`.
 - Create a CRM lead: `mcp_odoo_manager_odoo_create` with model "crm.lead".
 - Edit any record: `mcp_odoo_manager_odoo_update_by`.
+
+## Creating anything and running workflow actions
+
+- A new record of any model: `mcp_odoo_manager_odoo_create_record` with model and values as a
+  person says them. Examples: res.partner {"name": "Acme, S.L.", "is_company": true, "phone":
+  "+34 600 000 000"}; crm.lead {"name": "Renovacion anual", "contact_name": "Acme", "email_from":
+  "info@acme.example", "type": "opportunity"}; project.task {"name": "Llamar a Acme", "project_id":
+  "Proyecto X"}; helpdesk.ticket {"name": "No carga la web", "partner_id": "Acme"}.
+- A workflow action: `mcp_odoo_manager_odoo_run_action` with model, lookup and method. Only
+  action_* and button_* work: action_confirm (confirm a sale order), action_post (post an
+  invoice), button_validate (validate a delivery), action_set_won / action_set_lost (close a
+  lead). The lookup is the same as in update_by.

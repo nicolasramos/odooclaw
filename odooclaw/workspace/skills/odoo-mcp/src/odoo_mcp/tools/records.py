@@ -8,7 +8,7 @@ from odoo_mcp.core.field_schema import (
 )
 from odoo_mcp.core.serializers import serialize_records
 from odoo_mcp.security.audit import audit_action
-from odoo_mcp.security.guards import guard_model_access, guard_write_fields
+from odoo_mcp.security.guards import guard_action_name, guard_model_access, guard_write_fields
 from odoo_mcp.services.partner_service import find_existing_partner_id
 
 # ``_field_cache`` / ``_field_cache_timestamps`` come from
@@ -314,4 +314,81 @@ def odoo_update_by(
             "after": {field: after.get(field) for field in values},
         }
     except Exception as error:  # noqa: BLE001 - the model needs the reason, not a traceback
+        return {"ok": False, "error": str(error)}
+
+
+def odoo_create_record(
+    client: OdooClient, user_id: int, model: str, values: dict[str, Any]
+) -> dict[str, Any]:
+    """Create a record of any model, resolving names, labels and numbers.
+
+    The caller gives the values the way a person says them ("Acme, S.L." for a
+    many2one, "Servicios" for a selection); the schema of the running instance
+    resolves them. Errors come back as {"ok": false, "error": ...}.
+    """
+    try:
+        guard_model_access(model, client, sender_id=user_id)
+        schema = get_field_schema(client, model, user_id)
+        if not schema:
+            return {"ok": False, "error": f"no schema for {model}: unknown model or no access"}
+        clean = {
+            field: _resolve_update_value(client, user_id, model, field, value, schema)
+            for field, value in (values or {}).items()
+        }
+        guard_write_fields(clean)
+        audit_action("CREATE", user_id, model, [], clean)
+        record_id = client.call_kw(model, "create", args=[clean], sender_id=user_id)
+        record = client.call_kw(
+            model, "read", args=[[record_id]], kwargs={"fields": ["display_name"]}, sender_id=user_id
+        ) or [{}]
+        return {
+            "ok": True,
+            "model": model,
+            "id": record_id,
+            "display_name": record[0].get("display_name"),
+        }
+    except Exception as error:  # noqa: BLE001 - the model needs the reason
+        return {"ok": False, "error": str(error)}
+
+
+def odoo_run_action(
+    client: OdooClient, user_id: int, model: str, lookup: dict[str, Any], method: str
+) -> dict[str, Any]:
+    """Run a workflow action (action_* or button_*) on exactly one record.
+
+    The record is found with the same name resolution as odoo_update_by; the
+    method must be a workflow action (confirm, post, validate, won, lost), never
+    an arbitrary method.
+    """
+    try:
+        guard_model_access(model, client, sender_id=user_id)
+        guard_action_name(method)
+        schema = get_field_schema(client, model, user_id)
+        if not schema:
+            return {"ok": False, "error": f"no schema for {model}: unknown model or no access"}
+        resolved = {
+            field: _resolve_update_value(client, user_id, model, field, value, schema)
+            for field, value in (lookup or {}).items()
+        }
+        domain = [[field, "=", value] for field, value in resolved.items()]
+        ids = client.call_kw(model, "search", args=[domain], kwargs={"limit": 4}, sender_id=user_id) or []
+        if not ids:
+            return {"ok": False, "error": f"no {model} matches {lookup}"}
+        if len(ids) > 1:
+            found = client.call_kw(
+                model, "read", args=[ids], kwargs={"fields": ["display_name"]}, sender_id=user_id
+            ) or []
+            names = ", ".join(str(record.get("display_name")) for record in found)
+            return {"ok": False, "error": f"{lookup} matches {len(ids)} {model}: {names}"}
+        record_id = ids[0]
+        audit_action(method.upper(), user_id, model, [record_id], {})
+        result = client.call_kw(model, method, args=[[record_id]], sender_id=user_id)
+        return {
+            "ok": True,
+            "model": model,
+            "id": record_id,
+            "method": method,
+            "result": result if isinstance(result, (str, int, float, bool, type(None))) else bool(result),
+        }
+    except Exception as error:  # noqa: BLE001 - the model needs the reason
         return {"ok": False, "error": str(error)}

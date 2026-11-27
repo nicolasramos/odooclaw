@@ -316,6 +316,54 @@ def odoo_create(
 
 
 @mcp.tool()
+def odoo_create_record(
+    model: str,
+    values: dict,
+    sender_id: int | None = None,
+) -> dict:
+    """Create a record of any model with human values.
+
+    values maps field names to what a person says: {"name": "Acme, S.L.",
+    "is_company": true, "phone": "+34 ..."}. A many2one value can be the related
+    record's name and a selection can be its label; the tool resolves them
+    against the instance schema. Use it for a customer, a CRM lead, a product, a
+    task or a ticket.
+    """
+    with measure_time("odoo_create_record"):
+        client = get_odoo_client()
+        return records.odoo_create_record(
+            client,
+            sender_id or client.odoo_session.get_uid(),
+            model,
+            values,
+        )
+
+
+@mcp.tool()
+def odoo_run_action(
+    model: str,
+    lookup: dict,
+    method: str,
+    sender_id: int | None = None,
+) -> dict:
+    """Run a workflow action on exactly one record found by its name.
+
+    method must be an action_* or button_* method: action_confirm to confirm a
+    sale order, action_post to post an invoice, button_validate to validate a
+    delivery, action_set_won to win a lead. Anything else is refused.
+    """
+    with measure_time("odoo_run_action"):
+        client = get_odoo_client()
+        return records.odoo_run_action(
+            client,
+            sender_id or client.odoo_session.get_uid(),
+            model,
+            lookup,
+            method,
+        )
+
+
+@mcp.tool()
 def odoo_update_by(
     model: str,
     lookup: dict,
