@@ -43,23 +43,23 @@ func (t *OdooSetLineQuantityTool) Parameters() map[string]any {
 	}
 }
 
-func (t *OdooSetLineQuantityTool) call(ctx context.Context, tool string, args map[string]any) ([]map[string]any, error) {
+func (t *OdooSetLineQuantityTool) call(ctx context.Context, tool string, args map[string]any) ([]map[string]any, string, error) {
 	result, err := t.manager.CallTool(ctx, t.server, tool, args)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if result == nil {
-		return nil, fmt.Errorf("%s returned no result", tool)
+		return nil, "", fmt.Errorf("%s returned no result", tool)
 	}
 	text := extractContentText(result.Content)
 	if result.IsError {
-		return nil, fmt.Errorf("%s: %s", tool, text)
+		return nil, text, fmt.Errorf("%s: %s", tool, text)
 	}
 	var payload any
 	if err := json.Unmarshal([]byte(text), &payload); err != nil {
-		return nil, fmt.Errorf("%s returned non JSON: %s", tool, truncate(text, 200))
+		return nil, text, fmt.Errorf("%s returned non JSON: %s", tool, truncate(text, 200))
 	}
-	return recordsOf(payload), nil
+	return recordsOf(payload), text, nil
 }
 
 func recordsOf(payload any) []map[string]any {
@@ -94,7 +94,7 @@ func (t *OdooSetLineQuantityTool) Execute(ctx context.Context, args map[string]a
 	if parsed, err := strconv.Atoi(order); err == nil {
 		orderID = parsed
 	} else {
-		orders, err := t.call(ctx, "odoo_search_read", map[string]any{
+		orders, _, err := t.call(ctx, "odoo_search_read", map[string]any{
 			"model":  "sale.order",
 			"domain": []any{[]any{"name", "=", order}},
 			"fields": []any{"id", "name"},
@@ -109,7 +109,7 @@ func (t *OdooSetLineQuantityTool) Execute(ctx context.Context, args map[string]a
 		orderID = devIntArg(orders[0], "id")
 	}
 
-	lines, err := t.call(ctx, "odoo_search_read", map[string]any{
+	lines, raw, err := t.call(ctx, "odoo_search_read", map[string]any{
 		"model":  "sale.order.line",
 		"domain": []any{[]any{"order_id", "=", orderID}},
 		"fields": []any{"id", "product_id", "product_uom_qty"},
@@ -119,6 +119,9 @@ func (t *OdooSetLineQuantityTool) Execute(ctx context.Context, args map[string]a
 		return ErrorResult(err.Error())
 	}
 	if len(lines) == 0 {
+		if trimmed := strings.TrimSpace(raw); trimmed != "" && trimmed != "[]" && trimmed != "null" {
+			return ErrorResult(fmt.Sprintf("sale order %d: odoo_search_read returned %s", orderID, truncate(trimmed, 300)))
+		}
 		return ErrorResult(fmt.Sprintf("sale order %d has no lines", orderID))
 	}
 
@@ -149,7 +152,7 @@ func (t *OdooSetLineQuantityTool) Execute(ctx context.Context, args map[string]a
 
 	lineID := devIntArg(chosen, "id")
 	previous := devFloatArg(chosen, "product_uom_qty")
-	if _, err := t.call(ctx, "odoo_write", map[string]any{
+	if _, _, err := t.call(ctx, "odoo_write", map[string]any{
 		"model":  "sale.order.line",
 		"ids":    []any{lineID},
 		"values": map[string]any{"product_uom_qty": quantity},
