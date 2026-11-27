@@ -67,16 +67,16 @@ type PipelineRequest struct {
 
 // PipelineResult is the output from the integration pipeline.
 type PipelineResult struct {
-	Response       string
-	ModelUsed      string
-	ToolsUsed      []string
-	ToolCount      int // Tools sent to LLM (after filtering)
-	TotalTools     int // Total registered tools
-	TokensSaved    int
-	Intent         *multimodel.IntentResult
-	Latency        time.Duration
-	StageTimings   map[string]time.Duration
-	FromCache      bool
+	Response     string
+	ModelUsed    string
+	ToolsUsed    []string
+	ToolCount    int // Tools sent to LLM (after filtering)
+	TotalTools   int // Total registered tools
+	TokensSaved  int
+	Intent       *multimodel.IntentResult
+	Latency      time.Duration
+	StageTimings map[string]time.Duration
+	FromCache    bool
 }
 
 // Pipeline connects all components in an end-to-end flow.
@@ -84,27 +84,27 @@ type Pipeline struct {
 	cfg PipelineConfig
 
 	// Components
-	toolRegistry  *tools.ToolRegistry
-	retrieval     *tools.RetrievalEngine
-	knowledge     *knowledge.KnowledgeBase
-	optimizer     *tools.ContextOptimizer
-	multiModel    *multimodel.Pipeline
-	provider      providers.LLMProvider
-	model         string
+	toolRegistry *tools.ToolRegistry
+	retrieval    *tools.RetrievalEngine
+	knowledge    *knowledge.KnowledgeBase
+	optimizer    *tools.ContextOptimizer
+	multiModel   *multimodel.Pipeline
+	provider     providers.LLMProvider
+	model        string
 
 	// Metrics
-	metrics      PipelineMetrics
-	metricsMu    sync.RWMutex
+	metrics   PipelineMetrics
+	metricsMu sync.RWMutex
 }
 
 // PipelineMetrics tracks aggregate pipeline performance.
 type PipelineMetrics struct {
-	TotalRequests   int64
-	AvgLatencyMs    float64
-	ToolsFiltered   int64
-	TokensSaved     int64
-	MultiModelHits  int64
-	FallbackCount   int64
+	TotalRequests  int64
+	AvgLatencyMs   float64
+	ToolsFiltered  int64
+	TokensSaved    int64
+	MultiModelHits int64
+	FallbackCount  int64
 }
 
 // NewPipeline creates a new integration pipeline.
@@ -341,12 +341,12 @@ func (p *Pipeline) ProcessRequest(ctx context.Context, req PipelineRequest) (*Pi
 	// Log timings
 	if p.cfg.LogTimings {
 		logger.InfoCF("integration", "Pipeline complete", map[string]any{
-			"latency_ms":    result.Latency.Milliseconds(),
-			"tools_sent":    result.ToolCount,
-			"tools_total":   result.TotalTools,
-			"tokens_saved":  result.TokensSaved,
-			"model":         result.ModelUsed,
-			"intent":        intentStr(result.Intent),
+			"latency_ms":   result.Latency.Milliseconds(),
+			"tools_sent":   result.ToolCount,
+			"tools_total":  result.TotalTools,
+			"tokens_saved": result.TokensSaved,
+			"model":        result.ModelUsed,
+			"intent":       intentStr(result.Intent),
 		})
 	}
 

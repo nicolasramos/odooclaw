@@ -134,15 +134,15 @@ func TestKnowledgeBase_ToolKnowledge(t *testing.T) {
 
 	// Register tool knowledge
 	tk := ToolKnowledge{
-		ToolName:    "search_crm_leads",
-		Description: "Search for CRM leads and opportunities",
-		Category:    CatToolUsage,
-		Tags:        []string{"crm", "lead"},
-		Metadata:    map[string]string{"module": "crm", "odoo_version": "17"},
-		Aliases:     []string{"buscar leads crm", "find CRM leads"},
-		RiskLevel:   RiskLow,
+		ToolName:     "search_crm_leads",
+		Description:  "Search for CRM leads and opportunities",
+		Category:     CatToolUsage,
+		Tags:         []string{"crm", "lead"},
+		Metadata:     map[string]string{"module": "crm", "odoo_version": "17"},
+		Aliases:      []string{"buscar leads crm", "find CRM leads"},
+		RiskLevel:    RiskLow,
 		Dependencies: []string{"memory_search"},
-		Examples:    []string{"search_crm_leads(query=\"acme\")"},
+		Examples:     []string{"search_crm_leads(query=\"acme\")"},
 	}
 
 	err = kb.RegisterToolKnowledge(tk)

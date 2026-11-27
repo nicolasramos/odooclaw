@@ -19,24 +19,24 @@ import (
 type RiskLevel string
 
 const (
-	RiskLow      RiskLevel = "low"       // Read-only, no data mutation
-	RiskMedium   RiskLevel = "medium"    // Creates/modifies data, reversible
-	RiskHigh     RiskLevel = "high"      // Destructive or irreversible operations
-	RiskCritical RiskLevel = "critical"  // Financial, legal, or system-breaking impact
+	RiskLow      RiskLevel = "low"      // Read-only, no data mutation
+	RiskMedium   RiskLevel = "medium"   // Creates/modifies data, reversible
+	RiskHigh     RiskLevel = "high"     // Destructive or irreversible operations
+	RiskCritical RiskLevel = "critical" // Financial, legal, or system-breaking impact
 )
 
 // Category represents a knowledge entry category.
 type Category string
 
 const (
-	CatToolUsage    Category = "tool_usage"     // How to use a specific tool
-	CatOdooModule   Category = "odoo_module"    // Odoo module domain knowledge
-	CatWorkflow     Category = "workflow"       // Multi-step workflows
-	CatApiPattern   Category = "api_pattern"    // API usage patterns
-	CatAlias        Category = "alias"          // Tool aliases and synonyms
-	CatDependency   Category = "dependency"     // Tool-to-tool dependencies
-	CatExample      Category = "example"        // Usage examples
-	CatRisk         Category = "risk"           // Risk and safety info
+	CatToolUsage  Category = "tool_usage"  // How to use a specific tool
+	CatOdooModule Category = "odoo_module" // Odoo module domain knowledge
+	CatWorkflow   Category = "workflow"    // Multi-step workflows
+	CatApiPattern Category = "api_pattern" // API usage patterns
+	CatAlias      Category = "alias"       // Tool aliases and synonyms
+	CatDependency Category = "dependency"  // Tool-to-tool dependencies
+	CatExample    Category = "example"     // Usage examples
+	CatRisk       Category = "risk"        // Risk and safety info
 )
 
 // KnowledgeEntry represents a piece of domain knowledge.
@@ -54,15 +54,15 @@ type KnowledgeEntry struct {
 
 // ToolKnowledge is a knowledge entry specifically about a registered tool.
 type ToolKnowledge struct {
-	ToolName    string
-	Description string
-	Category    Category
-	Tags        []string
-	Metadata    map[string]string // "odoo_version", "module", "risk_level", etc.
-	Aliases     []string
-	RiskLevel   RiskLevel
+	ToolName     string
+	Description  string
+	Category     Category
+	Tags         []string
+	Metadata     map[string]string // "odoo_version", "module", "risk_level", etc.
+	Aliases      []string
+	RiskLevel    RiskLevel
 	Dependencies []string // tool names this tool depends on
-	Examples    []string  // usage examples
+	Examples     []string // usage examples
 }
 
 // KnowledgeBase stores and retrieves domain-specific knowledge entries.
@@ -437,39 +437,39 @@ func (kb *KnowledgeBase) GetRelevantTools(query string, limit int) ([]string, er
 func (kb *KnowledgeBase) LoadOdooDomainKnowledge() error {
 	domains := []KnowledgeEntry{
 		{
-			Category:  CatOdooModule,
-			Title:     "CRM Module",
-			Content:   "Odoo CRM manages leads, opportunities, and sales pipeline. Key models: crm.lead, crm.stage. Actions: create lead, convert to opportunity, set stage, schedule activity, send email.",
-			Tags:      []string{"crm", "lead", "opportunity", "pipeline"},
-			Metadata:  map[string]string{"module": "crm"},
+			Category: CatOdooModule,
+			Title:    "CRM Module",
+			Content:  "Odoo CRM manages leads, opportunities, and sales pipeline. Key models: crm.lead, crm.stage. Actions: create lead, convert to opportunity, set stage, schedule activity, send email.",
+			Tags:     []string{"crm", "lead", "opportunity", "pipeline"},
+			Metadata: map[string]string{"module": "crm"},
 		},
 		{
-			Category:  CatOdooModule,
-			Title:     "Sales Module",
-			Content:   "Odoo Sales manages quotations and sales orders. Key models: sale.order, sale.order.line. Actions: create quotation, confirm sale, add line, send by email.",
-			Tags:      []string{"sale", "quotation", "order"},
-			Metadata:  map[string]string{"module": "sale"},
+			Category: CatOdooModule,
+			Title:    "Sales Module",
+			Content:  "Odoo Sales manages quotations and sales orders. Key models: sale.order, sale.order.line. Actions: create quotation, confirm sale, add line, send by email.",
+			Tags:     []string{"sale", "quotation", "order"},
+			Metadata: map[string]string{"module": "sale"},
 		},
 		{
-			Category:  CatOdooModule,
-			Title:     "Inventory Module",
-			Content:   "Odoo Inventory manages stock, warehouses, and transfers. Key models: stock.picking, stock.quant, stock.warehouse. Actions: check quantity, create transfer, validate picking.",
-			Tags:      []string{"stock", "inventory", "warehouse"},
-			Metadata:  map[string]string{"module": "stock"},
+			Category: CatOdooModule,
+			Title:    "Inventory Module",
+			Content:  "Odoo Inventory manages stock, warehouses, and transfers. Key models: stock.picking, stock.quant, stock.warehouse. Actions: check quantity, create transfer, validate picking.",
+			Tags:     []string{"stock", "inventory", "warehouse"},
+			Metadata: map[string]string{"module": "stock"},
 		},
 		{
-			Category:  CatOdooModule,
-			Title:     "Accounting Module",
-			Content:   "Odoo Accounting manages invoices, payments, and journal entries. Key models: account.move, account.payment, account.journal. Actions: create invoice, register payment, post entry.",
-			Tags:      []string{"account", "invoice", "payment"},
-			Metadata:  map[string]string{"module": "account"},
+			Category: CatOdooModule,
+			Title:    "Accounting Module",
+			Content:  "Odoo Accounting manages invoices, payments, and journal entries. Key models: account.move, account.payment, account.journal. Actions: create invoice, register payment, post entry.",
+			Tags:     []string{"account", "invoice", "payment"},
+			Metadata: map[string]string{"module": "account"},
 		},
 		{
-			Category:  CatOdooModule,
-			Title:     "HR Module",
-			Content:   "Odoo HR manages employees, attendance, and leave. Key models: hr.employee, hr.attendance, hr.leave. Actions: check in/out, request leave, list employees.",
-			Tags:      []string{"hr", "employee", "attendance", "leave"},
-			Metadata:  map[string]string{"module": "hr"},
+			Category: CatOdooModule,
+			Title:    "HR Module",
+			Content:  "Odoo HR manages employees, attendance, and leave. Key models: hr.employee, hr.attendance, hr.leave. Actions: check in/out, request leave, list employees.",
+			Tags:     []string{"hr", "employee", "attendance", "leave"},
+			Metadata: map[string]string{"module": "hr"},
 		},
 	}
 

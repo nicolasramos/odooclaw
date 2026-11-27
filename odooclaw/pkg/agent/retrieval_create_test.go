@@ -18,9 +18,9 @@ func TestRetrieveRelevantToolsCreateDomains(t *testing.T) {
 	defs := loadManifestToolsForTest(t)
 
 	cases := []struct {
-		query         string
-		expected      string // must be in top-5
-		genericExcluded bool // odoo_create must NOT be in top-5
+		query           string
+		expected        string // must be in top-5
+		genericExcluded bool   // odoo_create must NOT be in top-5
 	}{
 		{"Crea una tarea para contactar con el cliente Acme", "odoo_create_task", true},
 		{"Crea un cliente nuevo llamado Empresa Test SL con NIF B12345678", "odoo_create", false},

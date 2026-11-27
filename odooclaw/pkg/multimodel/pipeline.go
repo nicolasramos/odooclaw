@@ -34,8 +34,8 @@ type Pipeline struct {
 	primary    providers.LLMProvider // Existing primary LLM provider (cloud)
 
 	// Metrics
-	metrics      PipelineMetrics
-	metricsMu    sync.RWMutex
+	metrics       PipelineMetrics
+	metricsMu     sync.RWMutex
 	classifyCount atomic.Int64
 	classifyErr   atomic.Int64
 	tokensSaved   atomic.Int64

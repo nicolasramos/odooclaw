@@ -22,16 +22,16 @@ type RecipeStore struct {
 
 // Recipe is a single resolved intent.
 type Recipe struct {
-	ID         int64     `json:"id"`
-	Query      string    `json:"query"`
-	Tool       string    `json:"tool"`
-	Arguments  string    `json:"arguments"`
-	Channel    string    `json:"channel"`
-	ChatID     string    `json:"chat_id"`
-	SenderID   string    `json:"sender_id"`
-	Success    bool      `json:"success"`
-	CreatedAt  time.Time `json:"created_at"`
-	UsedCount  int       `json:"used_count"`
+	ID         int64      `json:"id"`
+	Query      string     `json:"query"`
+	Tool       string     `json:"tool"`
+	Arguments  string     `json:"arguments"`
+	Channel    string     `json:"channel"`
+	ChatID     string     `json:"chat_id"`
+	SenderID   string     `json:"sender_id"`
+	Success    bool       `json:"success"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UsedCount  int        `json:"used_count"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 }
 

@@ -66,10 +66,10 @@ func ParseState(s string) State {
 func (s State) CanTransitionTo(target State) bool {
 	allowed := map[State][]State{
 		StateIdle:                {StateProcessing, StateError},
-		StateProcessing:         {StateIdle, StateWaitingTool, StateWaitingConfirmation, StateError},
-		StateWaitingTool:        {StateProcessing, StateIdle, StateError},
+		StateProcessing:          {StateIdle, StateWaitingTool, StateWaitingConfirmation, StateError},
+		StateWaitingTool:         {StateProcessing, StateIdle, StateError},
 		StateWaitingConfirmation: {StateProcessing, StateIdle, StateError},
-		StateError:              {StateIdle},
+		StateError:               {StateIdle},
 	}
 	for _, a := range allowed[s] {
 		if a == target {

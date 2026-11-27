@@ -163,9 +163,9 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 
 func TestNewAgentInstance_PromptToolsInTextOverride(t *testing.T) {
 	tests := []struct {
-		name        string
-		cfgFlag     *bool
-		wantFlag    *bool
+		name     string
+		cfgFlag  *bool
+		wantFlag *bool
 	}{
 		{name: "flag false (native tools) is honored", cfgFlag: boolPtr(false), wantFlag: boolPtr(false)},
 		{name: "flag true (text injection) is honored", cfgFlag: boolPtr(true), wantFlag: boolPtr(true)},

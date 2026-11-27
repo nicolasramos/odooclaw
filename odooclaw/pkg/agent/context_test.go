@@ -461,9 +461,9 @@ func TestSlidingWindowByTokens_FitsWithinBudget(t *testing.T) {
 func TestSlidingWindowByTokens_DropsOldest(t *testing.T) {
 	// Create history that exceeds the budget
 	history := []providers.Message{
-		{Role: "user", Content: strings.Repeat("x", 200000)}, // ~50k tokens
+		{Role: "user", Content: strings.Repeat("x", 200000)},      // ~50k tokens
 		{Role: "assistant", Content: strings.Repeat("y", 200000)}, // ~50k tokens
-		{Role: "user", Content: "last"}, // ~1 token
+		{Role: "user", Content: "last"},                           // ~1 token
 	}
 	result := slidingWindowByTokens(history, 1000) // ~4000 chars budget
 	if len(result) == 0 {

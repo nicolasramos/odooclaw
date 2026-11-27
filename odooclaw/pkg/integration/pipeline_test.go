@@ -30,9 +30,9 @@ type integrationMockTool struct {
 	params      map[string]any
 }
 
-func (m *integrationMockTool) Name() string                    { return m.name }
-func (m *integrationMockTool) Description() string             { return m.description }
-func (m *integrationMockTool) Parameters() map[string]any       { return m.params }
+func (m *integrationMockTool) Name() string               { return m.name }
+func (m *integrationMockTool) Description() string        { return m.description }
+func (m *integrationMockTool) Parameters() map[string]any { return m.params }
 func (m *integrationMockTool) Execute(_ context.Context, _ map[string]any) *tools.ToolResult {
 	return tools.NewToolResult("ok")
 }
