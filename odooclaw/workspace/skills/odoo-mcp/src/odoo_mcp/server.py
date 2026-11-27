@@ -316,6 +316,30 @@ def odoo_create(
 
 
 @mcp.tool()
+def odoo_update_by(
+    model: str,
+    lookup: dict,
+    values: dict,
+    sender_id: int | None = None,
+) -> dict:
+    """Change fields of exactly one record found by simple field/value pairs.
+
+    lookup maps a field to the value a person would say (a name, a label); values
+    holds the fields to write. Example: model "res.partner", lookup {"name": "Acme"},
+    values {"phone": "+34 600 000 000"}. It refuses an ambiguous lookup.
+    """
+    with measure_time("odoo_update_by"):
+        client = get_odoo_client()
+        return records.odoo_update_by(
+            client,
+            sender_id or client.odoo_session.get_uid(),
+            model,
+            lookup,
+            values,
+        )
+
+
+@mcp.tool()
 def odoo_write(
     model: str,
     ids: list[int],

@@ -88,3 +88,18 @@ odoo_write(model="sale.order.line", ids=[LINE_ID], values={"product_uom_qty": 20
 Never write the one2many field `lines` on sale.order: Odoo rejects it, and the
 quantity never changes. If there are several lines, say which product you are
 changing or change the only one.
+
+## Editing any record (the generic way)
+
+For ANY change to a business record (a customer, a product, a category, an order line, a
+ticket), call `mcp_odoo_manager_odoo_update_by` with three things:
+
+- model: the technical model, e.g. res.partner, product.template, sale.order.line.
+- lookup: the field and the value as a person says it, e.g. {"name": "Acme, S.L."}. For an
+  order line use both keys: {"order_id": "S00021", "product_id": "Pilot Product"}.
+- values: the fields to write, e.g. {"phone": "+34 600 000 000"}.
+
+The tool resolves a name to its id (many2one), a label to its key (selection) and a number
+sent as text to a number, and it refuses a lookup that matches several records instead of
+writing the wrong one. Never write a one2many field on the parent: edit the child model
+(sale.order.line) with the parent in the lookup.

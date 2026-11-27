@@ -210,3 +210,108 @@ def odoo_write(
     guard_write_fields(values)
     audit_action("WRITE", user_id, model, ids, values)
     return cast(bool, client.call_kw(model, "write", args=[ids, values], sender_id=user_id))
+
+
+def _update_field_info(schema: dict[str, Any], model: str, field: str) -> dict[str, Any]:
+    info = schema.get(field)
+    if not info:
+        near = ", ".join(sorted(schema)[:40])
+        raise ValueError(f"unknown field {field!r} on {model}; some fields: {near}")
+    return info
+
+
+def _resolve_update_value(
+    client: OdooClient, user_id: int, model: str, field: str, value: Any, schema: dict[str, Any]
+) -> Any:
+    """Turn a human value (a name, a label, a number as text) into what Odoo expects."""
+    info = _update_field_info(schema, model, field)
+    ftype = info.get("type")
+    if ftype == "many2one" and isinstance(value, str):
+        relation = info.get("relation")
+        if not relation:
+            return value
+        matches = client.call_kw(
+            relation, "name_search", args=[value], kwargs={"operator": "ilike", "limit": 6}, sender_id=user_id
+        ) or []
+        exact = [match for match in matches if str(match[1]).lower() == value.lower()]
+        if exact:
+            return exact[0][0]
+        if len(matches) == 1:
+            return matches[0][0]
+        if not matches:
+            raise ValueError(f"no {relation} matches {value!r}")
+        names = ", ".join(str(match[1]) for match in matches[:5])
+        raise ValueError(f"{value!r} matches several {relation}: {names}")
+    if ftype == "selection":
+        selection = info.get("selection") or []
+        for key, label in selection:
+            if value == key or str(value).lower() == str(label).lower():
+                return key
+        labels = ", ".join(str(label) for _, label in selection)
+        raise ValueError(f"{value!r} is not a valid value for {field}; options: {labels}")
+    if ftype == "integer" and isinstance(value, str):
+        return int(float(value))
+    if ftype in ("float", "monetary") and isinstance(value, str):
+        return float(value)
+    if ftype == "boolean" and isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "si", "sí")
+    return value
+
+
+def odoo_update_by(
+    client: OdooClient, user_id: int, model: str, lookup: dict[str, Any], values: dict[str, Any]
+) -> dict[str, Any]:
+    """Find exactly one record by simple field/value pairs and write values into it.
+
+    The caller names a record the way a person does ("Acme, S.L.", "Pilot Product",
+    category "Servicios"): many2one values are resolved with name_search, selection
+    labels with fields_get, and numbers sent as text are converted. It refuses an
+    ambiguous lookup instead of writing the wrong record. Errors come back as
+    {"ok": false, "error": ...} so the model reads the reason and can retry.
+    """
+    try:
+        guard_model_access(model, client, sender_id=user_id)
+        guard_write_fields(values)
+        schema = get_field_schema(client, model, user_id)
+        if not schema:
+            return {"ok": False, "error": f"no schema for {model}: unknown model or no access"}
+        resolved_lookup = {
+            field: _resolve_update_value(client, user_id, model, field, value, schema)
+            for field, value in (lookup or {}).items()
+        }
+        domain = [[field, "=", value] for field, value in resolved_lookup.items()]
+        ids = client.call_kw(model, "search", args=[domain], kwargs={"limit": 4}, sender_id=user_id) or []
+        if not ids:
+            return {"ok": False, "error": f"no {model} matches {lookup}"}
+        if len(ids) > 1:
+            found = client.call_kw(
+                model, "read", args=[ids], kwargs={"fields": ["display_name"]}, sender_id=user_id
+            ) or []
+            names = ", ".join(str(record.get("display_name")) for record in found)
+            return {"ok": False, "error": f"{lookup} matches {len(ids)} {model}: {names}"}
+        record_id = ids[0]
+        fields = ["display_name"] + [field for field in values if field != "display_name"]
+        before = (
+            client.call_kw(model, "read", args=[[record_id]], kwargs={"fields": fields}, sender_id=user_id)
+            or [{}]
+        )[0]
+        clean = {
+            field: _resolve_update_value(client, user_id, model, field, value, schema)
+            for field, value in values.items()
+        }
+        audit_action("WRITE", user_id, model, [record_id], clean)
+        client.call_kw(model, "write", args=[[record_id], clean], sender_id=user_id)
+        after = (
+            client.call_kw(model, "read", args=[[record_id]], kwargs={"fields": fields}, sender_id=user_id)
+            or [{}]
+        )[0]
+        return {
+            "ok": True,
+            "model": model,
+            "id": record_id,
+            "display_name": before.get("display_name"),
+            "before": {field: before.get(field) for field in values},
+            "after": {field: after.get(field) for field in values},
+        }
+    except Exception as error:  # noqa: BLE001 - the model needs the reason, not a traceback
+        return {"ok": False, "error": str(error)}
