@@ -236,18 +236,26 @@ func stateFor(mode, action string) string {
 func ParseDecision(raw string) (Decision, error) {
 	var d Decision
 	text := strings.TrimSpace(raw)
+	if text == "" {
+		return d, fmt.Errorf("empty answer")
+	}
 	start := strings.Index(text, "{")
 	end := strings.LastIndex(text, "}")
 	if start < 0 || end <= start {
-		return d, fmt.Errorf("no json object found")
+		// A small model often answers in prose. That answer is still what a
+		// person needs to read, so it becomes the reply body instead of a
+		// failed run with nothing to show.
+		return Decision{Action: "reply", Body: text, Reason: "prose answer"}, nil
 	}
 	if err := json.Unmarshal([]byte(text[start:end+1]), &d); err != nil {
-		return d, err
+		return Decision{Action: "reply", Body: text, Reason: "prose answer"}, nil
 	}
 	switch d.Action {
 	case "reply", "escalate", "skip":
 	default:
-		return d, fmt.Errorf("unknown action %q", d.Action)
+		// Keep the answer the model did produce; an invented action name is
+		// not a reason to throw the text away.
+		d = Decision{Action: "reply", Body: text, Reason: "unknown action"}
 	}
 	return d, nil
 }

@@ -127,13 +127,25 @@ func TestParseDecisionToleratesFences(t *testing.T) {
 	}
 }
 
-func TestUnparseableAnswerIsAFailedRun(t *testing.T) {
+func TestProseAnswerBecomesTheDraftBody(t *testing.T) {
+	// The model answered in prose instead of the JSON contract. That prose is
+	// the answer a person wants to read; failing the run loses it.
 	finisher, _ := runProcessor(t, "draft", "I think you should call the customer.", nil)
+	if finisher.results[0].State != "drafted" {
+		t.Fatalf("expected drafted, got %s", finisher.results[0].State)
+	}
+	if finisher.results[0].Body != "I think you should call the customer." {
+		t.Fatalf("body = %q", finisher.results[0].Body)
+	}
+}
+
+func TestEmptyAnswerIsAFailedRun(t *testing.T) {
+	finisher, _ := runProcessor(t, "draft", "   ", nil)
 	if finisher.results[0].State != "failed" {
 		t.Fatalf("expected failed, got %s", finisher.results[0].State)
 	}
-	if !strings.Contains(finisher.results[0].Error, "unparseable") {
-		t.Fatalf("error must explain the unparseable answer, got %q", finisher.results[0].Error)
+	if !strings.Contains(finisher.results[0].Error, "empty answer") {
+		t.Fatalf("error must explain the empty answer, got %q", finisher.results[0].Error)
 	}
 }
 
