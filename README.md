@@ -1,7 +1,7 @@
 <div align="center">
   <img src="odooclaw/assets/logo_openclaw.png" alt="OdooClaw" width="600">
 
-  <h1>OdooClaw 1.1 — RLM-Kernel MCP Server</h1>
+  <h1>OdooClaw 1.2: business verbs, deterministic dev tools, resilient pipeline</h1>
 
   <h3>100% Local AI for Odoo · Own Trained Models · No Subscriptions · Data Sovereignty</h3>
 
@@ -22,7 +22,7 @@
 
 ## 🚀 Next Generation: your own AI, on your own hardware
 
-**OdooClaw 1.1 ships with its own trained models — and remains fully model-agnostic.**
+**OdooClaw 1.2 ships with its own trained models — and remains fully model-agnostic.**
 
 You can run OdooClaw with:
 - **Our models** (OdooClaw Light 1.2B + Vision, published on HuggingFace) — 100% local, open source (MIT), free forever
@@ -46,10 +46,10 @@ You can run OdooClaw with:
 
 ```bash
 # Linux (llama.cpp + n-gram speculative decoding, +49% tok/s)
-curl -sL https://raw.githubusercontent.com/nicolasramos/odooclaw/v1.1.0/odooclaw/scripts/setup-local.sh | bash
+curl -sL https://raw.githubusercontent.com/nicolasramos/odooclaw/v1.2.0/odooclaw/scripts/setup-local.sh | bash
 
 # Apple Silicon (oMLX/MLX, never llama.cpp on Mac)
-curl -sL https://raw.githubusercontent.com/nicolasramos/odooclaw/v1.1.0/odooclaw/scripts/setup-local.sh | bash
+curl -sL https://raw.githubusercontent.com/nicolasramos/odooclaw/v1.2.0/odooclaw/scripts/setup-local.sh | bash
 ```
 
 The installer builds the runtime, downloads the models from HuggingFace and writes the
@@ -80,7 +80,7 @@ Our models are the **recommended defaults** (trained on Odoo business conversati
 
 ### 🧪 Tested before release
 
-- **46/46 Go packages green** · **23/23 Odoo module tests** (Odoo 18) · **E2E 8/8** against a real stack
+- **49/49 Go packages green** · **93/93 Odoo module tests** (Odoo 18) · **E2E 8/8** against a real stack
 - CI gate on every branch/PR (GitHub Actions)
 - History clean: no secrets, no build artifacts, no junk
 
